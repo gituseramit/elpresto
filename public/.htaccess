@@ -1,0 +1,20 @@
+﻿<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Redirect HTTP to HTTPS
+  RewriteCond %{HTTPS} off
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # Serve existing files and directories directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Match directory index.html
+  RewriteCond %{DOCUMENT_ROOT}//index.html -f
+  RewriteRule ^(.*)$ /index.html [L]
+
+  # Custom 404 error page
+  ErrorDocument 404 /404.html
+</IfModule>

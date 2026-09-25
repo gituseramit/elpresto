@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "site": "aquaarogya",
+    "public": "out",
+    "cleanUrls": true,
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

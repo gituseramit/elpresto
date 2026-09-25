@@ -1,26 +1,79 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Appetite-inducing Crimson & Rich Saffron Gold + Deep Truffle Slate */
+  --background: #FFFDF9; /* Warm gourmet pearl */
+  --foreground: #1A1615; /* Rich roasted espresso text */
+  --primary: #D92312; /* Sizzling Artisan Crimson (triggers immediate appetite & hunger) */
+  --primary-hover: #B8190B;
+  --primary-glow: rgba(217, 35, 18, 0.28);
+  --secondary: #D97706; /* Golden Amber Honey / Melted Cheddar */
+  --secondary-hover: #B45309;
+  --accent-gold: #F59E0B; /* Premium Golden Crust */
+  --trust-green: #059669; /* Farm-fresh Organic Green (trust, pure veg, certified) */
+  --surface: #FFFFFF;
+  --surface-warm: #FFF8EE;
+  --surface-card: #FFFFFF;
+  --border-warm: #FDE8D3;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-surface: var(--surface);
+  
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  background-image: 
+    radial-gradient(at 10% 10%, rgba(254, 243, 199, 0.45) 0px, transparent 50%),
+    radial-gradient(at 90% 0%, rgba(254, 226, 226, 0.4) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(254, 243, 199, 0.3) 0px, transparent 50%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
+
+/* Sizzling Appetite Glow */
+.sizzle-shadow {
+  box-shadow: 0 10px 30px -5px rgba(217, 35, 18, 0.28), 0 4px 12px -2px rgba(217, 35, 18, 0.15);
+}
+
+.gold-shadow {
+  box-shadow: 0 10px 25px -4px rgba(245, 158, 11, 0.3), 0 4px 10px -2px rgba(245, 158, 11, 0.15);
+}
+
+.trust-badge-shadow {
+  box-shadow: 0 4px 20px -2px rgba(5, 150, 105, 0.12);
+}
+
+/* Shimmer animation for deal tags */
+@keyframes goldShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.deal-shimmer {
+  background: linear-gradient(90deg, #D92312 0%, #F59E0B 50%, #D92312 100%);
+  background-size: 200% auto;
+  animation: goldShimmer 3s linear infinite;
+}
+
+/* Custom scrollbar for menu */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

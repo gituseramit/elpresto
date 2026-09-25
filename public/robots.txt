@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Allow: /menu
+Disallow: /admin
+Disallow: /auth
+Disallow: /checkout
+Disallow: /counter
+Disallow: /delivery
+Disallow: /kitchen
+Disallow: /profile
+Disallow: /seed
+Disallow: /track
+
+Sitemap: https://aquaarogya.web.app/sitemap.xml
