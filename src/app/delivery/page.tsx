@@ -199,12 +199,14 @@ function StatTile({
 /* ============================================================= */
 export default function DeliveryPortal() {
   /* ---- Auth ---- */
+  /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
-  const [authError, setAuthError] = useState(false);
-  const [authErrorMessage, setAuthErrorMessage] = useState("");
-  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
-
+  const [staffSession, setStaffSession] = useState<any>(null);
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string>("branch-main");
+  const [branchPartners, setBranchPartners] = useState<DeliveryPartner[]>([]);
+  const isElevatedUser = staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
   /* ---- Data ---- */
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(() => getISTDateString(0));
@@ -249,8 +251,17 @@ export default function DeliveryPortal() {
   /* =============================================== */
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const auth = sessionStorage.getItem("elpestro_delivery_auth");
-      if (auth === "true") setIsAuthenticated(true);
+      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
+        const session = getStaffSession("delivery");
+        if (session && isSessionValid(session)) {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+          if (session.branchId) {
+            setActiveBranchId(session.branchId);
+          }
+        }
+        setIsVerifyingAuth(false);
+      });
       const soundPref = localStorage.getItem("elpestro_rider_sound");
       if (soundPref === "false") setSoundEnabled(false);
     }
@@ -258,12 +269,45 @@ export default function DeliveryPortal() {
     const unsub = subscribePanelStatus("delivery", () => {
       stopGpsTracking();
       setIsAuthenticated(false);
+      setStaffSession(null);
+      import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("delivery"));
       sessionStorage.removeItem("elpestro_delivery_auth");
-      setAuthError(true);
-      setAuthErrorMessage("The Delivery Portal has been disabled by the administrator.");
     });
     return () => unsub();
   }, []);
+
+  /* Load branches & branch-scoped delivery partners */
+  useEffect(() => {
+    getActiveBranches().then((list) => setBranches(list)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !activeBranchId) return;
+    const qPartners = query(
+      collection(db, "deliveryPartners"),
+      where("assignedBranchId", "==", activeBranchId)
+    );
+    const unsub = onSnapshot(qPartners, (snap: any) => {
+      setBranchPartners(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [isAuthenticated, activeBranchId]);
+
+  const handleBranchSwitch = async (newBranchId: string) => {
+    if (!isElevatedUser) return;
+    setActiveBranchId(newBranchId);
+    const { logAuditEvent } = await import("@/lib/rbac");
+    logAuditEvent({
+      actorId: staffSession?.staffId || "dev",
+      actorName: staffSession?.name || "Developer",
+      actorRole: staffSession?.role || "DEVELOPER",
+      branchId: newBranchId,
+      action: "CROSS_BRANCH_VIEW",
+      targetType: "delivery",
+      targetId: newBranchId,
+      metadata: { fromBranchId: activeBranchId, toBranchId: newBranchId },
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -289,42 +333,11 @@ export default function DeliveryPortal() {
     fetchSettings();
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(false);
-    setAuthErrorMessage("");
-    setIsVerifyingAuth(true);
-
-    try {
-      const res = await verifyPanelAccess("delivery", passwordInput);
-      if (res.success) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_delivery_auth", "true");
-        setAuthError(false);
-      } else if (res.reason === "disabled") {
-        setAuthError(true);
-        setAuthErrorMessage("Access Denied: The Delivery Portal is currently disabled by Admin.");
-      } else {
-        setAuthError(true);
-        setAuthErrorMessage("Access Denied. Invalid Delivery Partner PIN. (Default: delivery1234)");
-      }
-    } catch (err) {
-      if (passwordInput === "delivery1234" || passwordInput === "admin9090") {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_delivery_auth", "true");
-        setAuthError(false);
-      } else {
-        setAuthError(true);
-        setAuthErrorMessage("Invalid PIN or server connection error.");
-      }
-    } finally {
-      setIsVerifyingAuth(false);
-    }
-  };
-
   const handleLogout = () => {
     stopGpsTracking();
     setIsAuthenticated(false);
+    setStaffSession(null);
+    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("delivery"));
     sessionStorage.removeItem("elpestro_delivery_auth");
   };
 
@@ -664,97 +677,30 @@ export default function DeliveryPortal() {
   /* =============================================== */
   /* LOGIN SCREEN                                    */
   /* =============================================== */
-  if (!isAuthenticated) {
+  if (isVerifyingAuth) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 p-4 text-white select-none">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-32 -top-32 h-[28rem] w-[28rem] animate-pulse rounded-full bg-orange-600/20 blur-[100px]" />
-          <div
-            className="absolute -bottom-32 -right-32 h-[28rem] w-[28rem] animate-pulse rounded-full bg-amber-600/15 blur-[100px]"
-            style={{ animationDelay: "1.5s" }}
-          />
-        </div>
-
-        <div className="relative z-10 w-full max-w-sm">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-[0_25px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-            <span className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-
-            <div className="mb-6 flex flex-col items-center">
-              <div className="relative">
-                <span className="absolute inset-0 animate-ping rounded-2xl bg-orange-500/40" />
-                <div className="relative grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 shadow-lg shadow-orange-500/40 ring-1 ring-white/20">
-                  <Truck size={30} className="text-white" />
-                </div>
-              </div>
-              <h1 className="mt-4 text-2xl font-black tracking-tight text-white">
-                DELIVERY PARTNER
-              </h1>
-              <p className="mt-1 text-xs font-semibold text-slate-400">
-                EL PRESTO PIZZA · Dispatch Portal
-              </p>
-              <div className="mt-3 flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                <Sparkles size={11} /> UCER Hub
-              </div>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Security Password
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3.5 text-center font-mono text-sm tracking-[0.3em] text-white placeholder-slate-600 transition focus:border-orange-500/50 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
-                    required
-                  />
-                  <Lock size={15} className="absolute right-3.5 top-4 text-slate-500" />
-                </div>
-              </div>
-
-              {authError && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 p-2.5">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-400" />
-                  <p className="text-xs font-semibold text-red-300">
-                    {authErrorMessage || "Invalid PIN."}
-                  </p>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isVerifyingAuth}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] hover:shadow-orange-500/50 active:scale-95 disabled:opacity-50"
-              >
-                {isVerifyingAuth ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Verifying…
-                  </>
-                ) : (
-                  <>
-                    <Zap size={15} /> Sign In to Dispatch
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="mt-6 border-t border-white/5 pt-5 text-center">
-              <Link
-                href="/"
-                className="text-xs font-semibold text-slate-500 transition hover:text-orange-400"
-              >
-                ← Return to Storefront
-              </Link>
-            </div>
-          </div>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <Loader2 size={32} className="animate-spin text-orange-500" />
       </div>
     );
   }
 
+  if (!isAuthenticated) {
+    return (
+      <StaffLoginForm
+        panel="delivery"
+        panelDisplayName="Delivery Partner & Fleet Dispatch"
+        panelIcon={<Truck size={28} />}
+        onSuccess={(session) => {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+          if (session.branchId) {
+            setActiveBranchId(session.branchId);
+          }
+        }}
+      />
+    );
+  }
   /* =============================================== */
   /* MAIN PORTAL                                     */
   /* =============================================== */
@@ -1433,3 +1379,4 @@ export default function DeliveryPortal() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { db } from "@/lib/firebase";
+﻿import { db } from "@/lib/firebase";
 import {
   collection,
   query,
@@ -90,39 +90,71 @@ export function formatISTDisplayDate(dateStr: string): string {
 }
 
 /**
- * Real-time subscription to orders for a given date (Asia/Kolkata IST).
+ * Real-time subscription to orders for a given date (Asia/Kolkata IST) and optional branch scope.
  * 
- * CRITICAL ARCHITECTURE FIX:
- * The Firestore database has a mix of Firestore Timestamps and ISO strings for createdAt.
- * A single query would miss either website orders or counter orders.
- * This function creates dual range queries (one for Timestamp, one for String),
- * merges and deduplicates by doc ID, and sorts descending (newest first).
+ * STRICT PER-BRANCH ISOLATION:
+ * When branchId is provided (and not "ALL"), orders are scoped at the Firestore query level.
+ * Handles both Timestamp and ISO string createdAt representations.
+ * Includes indexed query fallback if a composite index (branchId + createdAt) is pending in Firestore.
  */
 export function subscribeDayOrders(
   dateStr: string,
   onUpdate: (orders: any[]) => void,
-  onError?: (err: any) => void
+  onError?: (err: any) => void,
+  branchId?: string
 ): () => void {
   const { startOfDay, endOfDay } = getISTDayBounds(dateStr);
+  const isBranchScoped = Boolean(branchId && branchId !== "ALL");
 
-  const qTimestamp = query(
-    collection(db, "orders"),
-    where("createdAt", ">=", Timestamp.fromDate(startOfDay)),
-    where("createdAt", "<=", Timestamp.fromDate(endOfDay))
-  );
+  // Primary composite queries
+  const qTimestamp = isBranchScoped
+    ? query(
+        collection(db, "orders"),
+        where("branchId", "==", branchId),
+        where("createdAt", ">=", Timestamp.fromDate(startOfDay)),
+        where("createdAt", "<=", Timestamp.fromDate(endOfDay))
+      )
+    : query(
+        collection(db, "orders"),
+        where("createdAt", ">=", Timestamp.fromDate(startOfDay)),
+        where("createdAt", "<=", Timestamp.fromDate(endOfDay))
+      );
 
-  const qString = query(
-    collection(db, "orders"),
-    where("createdAt", ">=", startOfDay.toISOString()),
-    where("createdAt", "<=", endOfDay.toISOString())
-  );
+  const qString = isBranchScoped
+    ? query(
+        collection(db, "orders"),
+        where("branchId", "==", branchId),
+        where("createdAt", ">=", startOfDay.toISOString()),
+        where("createdAt", "<=", endOfDay.toISOString())
+      )
+    : query(
+        collection(db, "orders"),
+        where("createdAt", ">=", startOfDay.toISOString()),
+        where("createdAt", "<=", endOfDay.toISOString())
+      );
 
   const mapT = new Map<string, any>();
   const mapS = new Map<string, any>();
+  const mapFallback = new Map<string, any>();
+  let fallbackActive = false;
+  let unsubFallback: (() => void) | null = null;
 
   const emit = () => {
-    const combined = new Map<string, any>([...mapT, ...mapS]);
-    const list = Array.from(combined.values());
+    let list: any[];
+    if (fallbackActive) {
+      list = Array.from(mapFallback.values());
+    } else {
+      const combined = new Map<string, any>([...mapT, ...mapS]);
+      list = Array.from(combined.values());
+    }
+
+    // Secondary safety verification filter
+    if (isBranchScoped) {
+      list = list.filter((o) => {
+        const orderBranch = o.branchId || "branch-main";
+        return orderBranch === branchId;
+      });
+    }
 
     // Sort newest orders first within the day
     list.sort((a, b) => {
@@ -134,6 +166,39 @@ export function subscribeDayOrders(
     onUpdate(list);
   };
 
+  // Graceful fallback listener using single-field index if composite index is missing in Firestore
+  const activateFallback = () => {
+    if (fallbackActive) return;
+    fallbackActive = true;
+    console.warn(`[orderQueries] Activating single-field indexed fallback query for branch: ${branchId}`);
+    try {
+      const qBranchOnly = isBranchScoped
+        ? query(collection(db, "orders"), where("branchId", "==", branchId))
+        : collection(db, "orders");
+
+      unsubFallback = onSnapshot(
+        qBranchOnly,
+        (snap) => {
+          mapFallback.clear();
+          snap.docs.forEach((d) => {
+            const data = { id: d.id, ...d.data() };
+            const orderDate = parseOrderDate(data.createdAt);
+            if (orderDate >= startOfDay && orderDate <= endOfDay) {
+              mapFallback.set(d.id, data);
+            }
+          });
+          emit();
+        },
+        (fbErr) => {
+          console.error("Fallback query error:", fbErr);
+          if (onError) onError(fbErr);
+        }
+      );
+    } catch (fbInitErr) {
+      console.error("Could not initialize fallback query:", fbInitErr);
+    }
+  };
+
   const unsubT = onSnapshot(
     qTimestamp,
     (snap) => {
@@ -142,7 +207,8 @@ export function subscribeDayOrders(
       emit();
     },
     (err) => {
-      console.error("subscribeDayOrders Timestamp error:", err);
+      console.warn("subscribeDayOrders Timestamp error (activating branch-scoped fallback):", err);
+      activateFallback();
       if (onError) onError(err);
     }
   );
@@ -155,7 +221,8 @@ export function subscribeDayOrders(
       emit();
     },
     (err) => {
-      console.error("subscribeDayOrders String error:", err);
+      console.warn("subscribeDayOrders String error (activating branch-scoped fallback):", err);
+      activateFallback();
       if (onError) onError(err);
     }
   );
@@ -163,5 +230,6 @@ export function subscribeDayOrders(
   return () => {
     unsubT();
     unsubS();
+    if (unsubFallback) unsubFallback();
   };
 }

@@ -1,4 +1,4 @@
-// Multi-Outlet Branch Service & Safe Zero-Downtime Migration
+﻿// Multi-Outlet Branch Service & Safe Zero-Downtime Migration
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -168,23 +168,76 @@ export async function getBranchById(branchId: string): Promise<Branch> {
 }
 
 /**
- * Save or update branch details
+ * Auto-provisions dedicated Kitchen and Counter records for a branch if they do not exist.
+ */
+export async function provisionStationsForBranch(
+  branchId: string,
+  branchName: string
+): Promise<{ kitchenId: string; counterId: string }> {
+  const kitchenId = `kitchen-${branchId}`;
+  const counterId = `counter-${branchId}`;
+
+  try {
+    const kRef = doc(db, "kitchens", kitchenId);
+    const kSnap = await getDoc(kRef);
+    if (!kSnap.exists()) {
+      await setDoc(kRef, {
+        id: kitchenId,
+        branchId,
+        name: `${branchName} Kitchen Station`,
+        active: true,
+        supportedCategories: [],
+        orderQueueCount: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    const cRef = doc(db, "counters", counterId);
+    const cSnap = await getDoc(cRef);
+    if (!cSnap.exists()) {
+      await setDoc(cRef, {
+        id: counterId,
+        branchId,
+        name: `${branchName} Main Counter`,
+        counterNumber: "1",
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    console.warn(`Could not auto-provision stations for branch ${branchId}:`, err);
+  }
+
+  return { kitchenId, counterId };
+}
+
+/**
+ * Save or update branch details. Auto-provisions dedicated kitchen and counter for new branches.
  */
 export async function saveBranch(branchData: Partial<Branch> & { id?: string }): Promise<string> {
   const branchId = branchData.id || `branch-${Date.now()}`;
   const ref = doc(db, "branches", branchId);
-  const payload = {
+  const payload: any = {
     ...branchData,
     id: branchId,
     updatedAt: serverTimestamp(),
   };
 
   const snap = await getDoc(ref);
-  if (!snap.exists()) {
+  const isNew = !snap.exists();
+  if (isNew) {
     payload.createdAt = serverTimestamp();
   }
 
   await setDoc(ref, payload, { merge: true });
+
+  // Auto-provision kitchen and counter records for every new branch
+  if (isNew) {
+    await provisionStationsForBranch(branchId, branchData.name || "New Outlet");
+  }
+
   return branchId;
 }
 
@@ -427,4 +480,45 @@ export async function getDeliveryPartners(branchId?: string): Promise<DeliveryPa
     console.warn("Could not get delivery partners:", err);
     return [];
   }
+}
+
+/**
+ * Reassigns an order to another branch with an explicit audit log entry.
+ */
+export async function reassignOrderBranch(
+  orderId: string,
+  targetBranchId: string,
+  actor: { id: string; name: string; role: string },
+  reason?: string
+): Promise<void> {
+  const branchRef = doc(db, "branches", targetBranchId);
+  const branchSnap = await getDoc(branchRef);
+  const branchData = branchSnap.exists() ? (branchSnap.data() as Branch) : null;
+
+  const orderRef = doc(db, "orders", orderId);
+  const orderSnap = await getDoc(orderRef);
+  const oldBranchId = orderSnap.exists() ? orderSnap.data()?.branchId : null;
+
+  await updateDoc(orderRef, {
+    branchId: targetBranchId,
+    branchName: branchData?.name || targetBranchId,
+    branchCode: branchData?.code || "",
+    updatedAt: serverTimestamp(),
+  });
+
+  const { logAuditEvent } = await import("@/lib/rbac");
+  await logAuditEvent({
+    actorId: actor.id,
+    actorName: actor.name,
+    actorRole: actor.role,
+    branchId: targetBranchId,
+    action: "ORDER_REASSIGNED_BRANCH",
+    targetType: "order",
+    targetId: orderId,
+    metadata: {
+      fromBranchId: oldBranchId,
+      toBranchId: targetBranchId,
+      reason: reason || "Manual Staff Reassignment",
+    },
+  });
 }

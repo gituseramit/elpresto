@@ -52,6 +52,7 @@ import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
 import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
+import { getActiveBranches, Branch } from "@/lib/branchService";
 import DateNavigator from "@/components/DateNavigator";
 
 /* ============== TYPES ============== */
@@ -146,6 +147,9 @@ export default function KitchenSystem() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [staffSession, setStaffSession] = useState<any>(null);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string>("branch-main");
+  const isElevatedUser = staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
 
   /* ---- Init session ---- */
   useEffect(() => {
@@ -155,8 +159,12 @@ export default function KitchenSystem() {
         if (session && isSessionValid(session)) {
           setStaffSession(session);
           setIsAuthenticated(true);
+          if (session.branchId) {
+            setActiveBranchId(session.branchId);
+          }
         }
         setIsVerifyingAuth(false);
+      getActiveBranches().then((list) => setBranches(list)).catch(() => {});
       });
 
       const savedSettings = localStorage.getItem("elpestro_kitchen_settings");
@@ -177,6 +185,22 @@ export default function KitchenSystem() {
     });
     return () => unsub();
   }, []);
+
+  const handleBranchSwitch = async (newBranchId: string) => {
+    if (!isElevatedUser) return;
+    setActiveBranchId(newBranchId);
+    const { logAuditEvent } = await import("@/lib/rbac");
+    logAuditEvent({
+      actorId: staffSession?.staffId || "dev",
+      actorName: staffSession?.name || "Developer",
+      actorRole: staffSession?.role || "DEVELOPER",
+      branchId: newBranchId,
+      action: "CROSS_BRANCH_VIEW",
+      targetType: "kitchen",
+      targetId: newBranchId,
+      metadata: { fromBranchId: activeBranchId, toBranchId: newBranchId },
+    }).catch(() => {});
+  };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -278,14 +302,14 @@ export default function KitchenSystem() {
         console.error("Kitchen orders error:", err);
         setError("Unable to load orders. Please try again.");
         setLoading(false);
-      }
+      },
+      activeBranchId
     );
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isAuthenticated, selectedDate, kitchenSettings.soundEnabled]);
-
+  }, [isAuthenticated, selectedDate, kitchenSettings.soundEnabled, activeBranchId]);
   /* ---- Live menu ---- */
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -2505,3 +2529,4 @@ export default function KitchenSystem() {
     </div>
   );
 }
+

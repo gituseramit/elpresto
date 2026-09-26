@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import {
@@ -21,7 +21,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Branch } from "@/lib/types";
-import { saveBranch, DEFAULT_MAIN_BRANCH_ID } from "@/lib/branchService";
+import { saveBranch, DEFAULT_MAIN_BRANCH_ID, provisionStationsForBranch } from "@/lib/branchService";
 import { logAuditEvent } from "@/lib/rbac";
 
 interface BranchManagerProps {
@@ -270,6 +270,18 @@ export default function BranchManager({
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 py-2 text-xs font-bold text-white transition hover:bg-white/10 active:scale-95"
                 >
                   <Edit2 size={13} /> Edit Outlet
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await provisionStationsForBranch(branch.id, branch.name);
+                    alert(`Dedicated Kitchen and Counter stations verified & active for ${branch.name}.`);
+                    onRefresh();
+                  }}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                  title="Auto-provision or verify dedicated Kitchen and Counter stations"
+                >
+                  ⚡ Stations
                 </button>
               </div>
             </div>
@@ -524,3 +536,4 @@ export default function BranchManager({
     </div>
   );
 }
+

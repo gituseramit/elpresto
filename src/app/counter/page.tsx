@@ -59,12 +59,14 @@ function urgencyOf(elapsed: number, status: string) {
 /* ============================================================ */
 export default function CounterPOSPage() {
   /* Auth */
+  /* Auth */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState(false);
-  const [pinErrorMessage, setPinErrorMessage] = useState("");
-  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
-
+  const [staffSession, setStaffSession] = useState<any>(null);
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [activeBranchId, setActiveBranchId] = useState<string>("branch-main");
+  const [activeCounter, setActiveCounter] = useState<Counter | null>(null);
+  const isElevatedUser = staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
   /* View */
   const [activeTab, setActiveTab] = useState<"pos" | "history">("pos");
   const [isMobileOrdersOpen, setIsMobileOrdersOpen] = useState(false);
@@ -152,8 +154,20 @@ export default function CounterPOSPage() {
   /* Restore session + saved cart */
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const auth = sessionStorage.getItem("elpestro_counter_auth");
-    if (auth === "true") setIsAuthenticated(true);
+    import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
+      const session = getStaffSession("counter");
+      if (session && isSessionValid(session)) {
+        setStaffSession(session);
+        setIsAuthenticated(true);
+        if (session.branchId) {
+          setActiveBranchId(session.branchId);
+        }
+      } else {
+        const auth = sessionStorage.getItem("elpestro_counter_auth");
+        if (auth === "true") setIsAuthenticated(true);
+      }
+      setIsVerifyingAuth(false);
+    });
     const snd = localStorage.getItem("elpestro_counter_sound");
     if (snd === "false") setSoundEnabled(false);
 
@@ -299,41 +313,50 @@ export default function CounterPOSPage() {
     if (next) playChime();
   };
 
-  /* Login */
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPinError(false);
-    setPinErrorMessage("");
-    setIsVerifyingAuth(true);
-    try {
-      const res = await verifyPanelAccess("counter", pinInput);
-      if (res.success) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_counter_auth", "true");
-      } else if (res.reason === "disabled") {
-        setPinError(true);
-        setPinErrorMessage("The Counter Panel is currently disabled by Admin.");
-      } else {
-        setPinError(true);
-        setPinErrorMessage("Invalid Counter PIN. (Default: counter1234 or 1234)");
-      }
-    } catch {
-      if (pinInput === "counter1234" || pinInput === "1234" || pinInput === "admin9090") {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_counter_auth", "true");
-      } else {
-        setPinError(true);
-        setPinErrorMessage("Invalid PIN or connection error.");
-      }
-    } finally {
-      setIsVerifyingAuth(false);
-    }
-  };
-
   const handleLogout = () => {
     if (cartItems.length > 0 && !confirm("You have items in cart. Sign out anyway?")) return;
     setIsAuthenticated(false);
+    setStaffSession(null);
+    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("counter"));
     sessionStorage.removeItem("elpestro_counter_auth");
+  };
+
+  /* Load branches & resolve dedicated counter */
+  useEffect(() => {
+    getActiveBranches().then((list) => setBranches(list)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!activeBranchId) return;
+    getCountersForBranch(activeBranchId).then((counters) => {
+      if (counters.length > 0) {
+        setActiveCounter(counters[0]);
+      } else {
+        setActiveCounter({
+          id: `counter-${activeBranchId}`,
+          branchId: activeBranchId,
+          name: "Main Counter",
+          counterNumber: "1",
+          active: true,
+        });
+      }
+    }).catch(() => {});
+  }, [activeBranchId]);
+
+  const handleBranchSwitch = async (newBranchId: string) => {
+    if (!isElevatedUser) return;
+    setActiveBranchId(newBranchId);
+    const { logAuditEvent } = await import("@/lib/rbac");
+    logAuditEvent({
+      actorId: staffSession?.staffId || "dev",
+      actorName: staffSession?.name || "Developer",
+      actorRole: staffSession?.role || "DEVELOPER",
+      branchId: newBranchId,
+      action: "CROSS_BRANCH_VIEW",
+      targetType: "counter",
+      targetId: newBranchId,
+      metadata: { fromBranchId: activeBranchId, toBranchId: newBranchId },
+    }).catch(() => {});
   };
 
   const toggleFullscreen = () => {
@@ -880,65 +903,30 @@ export default function CounterPOSPage() {
   /* ============================================================ */
   /* LOGIN                                                        */
   /* ============================================================ */
-  if (!isAuthenticated) {
+  if (isVerifyingAuth) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-        <div className="w-full max-w-sm">
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="mb-6 flex flex-col items-center">
-              <div className="grid h-16 w-16 place-items-center rounded-2xl bg-[#D92312] text-white shadow-sm">
-                <Store size={28} />
-              </div>
-              <h1 className="mt-4 text-xl font-black text-slate-900">Counter Manager</h1>
-              <p className="mt-1 text-xs text-slate-500">POS Billing & Order Management</p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Staff PIN
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={pinInput}
-                    onChange={(e) => setPinInput(e.target.value)}
-                    placeholder="Enter PIN"
-                    autoFocus
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center font-mono text-sm tracking-widest text-slate-900 placeholder-slate-400 focus:border-[#D92312] focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
-                    required
-                  />
-                  <Lock size={15} className="absolute right-3.5 top-3.5 text-slate-400" />
-                </div>
-              </div>
-
-              {pinError && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-2.5">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-500" />
-                  <p className="text-xs font-medium text-red-700">{pinErrorMessage}</p>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isVerifyingAuth}
-                className="w-full rounded-xl bg-[#D92312] py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#B8190B] active:scale-[0.98] disabled:opacity-50"
-              >
-                {isVerifyingAuth ? "Verifying…" : "Sign In"}
-              </button>
-            </form>
-
-            <div className="mt-6 border-t border-slate-100 pt-4 text-center text-xs">
-              <Link href="/" className="text-slate-400 hover:text-slate-700">
-                ← Return to Storefront
-              </Link>
-            </div>
-          </div>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Loader2 size={32} className="animate-spin text-[#D92312]" />
       </div>
     );
   }
 
+  if (!isAuthenticated) {
+    return (
+      <StaffLoginForm
+        panel="counter"
+        panelDisplayName="Counter POS & Billing Station"
+        panelIcon={<Store size={28} />}
+        onSuccess={(session) => {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+          if (session.branchId) {
+            setActiveBranchId(session.branchId);
+          }
+        }}
+      />
+    );
+  }
   /* ============================================================ */
   /* LEFT — Orders List                                           */
   /* ============================================================ */
