@@ -78,6 +78,9 @@ import {
   initializeCategoriesIfEmpty,
   resolveItemCategoryHierarchy,
 } from "@/lib/categories";
+import Modern3DBarChart from "@/components/Admin/Charts/Modern3DBarChart";
+import Modern3DDonutChart from "@/components/Admin/Charts/Modern3DDonutChart";
+import Modern3DCategoryChart from "@/components/Admin/Charts/Modern3DCategoryChart";
 import { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
 
@@ -2500,70 +2503,21 @@ export default function AdminPage() {
 
         {/* Charts row */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
-            <div className="mb-4 flex items-center gap-2">
-              <BarChart4 size={15} className="text-emerald-400" />
-              <h3 className="text-sm font-black text-white">Revenue Trend</h3>
-            </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} />
-                  <YAxis stroke="#94a3b8" fontSize={11} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#0f172a",
-                      borderColor: "#334155",
-                      color: "#fff",
-                      borderRadius: "12px",
-                      fontSize: "12px",
-                    }}
-                  />
-                  <Bar dataKey="revenue" fill="#f97316" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="lg:col-span-2">
+            <Modern3DBarChart
+              data={barData}
+              title="3D Revenue Trend"
+              theme="orange"
+            />
           </div>
 
-          <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
-            <div className="mb-3 flex items-center gap-2">
-              <Activity size={15} className="text-orange-400" />
-              <h3 className="text-sm font-black text-white">Order Split</h3>
-            </div>
-            <div className="flex h-52 items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {pieData.map((_, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={CHART_COLORS[index % CHART_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#0f172a",
-                      borderColor: "#334155",
-                      color: "#fff",
-                      borderRadius: "12px",
-                    }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="flex flex-col justify-between gap-4">
+            <Modern3DDonutChart
+              data={pieData}
+              title="3D Order Split"
+            />
 
-            <div className="border-t border-white/5 pt-3">
+            <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
               <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
                 Top Sellers
               </p>
@@ -2622,76 +2576,28 @@ export default function AdminPage() {
             )}
           </div>
 
+          {/* 3D Category Performance Pillars */}
+          <Modern3DCategoryChart
+            data={categoryBarData}
+            title="3D Category Revenue & Volume"
+            subtitle="Multi-dimensional sales performance by menu section"
+          />
+
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
-              <h4 className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <BarChart3 size={13} className="text-emerald-400" /> Revenue by
-                Category
-              </h4>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={categoryBarData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis
-                      dataKey="name"
-                      stroke="#94a3b8"
-                      fontSize={10}
-                      interval={0}
-                      angle={-15}
-                      textAnchor="end"
-                      height={45}
-                    />
-                    <YAxis stroke="#94a3b8" fontSize={11} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#0f172a",
-                        borderColor: "#334155",
-                        color: "#fff",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    <Bar dataKey="revenue" fill="#10b981" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <div className="lg:col-span-2">
+              <Modern3DBarChart
+                data={categoryBarData}
+                title="3D Category Revenue Comparison"
+                theme="emerald"
+              />
             </div>
 
-            <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
-              <h4 className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <Percent size={13} className="text-orange-400" /> Contribution
-              </h4>
-              <div className="flex h-52 items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={75}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {categoryPieData.map((_, index) => (
-                        <Cell
-                          key={`cat-cell-${index}`}
-                          fill={CHART_COLORS[index % CHART_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#0f172a",
-                        borderColor: "#334155",
-                        color: "#fff",
-                        borderRadius: "12px",
-                      }}
-                    />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+            <div>
+              <Modern3DDonutChart
+                data={categoryPieData}
+                title="3D Category Share"
+                totalLabel="Category Sales"
+              />
             </div>
           </div>
 
