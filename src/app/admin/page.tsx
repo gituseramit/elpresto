@@ -81,6 +81,7 @@ import {
 import Modern3DBarChart from "@/components/Admin/Charts/Modern3DBarChart";
 import Modern3DDonutChart from "@/components/Admin/Charts/Modern3DDonutChart";
 import Modern3DCategoryChart from "@/components/Admin/Charts/Modern3DCategoryChart";
+import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
 
@@ -159,10 +160,8 @@ function SectionHeader({
 export default function AdminPage() {
   /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState(false);
-  const [pinErrorMessage, setPinErrorMessage] = useState("");
-  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
+  const [staffSession, setStaffSession] = useState<any>(null);
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
 
   /* ---- Panel access ---- */
   const [panelAccess, setPanelAccess] = useState<PanelAccessData>(DEFAULT_PANEL_CONFIGS);
@@ -264,53 +263,30 @@ export default function AdminPage() {
   /* Effects                                         */
   /* =============================================== */
   useEffect(() => {
+    // Check for existing valid v2 staff session
     if (typeof window !== "undefined") {
-      const auth = sessionStorage.getItem("elpestro_admin_auth");
-      if (auth === "true") setIsAuthenticated(true);
+      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
+        const session = getStaffSession("admin");
+        if (session && isSessionValid(session)) {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+        }
+        setIsVerifyingAuth(false);
+      });
     }
+    // Keep legacy panel disable listener for backwards compat
     const unsub = subscribePanelStatus("admin", () => {
       setIsAuthenticated(false);
-      sessionStorage.removeItem("elpestro_admin_auth");
-      setPinError(true);
-      setPinErrorMessage("The Admin Panel has been disabled by the administrator.");
+      import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("admin"));
     });
     return () => unsub();
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPinError(false);
-    setPinErrorMessage("");
-    setIsVerifyingAuth(true);
-    try {
-      const res = await verifyPanelAccess("admin", pinInput);
-      if (res.success) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_admin_auth", "true");
-        setPinError(false);
-      } else if (res.reason === "disabled") {
-        setPinError(true);
-        setPinErrorMessage("Access Denied: The Admin Panel is currently disabled.");
-      } else {
-        setPinError(true);
-        setPinErrorMessage("Invalid Admin PIN. (Default: admin9090)");
-      }
-    } catch (err) {
-      if (pinInput === "admin9090" || pinInput === "admin1234") {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_admin_auth", "true");
-        setPinError(false);
-      } else {
-        setPinError(true);
-        setPinErrorMessage("Invalid PIN or server connection error.");
-      }
-    } finally {
-      setIsVerifyingAuth(false);
-    }
-  };
-
   const handleLogout = () => {
     setIsAuthenticated(false);
+    setStaffSession(null);
+    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("admin"));
+    // Also clear old-style session key for full cleanup
     sessionStorage.removeItem("elpestro_admin_auth");
   };
 
@@ -1127,93 +1103,25 @@ export default function AdminPage() {
   /* =============================================== */
   /* LOGIN GATE                                      */
   /* =============================================== */
+  if (isVerifyingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <Loader2 size={32} className="animate-spin text-orange-500" />
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 p-4 text-white select-none">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-32 -top-32 h-[28rem] w-[28rem] animate-pulse rounded-full bg-orange-600/20 blur-[100px]" />
-          <div
-            className="absolute -bottom-32 -right-32 h-[28rem] w-[28rem] animate-pulse rounded-full bg-amber-600/15 blur-[100px]"
-            style={{ animationDelay: "1.5s" }}
-          />
-          <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-rose-500/10 blur-[80px]" />
-        </div>
-
-        <div className="relative z-10 w-full max-w-md">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-[0_25px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-            <span className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-
-            <div className="mb-6 flex flex-col items-center">
-              <div className="relative">
-                <span className="absolute inset-0 animate-ping rounded-3xl bg-orange-500/40" />
-                <div className="relative grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-tr from-orange-500 via-amber-500 to-yellow-500 text-4xl shadow-2xl shadow-orange-500/40 ring-1 ring-white/20">
-                  🍕
-                </div>
-              </div>
-              <h1 className="mt-5 text-2xl font-black tracking-tight text-white">
-                EL PRESTO PIZZA
-              </h1>
-              <p className="mt-1 text-xs font-semibold text-slate-400">
-                Manager & Operations Command Portal
-              </p>
-              <div className="mt-3 flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                <Shield size={11} /> Secure Access
-              </div>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className={labelCls}>Admin Security PIN</label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={pinInput}
-                    onChange={(e) => setPinInput(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3.5 text-center font-mono text-sm tracking-[0.3em] text-white placeholder-slate-600 transition focus:border-orange-500/50 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
-                    required
-                  />
-                  <Lock size={15} className="absolute right-3.5 top-4 text-slate-500" />
-                </div>
-              </div>
-
-              {pinError && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 p-2.5">
-                  <AlertTriangle size={14} className="mt-0.5 shrink-0 text-red-400" />
-                  <p className="text-xs font-semibold text-red-300">
-                    {pinErrorMessage || "Invalid PIN."}
-                  </p>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isVerifyingAuth}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] hover:shadow-orange-500/50 active:scale-95 disabled:opacity-50"
-              >
-                {isVerifyingAuth ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Verifying…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={15} /> Sign In to Admin
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="mt-6 border-t border-white/5 pt-5 text-center">
-              <Link
-                href="/"
-                className="text-xs font-semibold text-slate-500 transition hover:text-orange-400"
-              >
-                ← Return to Storefront
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+      <StaffLoginForm
+        panel="admin"
+        panelDisplayName="Admin Operations Panel"
+        panelIcon={<Shield size={28} />}
+        onSuccess={(session) => {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+        }}
+      />
     );
   }
 

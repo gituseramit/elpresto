@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import {
@@ -20,6 +20,7 @@ import { Branch, StaffProfile, UserRole, Permission } from "@/lib/types";
 import { ROLE_DEFAULT_PERMISSIONS, logAuditEvent } from "@/lib/rbac";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { hash } from "bcryptjs";
 
 interface UserManagerProps {
   staffProfiles: StaffProfile[];
@@ -64,6 +65,7 @@ export default function UserManager({
   const [selectedRole, setSelectedRole] = useState<string>("ALL");
   const [modalUser, setModalUser] = useState<Partial<StaffProfile> | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [userPasswordInput, setUserPasswordInput] = useState("");
 
   const filteredUsers = staffProfiles.filter((u) => {
     const matchesSearch =
@@ -74,6 +76,7 @@ export default function UserManager({
   });
 
   const handleOpenAdd = () => {
+    setUserPasswordInput("");
     setModalUser({
       name: "",
       email: "",
@@ -91,13 +94,32 @@ export default function UserManager({
     setIsSaving(true);
     try {
       const isNew = !modalUser.id;
-      const id = modalUser.id || `staff-${Date.now().toString().slice(-6)}`;
+      const id = modalUser.id || (modalUser.staffId?.trim().toLowerCase()) || `staff-${Date.now().toString().slice(-6)}`;
+      const cleanStaffId = (modalUser.staffId || modalUser.email?.split("@")[0] || id).trim().toLowerCase();
+
+      let passwordData: any = {};
+      if (userPasswordInput.trim()) {
+        if (userPasswordInput.trim().length < 8) {
+          alert("Password must be at least 8 characters.");
+          setIsSaving(false);
+          return;
+        }
+        const hashedPassword = await hash(userPasswordInput.trim(), 10);
+        passwordData = {
+          passwordHash: hashedPassword,
+          mustChangePassword: true,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        };
+      }
 
       await setDoc(
         doc(db, "staffProfiles", id),
         {
           ...modalUser,
           id,
+          staffId: cleanStaffId,
+          ...passwordData,
           active: modalUser.active !== false,
           updatedAt: serverTimestamp(),
           ...(isNew ? { createdAt: serverTimestamp() } : {}),
@@ -238,7 +260,7 @@ export default function UserManager({
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => setModalUser(u)}
+                        onClick={() => { setModalUser(u); setUserPasswordInput(""); }}
                         className="rounded-lg bg-white/5 px-2.5 py-1 text-slate-300 hover:bg-white/10 hover:text-white"
                       >
                         <Edit2 size={12} className="inline mr-1" /> Edit
@@ -279,6 +301,32 @@ export default function UserManager({
                     required
                     value={modalUser.email || ""}
                     onChange={(e) => setModalUser({ ...modalUser, email: e.target.value })}
+                    className="mt-1 w-full rounded-xl bg-slate-950 border border-white/10 px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Staff ID (Username)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. kitchen_amit"
+                    value={modalUser.staffId || ""}
+                    onChange={(e) => setModalUser({ ...modalUser, staffId: e.target.value })}
+                    className="mt-1 w-full rounded-xl bg-slate-950 border border-white/10 px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">
+                    {modalUser.id ? "Reset Password (leave empty to keep)" : "Initial Password (min 8 chars)"}
+                  </label>
+                  <input
+                    type="password"
+                    placeholder={modalUser.id ? "New password..." : "Set password..."}
+                    value={userPasswordInput}
+                    onChange={(e) => setUserPasswordInput(e.target.value)}
                     className="mt-1 w-full rounded-xl bg-slate-950 border border-white/10 px-3 py-2 text-xs text-white"
                   />
                 </div>
@@ -389,3 +437,4 @@ export default function UserManager({
     </div>
   );
 }
+

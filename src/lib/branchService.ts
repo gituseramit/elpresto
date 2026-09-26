@@ -189,45 +189,142 @@ export async function saveBranch(branchData: Partial<Branch> & { id?: string }):
 }
 
 /**
+ * Evaluates whether a branch is open right now based on its operatingHours.
+ */
+export function isBranchOpen(branch: Branch): boolean {
+  if (!branch.active) return false;
+  if (!branch.operatingHours) return true;
+  if (branch.operatingHours.isOpen === false) return false;
+
+  const { openTime, closeTime } = branch.operatingHours;
+  if (!openTime || !closeTime) return true;
+
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const h = parseInt(parts.find((p) => p.type === "hour")?.value || "0", 10);
+    const m = parseInt(parts.find((p) => p.type === "minute")?.value || "0", 10);
+    const currentMins = h * 60 + m;
+
+    const [openH, openM] = openTime.split(":").map(Number);
+    const [closeH, closeM] = closeTime.split(":").map(Number);
+    const openMins = openH * 60 + openM;
+    const closeMins = closeH * 60 + closeM;
+
+    if (closeMins >= openMins) {
+      return currentMins >= openMins && currentMins <= closeMins;
+    } else {
+      // Midnight crossover (e.g. 11:00 to 02:00)
+      return currentMins >= openMins || currentMins <= closeMins;
+    }
+  } catch {
+    return true;
+  }
+}
+
+export interface BranchEvaluation {
+  branch: Branch;
+  distanceKm: number;
+  isWithinRadius: boolean;
+  isOpen: boolean;
+}
+
+export interface ResolveNearestBranchResult {
+  branch: Branch;
+  distanceKm: number;
+  isWithinRadius: boolean;
+  isOpen: boolean;
+  canDeliver: boolean;
+  allBranches: BranchEvaluation[];
+}
+
+/**
  * Multi-Branch Order Routing:
  * Matches customer coordinates to the nearest eligible active branch within delivery radius.
+ * Handles operating hours, delivery radius serviceability, and distance tie-breakers.
  */
 export function resolveNearestBranch(
   customerLat: number,
   customerLng: number,
-  branches: Branch[]
-): {
-  branch: Branch;
-  distanceKm: number;
-  isWithinRadius: boolean;
-} {
+  branches: Branch[],
+  options?: { isDelivery?: boolean }
+): ResolveNearestBranchResult {
+  const isDelivery = options?.isDelivery ?? true;
   const activeBranches = branches.filter((b) => b.active);
+
   if (activeBranches.length === 0) {
     const fallback = DEFAULT_MAIN_BRANCH;
     const dist = calculateDistance(customerLat, customerLng, fallback.lat, fallback.lng);
+    const open = isBranchOpen(fallback);
+    const within = dist <= fallback.deliveryRadiusKm;
     return {
       branch: fallback,
-      distanceKm: dist,
-      isWithinRadius: dist <= fallback.deliveryRadiusKm,
+      distanceKm: Math.round(dist * 100) / 100,
+      isWithinRadius: within,
+      isOpen: open,
+      canDeliver: isDelivery ? within && open : open,
+      allBranches: [{ branch: fallback, distanceKm: Math.round(dist * 100) / 100, isWithinRadius: within, isOpen: open }],
     };
   }
 
-  let bestBranch = activeBranches[0];
-  let minDistance = calculateDistance(customerLat, customerLng, bestBranch.lat, bestBranch.lng);
+  // Evaluate every active branch
+  const evaluated: BranchEvaluation[] = activeBranches.map((b) => {
+    const dist = calculateDistance(customerLat, customerLng, b.lat, b.lng);
+    const within = dist <= b.deliveryRadiusKm;
+    const open = isBranchOpen(b);
+    return {
+      branch: b,
+      distanceKm: Math.round(dist * 100) / 100,
+      isWithinRadius: within,
+      isOpen: open,
+    };
+  });
 
-  for (let i = 1; i < activeBranches.length; i++) {
-    const candidate = activeBranches[i];
-    const dist = calculateDistance(customerLat, customerLng, candidate.lat, candidate.lng);
-    if (dist < minDistance) {
-      minDistance = dist;
-      bestBranch = candidate;
+  // Sort candidates
+  const sorted = [...evaluated].sort((a, b) => {
+    if (isDelivery) {
+      // Priority 1: Serviceable (within radius & open)
+      const aServiceable = a.isWithinRadius && a.isOpen;
+      const bServiceable = b.isWithinRadius && b.isOpen;
+      if (aServiceable && !bServiceable) return -1;
+      if (!aServiceable && bServiceable) return 1;
+
+      // Priority 2: Within radius
+      if (a.isWithinRadius && !b.isWithinRadius) return -1;
+      if (!a.isWithinRadius && b.isWithinRadius) return 1;
+    } else {
+      // For takeaway, priority is Open
+      if (a.isOpen && !b.isOpen) return -1;
+      if (!a.isOpen && b.isOpen) return 1;
     }
-  }
+
+    // Distance tie-breaker (tolerance 0.1km = 100m)
+    if (Math.abs(a.distanceKm - b.distanceKm) < 0.1) {
+      if (a.isOpen && !b.isOpen) return -1;
+      if (!a.isOpen && b.isOpen) return 1;
+      if (a.branch.isDefault) return -1;
+      if (b.branch.isDefault) return 1;
+    }
+
+    return a.distanceKm - b.distanceKm;
+  });
+
+  const best = sorted[0];
+  const canDeliver = isDelivery ? best.isWithinRadius && best.isOpen : best.isOpen;
 
   return {
-    branch: bestBranch,
-    distanceKm: minDistance,
-    isWithinRadius: minDistance <= bestBranch.deliveryRadiusKm,
+    branch: best.branch,
+    distanceKm: best.distanceKm,
+    isWithinRadius: best.isWithinRadius,
+    isOpen: best.isOpen,
+    canDeliver,
+    allBranches: sorted,
   };
 }
 

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 import {
@@ -50,6 +50,7 @@ import {
 } from "firebase/firestore";
 import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
 import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
+import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
 
@@ -143,11 +144,8 @@ const inputCls =
 export default function KitchenSystem() {
   /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [authError, setAuthError] = useState(false);
-  const [authErrorMessage, setAuthErrorMessage] = useState("");
-  const [panelDisabled, setPanelDisabled] = useState(false);
-  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
+  const [staffSession, setStaffSession] = useState<any>(null);
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
 
   /* ---- Layout ---- */
   const [activeTab, setActiveTab] = useState<"new" | "preparing" | "completed" | "settings">(
@@ -825,94 +823,27 @@ export default function KitchenSystem() {
   /* ============================================ */
   /* LOGIN GATE                                    */
   /* ============================================ */
-  if (!isAuthenticated) {
+  if (isVerifyingAuth) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 p-4 text-white select-none">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-32 -top-32 h-[28rem] w-[28rem] animate-pulse rounded-full bg-orange-600/20 blur-[100px]" />
-          <div
-            className="absolute -bottom-32 -right-32 h-[28rem] w-[28rem] animate-pulse rounded-full bg-amber-600/15 blur-[100px]"
-            style={{ animationDelay: "1.5s" }}
-          />
-        </div>
-
-        <div className="relative z-10 w-full max-w-sm">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-[0_25px_80px_-20px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-            <span className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-
-            <div className="mb-6 flex flex-col items-center">
-              <div className="relative">
-                <span className="absolute inset-0 animate-ping rounded-2xl bg-orange-500/40" />
-                <div className="relative grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 shadow-lg shadow-orange-500/40 ring-1 ring-white/20">
-                  <ChefHat size={30} className="text-white" />
-                </div>
-              </div>
-              <h1 className="mt-4 text-2xl font-black tracking-tight text-white">
-                EL PRESTO KITCHEN
-              </h1>
-              <p className="mt-1 text-xs font-semibold text-slate-400">
-                Kitchen Display & Station Dispatch System
-              </p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Kitchen Staff PIN
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={pinInput}
-                    onChange={(e) => setPinInput(e.target.value)}
-                    placeholder="••••••"
-                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3.5 text-center font-mono text-sm tracking-[0.3em] text-white placeholder-slate-600 transition focus:border-orange-500/50 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
-                    required
-                  />
-                  <Lock size={15} className="absolute right-3.5 top-4 text-slate-500" />
-                </div>
-              </div>
-
-              {authError && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 p-2.5">
-                  <X size={14} className="mt-0.5 shrink-0 text-red-400" />
-                  <p className="text-xs font-semibold text-red-300">
-                    {authErrorMessage || "Invalid Kitchen PIN."}
-                  </p>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isVerifyingAuth}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] hover:shadow-orange-500/50 active:scale-95 disabled:opacity-50"
-              >
-                {isVerifyingAuth ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Verifying…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={15} /> Sign In to Kitchen
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="mt-6 flex items-center justify-center border-t border-white/5 pt-5">
-              <Link
-                href="/"
-                className="text-xs font-semibold text-slate-500 transition hover:text-orange-400"
-              >
-                ← Return to Storefront
-              </Link>
-            </div>
-          </div>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <Loader2 size={32} className="animate-spin text-orange-500" />
       </div>
     );
   }
 
+  if (!isAuthenticated) {
+    return (
+      <StaffLoginForm
+        panel="kitchen"
+        panelDisplayName="Kitchen Display & KOT System"
+        panelIcon={<ChefHat size={28} />}
+        onSuccess={(session) => {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+        }}
+      />
+    );
+  }
   const filteredOrders = getFilteredOrders();
 
   /* ============================================ */

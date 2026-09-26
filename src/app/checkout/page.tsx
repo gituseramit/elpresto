@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,6 +26,10 @@ import {
   ChevronRight,
   BadgePercent,
   Loader2,
+  Navigation,
+  AlertTriangle,
+  Building2,
+  Store,
 } from "lucide-react";
 import Link from "next/link";
 import LocationPicker from "@/components/Map/LocationPicker";
@@ -37,7 +41,15 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { validatePromoCode, recordPromoUsage } from "@/lib/promoService";
 import { PromoCode } from "@/lib/types";
-import { DEFAULT_MAIN_BRANCH_ID } from "@/lib/branchService";
+import {
+  DEFAULT_MAIN_BRANCH_ID,
+  getActiveBranches,
+  resolveNearestBranch,
+  getBranchMenuAvailabilityMap,
+  isBranchOpen,
+  Branch,
+  ResolveNearestBranchResult,
+} from "@/lib/branchService";
 
 /* ------------------------------------------------------------------ */
 /* Reusable: Section header                                            */
@@ -921,6 +933,144 @@ export default function CheckoutPage() {
 
 
 
+                                {/* ---------------- Serving Outlet & Coverage ---------------- */}
+                <div className="rounded-3xl border border-white/60 bg-white/55 p-5 shadow-[0_10px_40px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <SectionHeader
+                      step={3}
+                      icon={<Building size={18} />}
+                      title="Serving Outlet"
+                      subtitle={
+                        formData.type === "delivery"
+                          ? "Nearest kitchen dispatching your delivery"
+                          : "Kitchen counter fulfilling your pickup"
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={handleManualLocationDetect}
+                      disabled={isDetectingLocation}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 shadow-sm transition hover:bg-orange-100 disabled:opacity-50"
+                    >
+                      {isDetectingLocation ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" /> Detecting…
+                        </>
+                      ) : (
+                        <>
+                          <Navigation size={13} /> Auto-Detect Outlet
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {resolvedBranch && (
+                    <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur-md">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-lg bg-orange-500/10 px-2 py-0.5 font-mono text-[10px] font-black text-orange-600">
+                              {resolvedBranch.code || "OUTLET"}
+                            </span>
+                            <h3 className="text-sm font-black text-gray-900 truncate">
+                              {resolvedBranch.name}
+                            </h3>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500 line-clamp-1">
+                            {resolvedBranch.address}
+                          </p>
+                        </div>
+
+                        {/* Live open status badge */}
+                        <div className="shrink-0">
+                          {isBranchOpen(resolvedBranch) ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-500/20">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Open Now · {resolvedBranch.operatingHours?.closeTime ? "Until " + resolvedBranch.operatingHours.closeTime : "Active"}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-500/20">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              Closed · Opens {resolvedBranch.operatingHours?.openTime || "10:00"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-3 text-[11px] font-semibold text-gray-600">
+                        <span className="inline-flex items-center gap-1">
+                          📍 <span className="font-bold text-gray-900">{deliveryCoords.distanceKm} km</span> from your location
+                        </span>
+                        <span className="text-gray-300">•</span>
+                        <span>
+                          Delivery Radius: <span className="font-bold text-gray-900">{resolvedBranch.deliveryRadiusKm} km</span>
+                        </span>
+                        {isDelivery && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span>
+                              Delivery Fee: <span className="font-bold text-orange-600">₹{deliveryFee === 0 ? "Free" : deliveryFee}</span>
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Manual branch switcher if more than 1 branch exists */}
+                      {branches.length > 1 && (
+                        <div className="mt-3 border-t border-gray-100 pt-3">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">
+                            Switch Fulfilling Outlet (Manual Override)
+                          </label>
+                          <select
+                            value={manualBranchId || resolvedBranch.id}
+                            onChange={(e) => setManualBranchId(e.target.value)}
+                            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-800 focus:border-orange-400 focus:outline-none"
+                          >
+                            {branches.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.name} ({b.code}) — {b.operatingHours?.isOpen !== false ? "Open" : "Closed"}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Out of delivery area warning */}
+                  {isDelivery && !deliveryCoords.isWithinRadius && (
+                    <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50/95 p-3.5 text-xs text-red-800">
+                      <AlertTriangle size={18} className="shrink-0 text-red-600 mt-0.5" />
+                      <div>
+                        <p className="font-black text-red-900">Delivery Not Available to This Area</p>
+                        <p className="mt-0.5">
+                          Sorry, we do not currently deliver to your location ({deliveryCoords.distanceKm} km away).
+                          Our maximum delivery radius from {resolvedBranch?.name || "our hub"} is {settings.deliveryRadiusKm} km.
+                        </p>
+                        <p className="mt-1 font-bold text-red-700">
+                          👉 Please choose Takeaway / Pickup, or select a delivery address closer to our kitchen.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Item out of stock at this branch warning */}
+                  {cartAvailabilityWarning.length > 0 && (
+                    <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50/95 p-3.5 text-xs text-amber-900">
+                      <AlertTriangle size={18} className="shrink-0 text-amber-600 mt-0.5" />
+                      <div>
+                        <p className="font-black text-amber-950">Branch Menu Availability Notice</p>
+                        <p className="mt-0.5">
+                          The following item{cartAvailabilityWarning.length > 1 ? "s are" : " is"} currently marked unavailable at this branch ({resolvedBranch?.name}):
+                        </p>
+                        <p className="mt-1 font-black text-amber-800">
+                          {cartAvailabilityWarning.join(", ")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* ---------------- Delivery details ---------------- */}
                 {isDelivery && (
                   <div className="space-y-4 rounded-3xl border border-white/60 bg-white/55 p-5 shadow-[0_10px_40px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-6">
@@ -1030,7 +1180,7 @@ export default function CheckoutPage() {
                 {/* ---------------- Payment ---------------- */}
                 <div className="rounded-3xl border border-white/60 bg-white/55 p-5 shadow-[0_10px_40px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-6">
                   <SectionHeader
-                    step={isDelivery ? 4 : 3}
+                    step={isDelivery ? 5 : 4}
                     icon={<CreditCard size={18} />}
                     title="Payment Method"
                     subtitle="Choose how you'd like to pay"
@@ -1308,3 +1458,4 @@ export default function CheckoutPage() {
     </>
   );
 }
+

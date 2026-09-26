@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
@@ -20,6 +20,7 @@ import { Order, MenuItem, Category } from "@/lib/types";
 import { printThermalReceipt, printKOT } from "@/lib/printer";
 import { initializeCategoriesIfEmpty } from "@/lib/categories";
 import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
+import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
 import { DEFAULT_MAIN_BRANCH_ID } from "@/lib/branchService";

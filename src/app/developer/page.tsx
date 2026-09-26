@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect } from "react";
 import {
@@ -29,6 +29,7 @@ import {
   Lock,
 } from "lucide-react";
 import Link from "next/link";
+import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { Branch, Kitchen, Counter, DeliveryPartner, StaffProfile, Order } from "@/lib/types";
 import {
   initDefaultBranchIfMissing,
@@ -81,6 +82,19 @@ export default function DeveloperDashboardPage() {
   const [activeSession, setActiveSession] = useState<DelegationSession | null>(null);
   const [developerPin, setDeveloperPin] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [staffSession, setStaffSession] = useState<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
+        const session = getStaffSession("developer");
+        if (session && isSessionValid(session)) {
+          setStaffSession(session);
+          setIsUnlocked(true);
+        }
+      });
+    }
+  }, []);
 
   // Real-time synchronization
   const refreshData = async () => {
@@ -169,51 +183,15 @@ export default function DeveloperDashboardPage() {
 
   if (!isUnlocked) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-2xl">
-          <div className="flex flex-col items-center text-center">
-            <div className="grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xl shadow-indigo-500/25 ring-1 ring-white/20 mb-4">
-              <Server size={30} />
-            </div>
-            <h1 className="text-xl font-black text-white">Centralized Developer Hub</h1>
-            <p className="mt-1 text-xs text-slate-400">
-              Multi-outlet architecture & role-based access management platform
-            </p>
-          </div>
-
-          <form onSubmit={handleUnlock} className="mt-6 space-y-4">
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase">
-                Master Developer PIN
-              </label>
-              <div className="relative mt-1">
-                <Lock size={15} className="absolute left-3.5 top-3 text-slate-500" />
-                <input
-                  type="password"
-                  required
-                  placeholder="Enter Master PIN"
-                  value={developerPin}
-                  onChange={(e) => setDeveloperPin(e.target.value)}
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950 pl-10 pr-4 py-2.5 text-sm text-white font-mono tracking-widest focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 py-3 text-xs font-black text-white shadow-lg shadow-indigo-500/25 transition active:scale-95"
-            >
-              Access Developer Environment
-            </button>
-
-            <div className="text-center pt-2">
-              <Link href="/admin" className="text-xs text-slate-500 hover:text-slate-300">
-                ← Return to Admin Panel
-              </Link>
-            </div>
-          </form>
-        </div>
-      </div>
+      <StaffLoginForm
+        panel="developer"
+        panelDisplayName="Developer Operations Hub"
+        panelIcon={<Server size={28} />}
+        onSuccess={(session) => {
+          setStaffSession(session);
+          setIsUnlocked(true);
+        }}
+      />
     );
   }
 
@@ -651,3 +629,4 @@ export default function DeveloperDashboardPage() {
     </div>
   );
 }
+

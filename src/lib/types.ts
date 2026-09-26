@@ -303,7 +303,8 @@ export type Permission =
   | "system.manage";
 
 export interface StaffProfile {
-  id: string; // Auth UID
+  id: string; // Firestore doc ID (same as staffId)
+  staffId: string; // Login username e.g. "kitchen_amit", "admin_root"
   name: string;
   email: string;
   phone?: string;
@@ -314,6 +315,13 @@ export interface StaffProfile {
   customPermissions?: Permission[];
   active: boolean;
   avatarUrl?: string;
+  // Authentication fields
+  passwordHash?: string; // bcrypt hash — NEVER returned to client
+  mustChangePassword?: boolean; // Force password reset on first login
+  lastLoginAt?: any;
+  lastLoginIP?: string;
+  failedLoginAttempts?: number;
+  lockedUntil?: any; // Firestore Timestamp — null when not locked
   createdAt?: any;
   updatedAt?: any;
 }

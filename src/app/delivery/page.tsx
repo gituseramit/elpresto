@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
@@ -47,6 +47,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
+import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
 
