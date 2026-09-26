@@ -7,7 +7,6 @@ import { useCartStore } from "@/store/useCartStore";
 import {
   ArrowLeft,
   CheckCircle2,
-  QrCode,
   X,
   User,
   Phone,
@@ -20,7 +19,6 @@ import {
   CreditCard,
   Tag,
   Sparkles,
-  Smartphone,
   ShieldCheck,
   Lock,
   PartyPopper,
@@ -135,8 +133,6 @@ export default function CheckoutPage() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showQR, setShowQR] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"razorpay" | "upi_qr">("razorpay");
   const [placedOrderSummary, setPlacedOrderSummary] = useState<any>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
   const [orderId, setOrderId] = useState("");
@@ -238,12 +234,6 @@ export default function CheckoutPage() {
   const finalTotal = discountedSubtotal + deliveryFee;
   const totalAmountStr = finalTotal.toFixed(2);
 
-  const upiId =
-    process.env.NEXT_PUBLIC_UPI_ID || "thanksamitkeshari-2@okaxis";
-  const upiString = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=ELPESTRO&am=${totalAmountStr}&cu=INR`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
-    upiString
-  )}`;
 
   /* promo */
   const handleApplyPromo = async () => {
@@ -293,10 +283,6 @@ export default function CheckoutPage() {
       return;
     }
     setPaymentError("");
-    if (paymentMethod === "upi_qr") {
-      setShowQR(true);
-      return;
-    }
     await initiateRazorpayCheckout();
   };
 
@@ -425,7 +411,7 @@ export default function CheckoutPage() {
   };
 
   const submitOrderWithPayment = async (
-    chosenMethod: "cash" | "online" | "upi_qr",
+    chosenMethod: "online",
     chosenPaymentStatus: "paid" | "pending",
     paymentDetails?: { razorpayOrderId?: string; razorpayPaymentId?: string }
   ) => {
@@ -510,7 +496,6 @@ export default function CheckoutPage() {
       }
 
       clearCart();
-      setShowQR(false);
       setOrderNumber(newOrderNum);
     } catch (error) {
       console.error("Error submitting order:", error);
@@ -520,9 +505,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleConfirmOnlinePayment = () => {
-    submitOrderWithPayment("upi_qr", "paid");
-  };
+
 
   /* ---------------- loading ---------------- */
   if (!hydrated) {
@@ -756,93 +739,184 @@ export default function CheckoutPage() {
                 </div>
 
                 {/* ---------------- Order mode ---------------- */}
+
                 <div className="rounded-3xl border border-white/60 bg-white/55 p-5 shadow-[0_10px_40px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-6">
+
                   <SectionHeader
+
                     step={2}
+
                     icon={<Truck size={18} />}
+
                     title="Delivery or Pickup"
+
                     subtitle="Choose how you want to receive your order"
+
                   />
+
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
                     {/* takeaway */}
+
                     <button
+
                       type="button"
+
                       onClick={() => setFormData({ ...formData, type: "takeaway" })}
+
                       className={`group relative overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
+
                         formData.type === "takeaway"
+
                           ? "border-transparent bg-gradient-to-br from-[#D92312] to-[#B8190B] text-white shadow-lg shadow-red-500/25"
+
                           : "border-white/60 bg-white/70 text-gray-800 shadow-sm hover:border-orange-200 hover:bg-white"
+
                       }`}
+
                     >
+
                       <span className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
+
                       <div className="relative flex items-start gap-3">
+
                         <div
+
                           className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-colors ${
+
                             formData.type === "takeaway"
+
                               ? "bg-white/20 text-white"
+
                               : "bg-orange-100 text-orange-600"
+
                           }`}
+
                         >
+
                           <ShoppingBag size={20} />
+
                         </div>
+
                         <div className="min-w-0 flex-1">
+
                           <p className="text-sm font-black">Pickup / Takeaway</p>
+
                           <p
+
                             className={`mt-0.5 text-[11px] font-semibold ${
+
                               formData.type === "takeaway"
+
                                 ? "text-white/80"
+
                                 : "text-gray-500"
+
                             }`}
+
                           >
+
                             Collect at counter · No delivery fee
+
                           </p>
+
                         </div>
+
                         {formData.type === "takeaway" && (
+
                           <CheckCircle2 size={18} className="shrink-0 text-white" />
+
                         )}
+
                       </div>
+
                     </button>
 
+
+
                     {/* delivery */}
+
                     <button
+
                       type="button"
+
                       onClick={() => setFormData({ ...formData, type: "delivery" })}
+
                       className={`group relative overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
+
                         formData.type === "delivery"
+
                           ? "border-transparent bg-gradient-to-br from-[#D92312] to-[#B8190B] text-white shadow-lg shadow-red-500/25"
+
                           : "border-white/60 bg-white/70 text-gray-800 shadow-sm hover:border-orange-200 hover:bg-white"
+
                       }`}
+
                     >
+
                       <span className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
+
                       <div className="relative flex items-start gap-3">
+
                         <div
+
                           className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-colors ${
+
                             formData.type === "delivery"
+
                               ? "bg-white/20 text-white"
+
                               : "bg-orange-100 text-orange-600"
+
                           }`}
+
                         >
+
                           <Truck size={20} />
+
                         </div>
+
                         <div className="min-w-0 flex-1">
+
                           <p className="text-sm font-black">Home Delivery</p>
+
                           <p
+
                             className={`mt-0.5 text-[11px] font-semibold ${
+
                               formData.type === "delivery"
+
                                 ? "text-white/80"
+
                                 : "text-gray-500"
+
                             }`}
+
                           >
+
                             Delivered to your door · ₹{settings.baseDeliveryFee}
+
                           </p>
+
                         </div>
+
                         {formData.type === "delivery" && (
+
                           <CheckCircle2 size={18} className="shrink-0 text-white" />
+
                         )}
+
                       </div>
+
                     </button>
+
                   </div>
+
                 </div>
+
+
+
+
 
                 {/* ---------------- Delivery details ---------------- */}
                 {isDelivery && (
@@ -959,81 +1033,36 @@ export default function CheckoutPage() {
                     subtitle="Choose how you'd like to pay"
                   />
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {/* Razorpay */}
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod("razorpay")}
-                      className={`group relative flex items-start gap-3 rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
-                        paymentMethod === "razorpay"
-                          ? "border-orange-500 bg-orange-500/10 shadow-md ring-1 ring-orange-400"
-                          : "border-white/60 bg-white/70 hover:border-orange-200 hover:bg-white"
-                      }`}
-                    >
-                      <div
-                        className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-all ${
-                          paymentMethod === "razorpay"
-                            ? "bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        <CreditCard size={20} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-black text-gray-900">
-                            Razorpay
-                          </p>
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
-                            Instant
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-[11px] font-semibold text-gray-500">
-                          UPI · Cards · Netbanking · Wallets
-                        </p>
-                      </div>
-                      {paymentMethod === "razorpay" && (
-                        <CheckCircle2 size={18} className="shrink-0 text-orange-500" />
-                      )}
-                    </button>
+                  <div>
 
-                    {/* UPI QR */}
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod("upi_qr")}
-                      className={`group relative flex items-start gap-3 rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
-                        paymentMethod === "upi_qr"
-                          ? "border-orange-500 bg-orange-500/10 shadow-md ring-1 ring-orange-400"
-                          : "border-white/60 bg-white/70 hover:border-orange-200 hover:bg-white"
-                      }`}
-                    >
-                      <div
-                        className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-all ${
-                          paymentMethod === "upi_qr"
-                            ? "bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-                            : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        <Smartphone size={20} />
+                    <div className="flex items-start gap-3 rounded-2xl border-2 border-orange-500 bg-orange-500/10 p-4 shadow-md ring-1 ring-orange-400">
+
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25">
+
+                        <CreditCard size={20} />
+
                       </div>
+
                       <div className="min-w-0 flex-1">
+
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-black text-gray-900">
-                            UPI / QR
-                          </p>
-                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-blue-700">
-                            GPay · PhonePe
-                          </span>
+
+                          <p className="text-sm font-black text-gray-900">Razorpay</p>
+
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">Secure &amp; Instant</span>
+
                         </div>
-                        <p className="mt-0.5 text-[11px] font-semibold text-gray-500">
-                          Scan QR or tap to launch your UPI app
-                        </p>
+
+                        <p className="mt-0.5 text-[11px] font-semibold text-gray-500">UPI · Cards · Netbanking · Wallets</p>
+
                       </div>
-                      {paymentMethod === "upi_qr" && (
-                        <CheckCircle2 size={18} className="shrink-0 text-orange-500" />
-                      )}
-                    </button>
+
+                      <CheckCircle2 size={18} className="shrink-0 text-orange-500" />
+
+                    </div>
+
                   </div>
+
 
                   {paymentError && (
                     <div className="mt-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50/90 p-3">
@@ -1234,18 +1263,21 @@ export default function CheckoutPage() {
                       <>
                         <Loader2 size={16} className="animate-spin" />
                         Processing Payment…
+
                       </>
-                    ) : paymentMethod === "upi_qr" ? (
-                      <>
-                        <QrCode size={17} />
-                        Pay ₹{Math.round(finalTotal)} via UPI
-                      </>
+
                     ) : (
+
                       <>
+
                         <Lock size={15} />
+
                         Pay ₹{Math.round(finalTotal)} Securely
+
                       </>
+
                     )}
+
                   </button>
 
                   {/* trust row */}
@@ -1265,94 +1297,6 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* UPI QR MODAL                                                  */}
-      {/* ============================================================ */}
-      {showQR && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="relative w-full max-w-sm overflow-hidden rounded-t-3xl border border-white/60 bg-white/85 shadow-2xl backdrop-blur-2xl sm:rounded-3xl">
-            {/* sheen */}
-            <span className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
-            {/* decorative blobs */}
-            <span className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-blue-400/20 blur-3xl" />
-            <span className="pointer-events-none absolute -bottom-16 -right-16 h-40 w-40 rounded-full bg-indigo-400/20 blur-3xl" />
-
-            {/* mobile drag handle */}
-            <div className="flex justify-center pt-3 sm:hidden">
-              <span className="h-1.5 w-12 rounded-full bg-gray-300" />
-            </div>
-
-            <button
-              onClick={() => setShowQR(false)}
-              className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/70 text-gray-600 shadow-sm transition hover:bg-white hover:text-gray-900 sm:top-5"
-              aria-label="Close"
-            >
-              <X size={16} />
-            </button>
-
-            <div className="relative px-6 pb-6 pt-5 sm:pt-7">
-              <div className="mb-5 text-center">
-                <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/60">
-                  <QrCode size={26} />
-                </div>
-                <h3 className="text-xl font-black tracking-tight text-gray-900">
-                  Pay via UPI
-                </h3>
-                <p className="mt-0.5 text-[11px] font-semibold text-gray-500">
-                  Scan the QR or tap the button below
-                </p>
-              </div>
-
-              <div className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-inner">
-                <div className="flex flex-col items-center">
-                  <img
-                    src={qrCodeUrl}
-                    alt="UPI Payment QR Code"
-                    className="hidden h-44 w-44 rounded-2xl bg-white p-2 shadow-sm md:block"
-                  />
-
-                  {/* Mobile UPI intent */}
-                  <a
-                    href={upiString}
-                    className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-500/30 transition active:scale-95 md:hidden"
-                  >
-                    <Smartphone size={16} /> Open UPI App
-                  </a>
-
-                  <div className="text-center">
-                    <p className="bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-3xl font-black text-transparent">
-                      ₹{totalAmountStr}
-                    </p>
-                    <p className="mt-1 max-w-full truncate font-mono text-[11px] font-bold text-gray-500">
-                      {upiId}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleConfirmOnlinePayment}
-                disabled={isSubmitting}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 py-4 text-sm font-black text-white shadow-lg shadow-emerald-500/30 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> Placing Order…
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={17} /> I&apos;ve Paid — Place Order
-                  </>
-                )}
-              </button>
-
-              <p className="mt-3 flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-gray-500">
-                <Lock size={10} /> Encrypted & secure transaction
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <Script
         src="https://checkout.razorpay.com/v1/checkout.js"
