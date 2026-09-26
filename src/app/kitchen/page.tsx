@@ -147,10 +147,47 @@ export default function KitchenSystem() {
   const [staffSession, setStaffSession] = useState<any>(null);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
 
+  /* ---- Init session ---- */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
+        const session = getStaffSession("kitchen");
+        if (session && isSessionValid(session)) {
+          setStaffSession(session);
+          setIsAuthenticated(true);
+        }
+        setIsVerifyingAuth(false);
+      });
+
+      const savedSettings = localStorage.getItem("elpestro_kitchen_settings");
+      if (savedSettings) {
+        try {
+          const parsed = JSON.parse(savedSettings);
+          setKitchenSettings(parsed);
+          setSortBy(parsed.defaultSort || "oldest");
+        } catch (e) {}
+      }
+    }
+
+    const unsub = subscribePanelStatus("kitchen", () => {
+      setIsAuthenticated(false);
+      setStaffSession(null);
+      import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("kitchen"));
+      sessionStorage.removeItem("elpestro_kitchen_auth");
+    });
+    return () => unsub();
+  }, []);
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setStaffSession(null);
+    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("kitchen"));
+    sessionStorage.removeItem("elpestro_kitchen_auth");
+  };
+
+
   /* ---- Layout ---- */
-  const [activeTab, setActiveTab] = useState<"new" | "preparing" | "completed" | "settings">(
-    "new"
-  );
+  const [activeTab, setActiveTab] = useState<"new" | "preparing" | "completed" | "settings">("new");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -180,7 +217,6 @@ export default function KitchenSystem() {
   const [selectedQuantity, setSelectedQuantity] = useState<number>(1);
   const [menuSearchFilter, setMenuSearchFilter] = useState<string>("");
   const [menuCategoryFilter, setMenuCategoryFilter] = useState<string>("All");
-
   const [newOrderCustomer, setNewOrderCustomer] = useState("Walk-in Customer");
   const [newOrderPhone, setNewOrderPhone] = useState("");
   const [newOrderType, setNewOrderType] = useState<"takeaway" | "delivery">("takeaway");
@@ -211,71 +247,6 @@ export default function KitchenSystem() {
     warningThresholdMins: 15,
     defaultSort: "oldest",
   });
-
-  /* ---- Init session ---- */
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const auth = sessionStorage.getItem("elpestro_kitchen_auth");
-      if (auth === "true") setIsAuthenticated(true);
-
-      const savedSettings = localStorage.getItem("elpestro_kitchen_settings");
-      if (savedSettings) {
-        try {
-          const parsed = JSON.parse(savedSettings);
-          setKitchenSettings(parsed);
-          setSortBy(parsed.defaultSort || "oldest");
-        } catch (e) {}
-      }
-    }
-
-    const unsub = subscribePanelStatus("kitchen", () => {
-      setPanelDisabled(true);
-      setIsAuthenticated(false);
-      sessionStorage.removeItem("elpestro_kitchen_auth");
-      setAuthError(true);
-      setAuthErrorMessage("The Kitchen Panel has been disabled by the administrator.");
-    });
-    return () => unsub();
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(false);
-    setAuthErrorMessage("");
-    setIsVerifyingAuth(true);
-
-    try {
-      const res = await verifyPanelAccess("kitchen", pinInput);
-      if (res.success) {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_kitchen_auth", "true");
-        setAuthError(false);
-      } else if (res.reason === "disabled") {
-        setAuthError(true);
-        setAuthErrorMessage("Access Denied: The Kitchen Panel is currently disabled by Admin.");
-      } else {
-        setAuthError(true);
-        setAuthErrorMessage("Invalid Kitchen Staff PIN. (Default: kitchen1234)");
-      }
-    } catch (err: any) {
-      if (pinInput === "kitchen1234" || pinInput === "admin9090") {
-        setIsAuthenticated(true);
-        sessionStorage.setItem("elpestro_kitchen_auth", "true");
-        setAuthError(false);
-      } else {
-        setAuthError(true);
-        setAuthErrorMessage("Invalid PIN or connection error.");
-      }
-    } finally {
-      setIsVerifyingAuth(false);
-    }
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    sessionStorage.removeItem("elpestro_kitchen_auth");
-  };
-
   /* ---- Realtime listener ---- */
   useEffect(() => {
     if (!isAuthenticated) return;
