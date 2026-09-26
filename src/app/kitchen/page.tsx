@@ -11,9 +11,7 @@ import {
   Bell,
   BellOff,
   LogOut,
-  Lock,
   Printer,
-  RotateCcw,
   Check,
   X,
   Plus,
@@ -28,28 +26,24 @@ import {
   Eye,
   Trash2,
   Edit,
-  Sparkles,
-  TrendingUp,
   ShoppingBag,
   Truck,
   AlertTriangle,
   Loader2,
-  Store,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
-import Link from "next/link";
 import { db } from "@/lib/firebase";
 import {
   collection,
-  onSnapshot,
-  query,
-  orderBy,
   doc,
   updateDoc,
   addDoc,
   Timestamp,
 } from "firebase/firestore";
 import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
-import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
+import { subscribePanelStatus } from "@/lib/panelAuth";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
 import { getActiveBranches, Branch } from "@/lib/branchService";
@@ -97,6 +91,8 @@ interface KitchenSettings {
   defaultSort: "oldest" | "newest";
 }
 
+type ThemeMode = "light" | "dark" | "system";
+
 /* ============== Reusable ============== */
 function StatusBadge({
   status,
@@ -108,25 +104,30 @@ function StatusBadge({
   isLate?: boolean;
 }) {
   let label = status;
-  let cls = "bg-amber-500/20 text-amber-300 ring-amber-500/30";
+  let cls =
+    "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30";
 
   if (status === "preparing") {
     label = "Preparing";
-    cls = "bg-orange-500/20 text-orange-300 ring-orange-500/30";
+    cls =
+      "bg-orange-100 text-orange-700 ring-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:ring-orange-500/30";
   } else if (status === "ready") {
     label = isDelivery ? "Ready · Awaiting Rider" : "Ready to Serve";
-    cls = "bg-emerald-500/20 text-emerald-300 ring-emerald-500/30";
+    cls =
+      "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:ring-emerald-500/30";
   } else if (status === "completed") {
     label = "Completed";
-    cls = "bg-slate-700/60 text-slate-300 ring-slate-600/40";
+    cls =
+      "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700/60 dark:text-slate-300 dark:ring-slate-600/40";
   } else if (status === "cancelled") {
     label = "Cancelled";
-    cls = "bg-red-500/20 text-red-300 ring-red-500/30";
+    cls =
+      "bg-red-100 text-red-700 ring-red-200 dark:bg-red-500/20 dark:text-red-300 dark:ring-red-500/30";
   } else if (status === "pending") {
     label = isLate ? "New · Delayed" : "New";
     cls = isLate
-      ? "bg-red-500/25 text-red-200 ring-red-500/40"
-      : "bg-amber-500/20 text-amber-300 ring-amber-500/30";
+      ? "bg-red-100 text-red-700 ring-red-200 dark:bg-red-500/25 dark:text-red-200 dark:ring-red-500/40"
+      : "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30";
   }
 
   return (
@@ -139,7 +140,7 @@ function StatusBadge({
 }
 
 const inputCls =
-  "w-full rounded-xl border border-white/5 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 shadow-sm transition focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40";
 
 /* ============== Page ============== */
 export default function KitchenSystem() {
@@ -149,7 +150,12 @@ export default function KitchenSystem() {
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string>("branch-main");
-  const isElevatedUser = staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
+  const isElevatedUser =
+    staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
+
+  /* ---- Theme ---- */
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
 
   /* ---- Init session ---- */
   useEffect(() => {
@@ -164,7 +170,9 @@ export default function KitchenSystem() {
           }
         }
         setIsVerifyingAuth(false);
-      getActiveBranches().then((list) => setBranches(list)).catch(() => {});
+        getActiveBranches()
+          .then((list) => setBranches(list))
+          .catch(() => {});
       });
 
       const savedSettings = localStorage.getItem("elpestro_kitchen_settings");
@@ -175,16 +183,53 @@ export default function KitchenSystem() {
           setSortBy(parsed.defaultSort || "oldest");
         } catch (e) {}
       }
+
+      const savedTheme = localStorage.getItem("elpestro_kitchen_theme") as ThemeMode | null;
+      if (savedTheme === "light" || savedTheme === "dark" || savedTheme === "system") {
+        setThemeMode(savedTheme);
+      }
     }
 
     const unsub = subscribePanelStatus("kitchen", () => {
       setIsAuthenticated(false);
       setStaffSession(null);
-      import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("kitchen"));
+      import("@/lib/staffAuth").then(({ clearStaffSession }) =>
+        clearStaffSession("kitchen")
+      );
       sessionStorage.removeItem("elpestro_kitchen_auth");
     });
     return () => unsub();
   }, []);
+
+  /* ---- Theme application ---- */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const root = document.documentElement;
+
+    const apply = () => {
+      let resolved: "light" | "dark";
+      if (themeMode === "system") {
+        resolved = window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+      } else {
+        resolved = themeMode;
+      }
+      setResolvedTheme(resolved);
+      if (resolved === "dark") root.classList.add("dark");
+      else root.classList.remove("dark");
+    };
+
+    apply();
+    localStorage.setItem("elpestro_kitchen_theme", themeMode);
+
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => {
+      if (themeMode === "system") apply();
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [themeMode]);
 
   const handleBranchSwitch = async (newBranchId: string) => {
     if (!isElevatedUser) return;
@@ -205,13 +250,16 @@ export default function KitchenSystem() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setStaffSession(null);
-    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("kitchen"));
+    import("@/lib/staffAuth").then(({ clearStaffSession }) =>
+      clearStaffSession("kitchen")
+    );
     sessionStorage.removeItem("elpestro_kitchen_auth");
   };
 
-
   /* ---- Layout ---- */
-  const [activeTab, setActiveTab] = useState<"new" | "preparing" | "completed" | "settings">("new");
+  const [activeTab, setActiveTab] = useState<
+    "new" | "preparing" | "completed" | "settings"
+  >("new");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -221,7 +269,9 @@ export default function KitchenSystem() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "takeaway" | "delivery">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "takeaway" | "delivery">(
+    "all"
+  );
   const [sortBy, setSortBy] = useState<"oldest" | "newest">("oldest");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
@@ -243,16 +293,24 @@ export default function KitchenSystem() {
   const [menuCategoryFilter, setMenuCategoryFilter] = useState<string>("All");
   const [newOrderCustomer, setNewOrderCustomer] = useState("Walk-in Customer");
   const [newOrderPhone, setNewOrderPhone] = useState("");
-  const [newOrderType, setNewOrderType] = useState<"takeaway" | "delivery">("takeaway");
+  const [newOrderType, setNewOrderType] = useState<"takeaway" | "delivery">(
+    "takeaway"
+  );
   const [newOrderInstructions, setNewOrderInstructions] = useState("");
-  const [newOrderPaymentMethod, setNewOrderPaymentMethod] = useState<"cash" | "online">("cash");
-  const [newOrderSource, setNewOrderSource] = useState<"kitchen" | "swiggy" | "zomato" | "website">("kitchen");
+  const [newOrderPaymentMethod, setNewOrderPaymentMethod] = useState<
+    "cash" | "online"
+  >("cash");
+  const [newOrderSource, setNewOrderSource] = useState<
+    "kitchen" | "swiggy" | "zomato" | "website"
+  >("kitchen");
   const [newOrderDiscount, setNewOrderDiscount] = useState<number>(0);
   const [newOrderItems, setNewOrderItems] = useState<
     { id: string; name: string; quantity: number; price: number }[]
   >([]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
-  const [createOrderSuccessMsg, setCreateOrderSuccessMsg] = useState<string | null>(null);
+  const [createOrderSuccessMsg, setCreateOrderSuccessMsg] = useState<string | null>(
+    null
+  );
 
   /* ---- Edit order ---- */
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -271,6 +329,7 @@ export default function KitchenSystem() {
     warningThresholdMins: 15,
     defaultSort: "oldest",
   });
+
   /* ---- Realtime listener ---- */
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -310,6 +369,7 @@ export default function KitchenSystem() {
       if (unsubscribe) unsubscribe();
     };
   }, [isAuthenticated, selectedDate, kitchenSettings.soundEnabled, activeBranchId]);
+
   /* ---- Live menu ---- */
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -388,7 +448,9 @@ export default function KitchenSystem() {
         ...extraData,
       });
       setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus, ...extraData } : o))
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: newStatus, ...extraData } : o
+        )
       );
     } catch (err: any) {
       alert("Error updating order: " + err.message);
@@ -400,7 +462,9 @@ export default function KitchenSystem() {
     try {
       await updateDoc(doc(db, "orders", noteOrder.id), { kitchenNotes: noteInput });
       setOrders((prev) =>
-        prev.map((o) => (o.id === noteOrder.id ? { ...o, kitchenNotes: noteInput } : o))
+        prev.map((o) =>
+          o.id === noteOrder.id ? { ...o, kitchenNotes: noteInput } : o
+        )
       );
       setNoteOrder(null);
       setNoteInput("");
@@ -489,7 +553,8 @@ export default function KitchenSystem() {
     const matchesSearch =
       !menuSearchFilter.trim() ||
       item.name.toLowerCase().includes(menuSearchFilter.toLowerCase()) ||
-      (item.category && item.category.toLowerCase().includes(menuSearchFilter.toLowerCase()));
+      (item.category &&
+        item.category.toLowerCase().includes(menuSearchFilter.toLowerCase()));
     return matchesCategory && matchesSearch;
   });
 
@@ -556,7 +621,10 @@ export default function KitchenSystem() {
   };
 
   /* ---- Create order ---- */
-  const handleCreateKitchenOrder = async (e?: React.FormEvent, printKOT: boolean = false) => {
+  const handleCreateKitchenOrder = async (
+    e?: React.FormEvent,
+    printKOT: boolean = false
+  ) => {
     if (e) e.preventDefault();
     if (newOrderItems.length === 0) {
       alert("Please add at least one item from the menu to the bill.");
@@ -609,7 +677,9 @@ export default function KitchenSystem() {
       const docRef = await addDoc(collection(db, "orders"), orderData);
       if (kitchenSettings.soundEnabled) playNotificationSound();
 
-      setCreateOrderSuccessMsg(`Ticket ${newOrderNum} created and sent to New Orders!`);
+      setCreateOrderSuccessMsg(
+        `Ticket ${newOrderNum} created and sent to New Orders!`
+      );
       setTimeout(() => setCreateOrderSuccessMsg(null), 5000);
 
       if (printKOT) handlePrintReceipt({ id: docRef.id, ...orderData });
@@ -635,7 +705,12 @@ export default function KitchenSystem() {
   const isOrderEditable = (order: Order) => {
     if (order.status === "completed" || order.status === "cancelled") return false;
     const src = (order.source || "").toLowerCase().trim();
-    if (src === "kitchen" || src === "on_spot" || src === "on spot" || src === "walk-in")
+    if (
+      src === "kitchen" ||
+      src === "on_spot" ||
+      src === "on spot" ||
+      src === "walk-in"
+    )
       return true;
     if (
       !order.source &&
@@ -719,7 +794,10 @@ export default function KitchenSystem() {
     }
     setIsSavingEdit(true);
     try {
-      const subtotal = editOrderItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0);
+      const subtotal = editOrderItems.reduce(
+        (acc, i) => acc + (i.price || 0) * i.quantity,
+        0
+      );
       const deliveryFee = editingOrder.deliveryFee || 0;
       const discount = editOrderDiscount || 0;
       const total = Math.max(0, subtotal + deliveryFee - discount);
@@ -736,7 +814,14 @@ export default function KitchenSystem() {
       setOrders((prev) =>
         prev.map((o) =>
           o.id === editingOrder.id
-            ? { ...o, items: editOrderItems, subtotal, discount, total, instructions: editOrderInstructions }
+            ? {
+                ...o,
+                items: editOrderItems,
+                subtotal,
+                discount,
+                total,
+                instructions: editOrderInstructions,
+              }
             : o
         )
       );
@@ -820,7 +905,7 @@ export default function KitchenSystem() {
   /* ============================================ */
   if (isVerifyingAuth) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
         <Loader2 size={32} className="animate-spin text-orange-500" />
       </div>
     );
@@ -845,12 +930,12 @@ export default function KitchenSystem() {
   /* MAIN DASHBOARD                                */
   /* ============================================ */
   return (
-    <div className="flex min-h-screen flex-col overflow-hidden bg-slate-950 text-slate-100 select-none lg:flex-row">
+    <div className="flex min-h-screen flex-col overflow-hidden bg-slate-50 text-slate-900 selection:bg-orange-200/60 lg:flex-row dark:bg-slate-950 dark:text-slate-100 dark:selection:bg-orange-500/30">
       {/* ===================================================== */}
       {/* SIDEBAR                                                */}
       {/* ===================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col justify-between border-r border-white/5 bg-slate-900/95 p-4 backdrop-blur-xl transition-transform duration-300 lg:relative lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col justify-between border-r border-slate-200 bg-white p-4 shadow-sm transition-transform duration-300 lg:relative lg:translate-x-0 dark:border-white/5 dark:bg-slate-900/95 dark:shadow-none dark:backdrop-blur-xl ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -862,15 +947,17 @@ export default function KitchenSystem() {
                 <ChefHat size={20} />
               </div>
               <div>
-                <h1 className="text-sm font-black leading-tight text-white">EL PRESTO</h1>
-                <p className="text-[10px] font-black uppercase tracking-widest text-orange-400">
+                <h1 className="text-sm font-black leading-tight text-slate-900 dark:text-white">
+                  EL PRESTO
+                </h1>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-500 dark:text-orange-400">
                   {kitchenSettings.stationName}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setIsSidebarOpen(false)}
-              className="rounded-lg bg-slate-800 p-1.5 text-slate-400 transition hover:text-white lg:hidden"
+              className="rounded-lg bg-slate-100 p-1.5 text-slate-500 transition hover:text-slate-900 lg:hidden dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
             >
               <X size={16} />
             </button>
@@ -889,19 +976,19 @@ export default function KitchenSystem() {
 
           {/* Quick stats */}
           <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-2xl border border-white/5 bg-slate-800/60 p-3">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-slate-800/60">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-500">
                 New
               </p>
-              <p className="mt-0.5 font-mono text-lg font-black text-amber-400">
+              <p className="mt-0.5 font-mono text-lg font-black text-amber-600 dark:text-amber-400">
                 {counts.pending}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-slate-800/60 p-3">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-slate-800/60">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-500">
                 Cooking
               </p>
-              <p className="mt-0.5 font-mono text-lg font-black text-orange-400">
+              <p className="mt-0.5 font-mono text-lg font-black text-orange-600 dark:text-orange-400">
                 {counts.preparing}
               </p>
             </div>
@@ -910,10 +997,33 @@ export default function KitchenSystem() {
           {/* Nav */}
           <nav className="space-y-1">
             {[
-              { id: "new", label: "New Orders", icon: Bell, badge: counts.pending, color: "text-amber-400" },
-              { id: "preparing", label: "Preparing", icon: Flame, badge: counts.preparing, color: "text-orange-400" },
-              { id: "completed", label: "Ready / Done", icon: CheckCircle, badge: counts.completedToday, color: "text-emerald-400" },
-              { id: "settings", label: "Settings", icon: SettingsIcon, color: "text-slate-400" },
+              {
+                id: "new",
+                label: "New Orders",
+                icon: Bell,
+                badge: counts.pending,
+                color: "text-amber-500",
+              },
+              {
+                id: "preparing",
+                label: "Preparing",
+                icon: Flame,
+                badge: counts.preparing,
+                color: "text-orange-500",
+              },
+              {
+                id: "completed",
+                label: "Ready / Done",
+                icon: CheckCircle,
+                badge: counts.completedToday,
+                color: "text-emerald-500",
+              },
+              {
+                id: "settings",
+                label: "Settings",
+                icon: SettingsIcon,
+                color: "text-slate-400",
+              },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -927,7 +1037,7 @@ export default function KitchenSystem() {
                   className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-black transition-all ${
                     isActive
                       ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-                      : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -937,7 +1047,9 @@ export default function KitchenSystem() {
                   {tab.badge !== undefined && tab.badge > 0 && (
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
-                        isActive ? "bg-white/25 text-white" : "bg-slate-800 text-slate-300"
+                        isActive
+                          ? "bg-white/25 text-white"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                       }`}
                     >
                       {tab.badge}
@@ -950,18 +1062,18 @@ export default function KitchenSystem() {
         </div>
 
         {/* Sidebar footer */}
-        <div className="space-y-3 border-t border-white/5 pt-4">
-          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-slate-800/60 px-3 py-2 text-[10px] font-bold text-slate-400">
+        <div className="space-y-3 border-t border-slate-200 pt-4 dark:border-white/5">
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500 dark:border-white/5 dark:bg-slate-800/60 dark:text-slate-400">
             <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
               Live Kitchen
             </span>
-            <span className="font-mono text-slate-500">UCER</span>
+            <span className="font-mono text-slate-400 dark:text-slate-500">UCER</span>
           </div>
 
           <button
             onClick={handleLogout}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 py-2.5 text-xs font-black text-red-400 transition hover:bg-red-500/20"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 py-2.5 text-xs font-black text-red-600 transition hover:bg-red-100 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
           >
             <LogOut size={14} /> Sign Out
           </button>
@@ -972,7 +1084,7 @@ export default function KitchenSystem() {
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden dark:bg-slate-950/70"
         />
       )}
 
@@ -981,23 +1093,47 @@ export default function KitchenSystem() {
       {/* ===================================================== */}
       <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex h-auto shrink-0 flex-col gap-2 border-b border-white/5 bg-slate-900/90 px-3 py-3 backdrop-blur-xl sm:px-4 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:py-0">
+        <header className="flex h-auto shrink-0 flex-col gap-2 border-b border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur-xl sm:px-4 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:py-0 dark:border-white/5 dark:bg-slate-900/90 dark:shadow-none">
           {/* Row 1: mobile menu + tabs + create */}
           <div className="flex items-center justify-between gap-2 lg:justify-start">
             <div className="flex min-w-0 items-center gap-2">
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="rounded-xl bg-slate-800 p-2 text-slate-400 transition hover:text-white lg:hidden"
+                className="rounded-xl bg-slate-100 p-2 text-slate-500 transition hover:text-slate-900 lg:hidden dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
               >
                 <MenuIcon size={16} />
               </button>
 
-              {/* Tabs (icons only on mobile, labeled on sm+) */}
-              <div className="flex items-center gap-1 rounded-2xl border border-white/5 bg-slate-950 p-1">
+              {/* Tabs */}
+              <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-white/5 dark:bg-slate-950 dark:shadow-none">
                 {[
-                  { id: "new", label: "New", icon: Bell, count: counts.pending, activeCls: "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30", countActive: "bg-slate-950 text-amber-400" },
-                  { id: "preparing", label: "Preparing", icon: Flame, count: counts.preparing, activeCls: "bg-orange-500 text-white shadow-md shadow-orange-500/30", countActive: "bg-white/25 text-white" },
-                  { id: "completed", label: "Ready", icon: CheckCircle, count: counts.completedToday, activeCls: "bg-emerald-500 text-white shadow-md shadow-emerald-500/30", countActive: "bg-white/25 text-white" },
+                  {
+                    id: "new",
+                    label: "New",
+                    icon: Bell,
+                    count: counts.pending,
+                    activeCls:
+                      "bg-amber-500 text-white shadow-md shadow-amber-500/30",
+                    countActive: "bg-white/25 text-white",
+                  },
+                  {
+                    id: "preparing",
+                    label: "Preparing",
+                    icon: Flame,
+                    count: counts.preparing,
+                    activeCls:
+                      "bg-orange-500 text-white shadow-md shadow-orange-500/30",
+                    countActive: "bg-white/25 text-white",
+                  },
+                  {
+                    id: "completed",
+                    label: "Ready",
+                    icon: CheckCircle,
+                    count: counts.completedToday,
+                    activeCls:
+                      "bg-emerald-500 text-white shadow-md shadow-emerald-500/30",
+                    countActive: "bg-white/25 text-white",
+                  },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const active = activeTab === tab.id;
@@ -1006,14 +1142,18 @@ export default function KitchenSystem() {
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id as any)}
                       className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-black transition sm:px-3.5 sm:text-xs ${
-                        active ? tab.activeCls : "text-slate-400 hover:text-white"
+                        active
+                          ? tab.activeCls
+                          : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                       }`}
                     >
                       <Icon size={13} />
                       <span className="hidden sm:inline">{tab.label}</span>
                       <span
                         className={`rounded-full px-1.5 text-[9px] font-black ${
-                          active ? tab.countActive : "bg-slate-800 text-slate-300"
+                          active
+                            ? tab.countActive
+                            : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                         }`}
                       >
                         {tab.count}
@@ -1024,8 +1164,9 @@ export default function KitchenSystem() {
               </div>
             </div>
 
-            {/* Right actions */}
+            {/* Right actions - mobile */}
             <div className="flex items-center gap-1.5 lg:hidden">
+              <ThemeQuickToggle themeMode={themeMode} setThemeMode={setThemeMode} />
               <button
                 onClick={() => {
                   const next = !kitchenSettings.soundEnabled;
@@ -1034,15 +1175,19 @@ export default function KitchenSystem() {
                 }}
                 className={`rounded-xl border p-2 text-xs font-bold transition ${
                   kitchenSettings.soundEnabled
-                    ? "border-orange-500/40 bg-orange-500/20 text-orange-400"
-                    : "border-white/5 bg-slate-800 text-slate-500"
+                    ? "border-orange-300 bg-orange-100 text-orange-600 dark:border-orange-500/40 dark:bg-orange-500/20 dark:text-orange-400"
+                    : "border-slate-200 bg-slate-100 text-slate-500 dark:border-white/5 dark:bg-slate-800 dark:text-slate-500"
                 }`}
               >
-                {kitchenSettings.soundEnabled ? <Bell size={15} /> : <BellOff size={15} />}
+                {kitchenSettings.soundEnabled ? (
+                  <Bell size={15} />
+                ) : (
+                  <BellOff size={15} />
+                )}
               </button>
               <button
                 onClick={toggleFullScreen}
-                className="rounded-xl border border-white/5 bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700"
+                className="rounded-xl border border-slate-200 bg-slate-100 p-2 text-slate-600 transition hover:bg-slate-200 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 {isFullScreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </button>
@@ -1061,7 +1206,7 @@ export default function KitchenSystem() {
 
             <div className="relative flex-1 sm:flex-none">
               <Search
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
                 size={13}
               />
               <input
@@ -1069,16 +1214,16 @@ export default function KitchenSystem() {
                 placeholder="Search ticket or item…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2 pl-8 pr-3 text-xs text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20 sm:w-48"
+                className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-900 placeholder-slate-400 shadow-sm transition focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 sm:w-48 dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40"
               />
             </div>
 
             <button
               onClick={() => setSortBy(sortBy === "oldest" ? "newest" : "oldest")}
-              className="flex items-center gap-1.5 rounded-xl border border-white/5 bg-slate-800 px-2.5 py-2 text-xs font-bold text-slate-300 transition hover:bg-slate-700"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-100 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               title="Toggle sort order"
             >
-              <ArrowUpDown size={13} className="text-orange-400" />
+              <ArrowUpDown size={13} className="text-orange-500" />
               <span className="hidden sm:inline">
                 {sortBy === "oldest" ? "Oldest" : "Newest"}
               </span>
@@ -1087,7 +1232,6 @@ export default function KitchenSystem() {
             <DateNavigator
               selectedDate={selectedDate}
               onChangeDate={setSelectedDate}
-              variant="dark"
               orderCount={orders.length}
               isLoading={loading}
             />
@@ -1095,7 +1239,7 @@ export default function KitchenSystem() {
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as any)}
-              className="rounded-xl border border-white/5 bg-slate-800 px-2.5 py-2 text-xs font-bold text-slate-300 focus:outline-none"
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-bold text-slate-600 shadow-sm focus:outline-none dark:border-white/5 dark:bg-slate-800 dark:text-slate-300"
             >
               <option value="all">All</option>
               <option value="takeaway">Takeaway / Counter</option>
@@ -1103,6 +1247,8 @@ export default function KitchenSystem() {
             </select>
 
             <div className="hidden items-center gap-1.5 lg:flex">
+              <ThemeQuickToggle themeMode={themeMode} setThemeMode={setThemeMode} />
+
               <button
                 onClick={() => {
                   const next = !kitchenSettings.soundEnabled;
@@ -1111,17 +1257,21 @@ export default function KitchenSystem() {
                 }}
                 className={`rounded-xl border p-2 text-xs font-bold transition ${
                   kitchenSettings.soundEnabled
-                    ? "border-orange-500/40 bg-orange-500/20 text-orange-400"
-                    : "border-white/5 bg-slate-800 text-slate-500"
+                    ? "border-orange-300 bg-orange-100 text-orange-600 dark:border-orange-500/40 dark:bg-orange-500/20 dark:text-orange-400"
+                    : "border-slate-200 bg-slate-100 text-slate-500 dark:border-white/5 dark:bg-slate-800 dark:text-slate-500"
                 }`}
                 title="Kitchen audio chime"
               >
-                {kitchenSettings.soundEnabled ? <Bell size={15} /> : <BellOff size={15} />}
+                {kitchenSettings.soundEnabled ? (
+                  <Bell size={15} />
+                ) : (
+                  <BellOff size={15} />
+                )}
               </button>
 
               <button
                 onClick={toggleFullScreen}
-                className="rounded-xl border border-white/5 bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700"
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:bg-slate-100 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 title="Toggle fullscreen"
               >
                 {isFullScreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -1132,11 +1282,12 @@ export default function KitchenSystem() {
 
         {/* New order alert */}
         {newOrderAlert && (
-          <div className="flex items-center justify-between gap-3 border-b border-orange-400/30 bg-gradient-to-r from-orange-600 to-amber-600 px-4 py-2.5 text-xs font-black text-white shadow-lg">
+          <div className="flex items-center justify-between gap-3 border-b border-orange-300 bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-lg dark:border-orange-400/30 dark:from-orange-600 dark:to-amber-600">
             <div className="flex items-center gap-2">
               <span className="text-base">🔔</span>
               <span className="truncate">
-                NEW ORDER — {newOrderAlert.orderNumber} · {newOrderAlert.items?.length} items
+                NEW ORDER — {newOrderAlert.orderNumber} ·{" "}
+                {newOrderAlert.items?.length} items
               </span>
             </div>
             <button
@@ -1149,7 +1300,7 @@ export default function KitchenSystem() {
         )}
 
         {createOrderSuccessMsg && (
-          <div className="flex items-center justify-between gap-3 border-b border-emerald-400/30 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-black text-white shadow-lg">
+          <div className="flex items-center justify-between gap-3 border-b border-emerald-300 bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-black text-white shadow-lg dark:border-emerald-400/30 dark:from-emerald-600 dark:to-teal-600">
             <span className="flex items-center gap-2">
               <CheckCircle size={15} /> {createOrderSuccessMsg}
             </span>
@@ -1165,42 +1316,89 @@ export default function KitchenSystem() {
         {/* ===================================================== */}
         {/* TAB CONTENT                                            */}
         {/* ===================================================== */}
-        <main className="flex-1 overflow-y-auto bg-slate-950 p-3 md:p-5">
+        <main className="flex-1 overflow-y-auto bg-slate-50 p-3 md:p-5 dark:bg-slate-950">
           {activeTab === "settings" ? (
             /* ==================== SETTINGS ==================== */
             <div className="mx-auto max-w-xl space-y-5">
-              <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
-                <div className="mb-5 flex items-center gap-3 border-b border-white/5 pb-4">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none">
+                <div className="mb-5 flex items-center gap-3 border-b border-slate-100 pb-4 dark:border-white/5">
                   <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25">
                     <SettingsIcon size={18} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-white">Station Preferences</h3>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                      Station Preferences
+                    </h3>
                     <p className="text-[11px] font-semibold text-slate-500">
-                      Sound, identity, and display thresholds
+                      Sound, identity, display and theme
                     </p>
                   </div>
                 </div>
 
                 <div className="space-y-4 text-xs">
+                  {/* Theme */}
                   <div>
-                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-400">
+                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                      Appearance
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "light" as ThemeMode, label: "Light", icon: Sun },
+                        { id: "dark" as ThemeMode, label: "Dark", icon: Moon },
+                        { id: "system" as ThemeMode, label: "System", icon: Monitor },
+                      ].map((t) => {
+                        const Icon = t.icon;
+                        const active = themeMode === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setThemeMode(t.id)}
+                            className={`flex flex-col items-center gap-1.5 rounded-2xl border py-3 text-[11px] font-black transition ${
+                              active
+                                ? "border-orange-400 bg-orange-50 text-orange-600 shadow-sm dark:border-orange-500/50 dark:bg-orange-500/15 dark:text-orange-300"
+                                : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:border-white/5 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
+                            }`}
+                          >
+                            <Icon size={18} />
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[11px] font-semibold text-slate-500">
+                      System follows your device's light/dark setting automatically.
+                      {themeMode === "system" && (
+                        <span className="ml-1 text-orange-500">
+                          (Currently {resolvedTheme})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Kitchen / Station Name
                     </label>
                     <input
                       type="text"
                       value={kitchenSettings.stationName}
                       onChange={(e) =>
-                        setKitchenSettings({ ...kitchenSettings, stationName: e.target.value })
+                        setKitchenSettings({
+                          ...kitchenSettings,
+                          stationName: e.target.value,
+                        })
                       }
                       className={inputCls}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-slate-800/40 p-3.5">
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 dark:border-white/5 dark:bg-slate-800/40">
                     <div className="min-w-0">
-                      <p className="font-black text-white">Audio Alert</p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                      <p className="font-black text-slate-900 dark:text-white">
+                        Audio Alert
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                         Chime on new orders
                       </p>
                     </div>
@@ -1214,7 +1412,7 @@ export default function KitchenSystem() {
                       className={`shrink-0 rounded-xl px-3 py-1.5 font-black transition ${
                         kitchenSettings.soundEnabled
                           ? "bg-orange-500 text-white shadow-md shadow-orange-500/25"
-                          : "bg-slate-700 text-slate-400"
+                          : "bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400"
                       }`}
                     >
                       {kitchenSettings.soundEnabled ? "Enabled" : "Muted"}
@@ -1222,7 +1420,7 @@ export default function KitchenSystem() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-400">
+                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Lateness Warning (Minutes)
                     </label>
                     <input
@@ -1244,19 +1442,22 @@ export default function KitchenSystem() {
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-400">
+                    <label className="mb-1.5 block font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Default Sort Order
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() =>
-                          setKitchenSettings({ ...kitchenSettings, defaultSort: "oldest" })
+                          setKitchenSettings({
+                            ...kitchenSettings,
+                            defaultSort: "oldest",
+                          })
                         }
                         className={`rounded-xl border py-2.5 text-xs font-black transition ${
                           kitchenSettings.defaultSort === "oldest"
-                            ? "border-orange-500 bg-orange-500/15 text-orange-300"
-                            : "border-white/5 bg-slate-800 text-slate-400 hover:text-white"
+                            ? "border-orange-400 bg-orange-50 text-orange-600 dark:border-orange-500 dark:bg-orange-500/15 dark:text-orange-300"
+                            : "border-slate-200 bg-white text-slate-500 hover:text-slate-900 dark:border-white/5 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
                         }`}
                       >
                         Oldest First (FIFO)
@@ -1264,12 +1465,15 @@ export default function KitchenSystem() {
                       <button
                         type="button"
                         onClick={() =>
-                          setKitchenSettings({ ...kitchenSettings, defaultSort: "newest" })
+                          setKitchenSettings({
+                            ...kitchenSettings,
+                            defaultSort: "newest",
+                          })
                         }
                         className={`rounded-xl border py-2.5 text-xs font-black transition ${
                           kitchenSettings.defaultSort === "newest"
-                            ? "border-orange-500 bg-orange-500/15 text-orange-300"
-                            : "border-white/5 bg-slate-800 text-slate-400 hover:text-white"
+                            ? "border-orange-400 bg-orange-50 text-orange-600 dark:border-orange-500 dark:bg-orange-500/15 dark:text-orange-300"
+                            : "border-slate-200 bg-white text-slate-500 hover:text-slate-900 dark:border-white/5 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
                         }`}
                       >
                         Newest First
@@ -1299,14 +1503,20 @@ export default function KitchenSystem() {
             <div className="space-y-4">
               {loading ? (
                 <div className="flex flex-col items-center py-24 text-center">
-                  <Loader2 size={36} className="animate-spin text-orange-500 mx-auto" />
-                  <p className="mt-4 text-sm font-black text-slate-300">Loading orders...</p>
-                  <p className="mt-1 text-xs text-slate-500">Fetching live orders for {selectedDate}</p>
+                  <Loader2 size={36} className="mx-auto animate-spin text-orange-500" />
+                  <p className="mt-4 text-sm font-black text-slate-700 dark:text-slate-300">
+                    Loading orders...
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Fetching live orders for {selectedDate}
+                  </p>
                 </div>
               ) : error ? (
-                <div className="flex flex-col items-center py-24 text-center text-red-400">
-                  <AlertTriangle size={36} className="text-red-500 mx-auto mb-2" />
-                  <p className="text-sm font-black text-red-300">Unable to load orders. Please try again.</p>
+                <div className="flex flex-col items-center py-24 text-center">
+                  <AlertTriangle size={36} className="mx-auto mb-2 text-red-500" />
+                  <p className="text-sm font-black text-red-600 dark:text-red-300">
+                    Unable to load orders. Please try again.
+                  </p>
                   <p className="mt-1 text-xs text-red-500">{error}</p>
                   <button
                     type="button"
@@ -1318,14 +1528,15 @@ export default function KitchenSystem() {
                 </div>
               ) : filteredOrders.length === 0 ? (
                 <div className="flex flex-col items-center py-24 text-center">
-                  <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-900">
-                    <ChefHat size={38} className="text-slate-700" />
+                  <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-100 dark:bg-slate-900">
+                    <ChefHat size={38} className="text-slate-400 dark:text-slate-700" />
                   </div>
-                  <p className="mt-4 text-sm font-black text-slate-400">
+                  <p className="mt-4 text-sm font-black text-slate-500 dark:text-slate-400">
                     No orders found for this date.
                   </p>
-                  <p className="mt-1 max-w-xs text-xs font-semibold text-slate-600">
-                    No orders recorded for {formatISTDisplayDate(selectedDate)} under this filter.
+                  <p className="mt-1 max-w-xs text-xs font-semibold text-slate-400 dark:text-slate-600">
+                    No orders recorded for {formatISTDisplayDate(selectedDate)} under
+                    this filter.
                   </p>
                   <button
                     type="button"
@@ -1350,40 +1561,48 @@ export default function KitchenSystem() {
                       order.items
                         ?.slice(0, 3)
                         .map((i: any) => `${i.quantity}× ${i.name}`)
-                        .join(" • ") + (itemCount > 3 ? ` +${itemCount - 3} more` : "");
+                        .join(" • ") +
+                      (itemCount > 3 ? ` +${itemCount - 3} more` : "");
                     const src = (order.source || "").toLowerCase().trim();
-                    const isExternal = src === "swiggy" || src === "zomato" || src === "website";
+                    const isExternal =
+                      src === "swiggy" || src === "zomato" || src === "website";
 
-                    // Card background based on status
-                    let cardBg = "bg-slate-900 border-white/5 hover:border-white/15";
+                    // Card background
+                    let cardBg =
+                      "bg-white border-slate-200 hover:border-slate-300 hover:shadow-md dark:bg-slate-900 dark:border-white/5 dark:hover:border-white/15 dark:hover:shadow-xl";
                     if (isLate) {
-                      cardBg = "bg-gradient-to-br from-red-950/40 to-slate-900 border-red-500/50 ring-1 ring-red-500/30";
+                      cardBg =
+                        "bg-red-50 border-red-300 ring-1 ring-red-200 hover:shadow-md dark:bg-gradient-to-br dark:from-red-950/40 dark:to-slate-900 dark:border-red-500/50 dark:ring-red-500/30";
                     } else if (order.status === "preparing") {
-                      cardBg = "bg-gradient-to-br from-blue-950/30 to-slate-900 border-blue-500/30 hover:border-blue-500/50";
+                      cardBg =
+                        "bg-blue-50/60 border-blue-200 hover:border-blue-300 hover:shadow-md dark:bg-gradient-to-br dark:from-blue-950/30 dark:to-slate-900 dark:border-blue-500/30 dark:hover:border-blue-500/50";
                     } else if (order.status === "ready") {
-                      cardBg = "bg-gradient-to-br from-emerald-950/25 to-slate-900 border-emerald-500/30 hover:border-emerald-500/50";
+                      cardBg =
+                        "bg-emerald-50/60 border-emerald-200 hover:border-emerald-300 hover:shadow-md dark:bg-gradient-to-br dark:from-emerald-950/25 dark:to-slate-900 dark:border-emerald-500/30 dark:hover:border-emerald-500/50";
                     } else if (order.status === "pending") {
-                      cardBg = "bg-gradient-to-br from-amber-950/25 to-slate-900 border-amber-500/30 hover:border-amber-500/50";
+                      cardBg =
+                        "bg-amber-50/60 border-amber-200 hover:border-amber-300 hover:shadow-md dark:bg-gradient-to-br dark:from-amber-950/25 dark:to-slate-900 dark:border-amber-500/30 dark:hover:border-amber-500/50";
                     } else if (
                       order.status === "completed" ||
                       order.deliveryStatus === "delivered"
                     ) {
-                      cardBg = "bg-slate-900/60 border-white/5";
+                      cardBg =
+                        "bg-slate-50 border-slate-200 dark:bg-slate-900/60 dark:border-white/5";
                     }
 
                     return (
                       <div
                         key={order.id}
                         onClick={() => setSelectedOrder(order)}
-                        className={`flex cursor-pointer flex-col overflow-hidden rounded-2xl border transition-all duration-150 hover:-translate-y-0.5 hover:shadow-xl active:scale-[0.98] ${cardBg}`}
+                        className={`flex cursor-pointer flex-col overflow-hidden rounded-2xl border shadow-sm transition-all duration-150 hover:-translate-y-0.5 active:scale-[0.98] ${cardBg}`}
                       >
                         {/* Card header */}
                         <div className="flex items-start justify-between gap-2 px-3.5 pt-3.5">
                           <div className="min-w-0">
-                            <p className="font-mono text-base font-black tracking-tight text-white">
+                            <p className="font-mono text-base font-black tracking-tight text-slate-900 dark:text-white">
                               {order.orderNumber}
                             </p>
-                            <p className="mt-0.5 truncate text-[11px] font-bold text-slate-400">
+                            <p className="mt-0.5 truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
                               {order.customerName}
                             </p>
                           </div>
@@ -1393,8 +1612,8 @@ export default function KitchenSystem() {
                               isLate
                                 ? "animate-pulse bg-red-500 text-white shadow-md shadow-red-500/40"
                                 : elapsed >= 10
-                                ? "bg-amber-500/20 text-amber-300"
-                                : "bg-slate-800 text-slate-300"
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                             }`}
                           >
                             <Clock size={9} />
@@ -1407,8 +1626,8 @@ export default function KitchenSystem() {
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${
                               isDelivery
-                                ? "bg-orange-500/15 text-orange-300 ring-orange-500/30"
-                                : "bg-slate-700/60 text-slate-300 ring-slate-600/40"
+                                ? "bg-orange-100 text-orange-700 ring-orange-200 dark:bg-orange-500/15 dark:text-orange-300 dark:ring-orange-500/30"
+                                : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700/60 dark:text-slate-300 dark:ring-slate-600/40"
                             }`}
                           >
                             {isDelivery ? <Truck size={9} /> : <ShoppingBag size={9} />}
@@ -1422,27 +1641,27 @@ export default function KitchenSystem() {
                           />
 
                           {isExternal && (
-                            <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-300 ring-1 ring-purple-500/30">
+                            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-700 ring-1 ring-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-500/30">
                               {src}
                             </span>
                           )}
                         </div>
 
                         {/* Items preview */}
-                        <div className="mt-3 flex-1 border-t border-white/5 px-3.5 py-2.5">
+                        <div className="mt-3 flex-1 border-t border-slate-100 px-3.5 py-2.5 dark:border-white/5">
                           <div className="flex items-center justify-between">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-500">
                               Items
                             </p>
-                            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-300">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-white/5 dark:text-slate-300">
                               {itemCount}
                             </span>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-xs font-semibold leading-snug text-slate-200">
+                          <p className="mt-1 line-clamp-2 text-xs font-semibold leading-snug text-slate-700 dark:text-slate-200">
                             {itemSummary || "No items"}
                           </p>
                           {order.instructions && (
-                            <p className="mt-2 line-clamp-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-300 ring-1 ring-amber-500/20">
+                            <p className="mt-2 line-clamp-2 rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20">
                               ⚠️ {order.instructions}
                             </p>
                           )}
@@ -1450,12 +1669,14 @@ export default function KitchenSystem() {
 
                         {/* Actions */}
                         <div
-                          className="flex items-center gap-1.5 border-t border-white/5 bg-slate-950/40 px-2.5 py-2.5"
+                          className="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/70 px-2.5 py-2.5 dark:border-white/5 dark:bg-slate-950/40"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {order.status === "pending" && (
                             <button
-                              onClick={() => handleUpdateStatus(order.id, "preparing")}
+                              onClick={() =>
+                                handleUpdateStatus(order.id, "preparing")
+                              }
                               className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.02] active:scale-95"
                             >
                               <Flame size={11} /> Start
@@ -1466,7 +1687,9 @@ export default function KitchenSystem() {
                               onClick={() =>
                                 handleUpdateStatus(order.id, "ready", {
                                   kitchenCompletedAt: new Date().toISOString(),
-                                  ...(isDelivery ? { deliveryStatus: "pending" } : {}),
+                                  ...(isDelivery
+                                    ? { deliveryStatus: "pending" }
+                                    : {}),
                                 })
                               }
                               className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition hover:scale-[1.02] hover:bg-emerald-500 active:scale-95"
@@ -1487,18 +1710,18 @@ export default function KitchenSystem() {
                             </button>
                           )}
                           {order.status === "ready" && isDelivery && (
-                            <span className="flex flex-1 items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-amber-400">
+                            <span className="flex flex-1 items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
                               <Truck size={11} /> Awaiting Rider
                             </span>
                           )}
                           {(order.status === "completed" ||
                             order.deliveryStatus === "delivered") && (
-                            <span className="flex flex-1 items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                            <span className="flex flex-1 items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                               <CheckCircle size={11} /> Done
                             </span>
                           )}
                           {order.status === "cancelled" && (
-                            <span className="flex flex-1 items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-400">
+                            <span className="flex flex-1 items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-400">
                               <X size={11} /> Cancelled
                             </span>
                           )}
@@ -1508,7 +1731,7 @@ export default function KitchenSystem() {
                               e.stopPropagation();
                               setSelectedOrder(order);
                             }}
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:border-white/5 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
                             title="View details"
                           >
                             <Eye size={13} />
@@ -1529,29 +1752,27 @@ export default function KitchenSystem() {
       {/* ===================================================== */}
       {selectedOrder && (
         <div
-          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 backdrop-blur-md sm:items-center sm:p-4"
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/40 backdrop-blur-md sm:items-center sm:p-4 dark:bg-black/75"
           onClick={() => setSelectedOrder(null)}
         >
           <div
-            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-slate-900/95 shadow-[0_25px_80px_-20px_rgba(0,0,0,0.7)] backdrop-blur-2xl sm:rounded-3xl"
+            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-[0_25px_80px_-20px_rgba(0,0,0,0.25)] sm:rounded-3xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-[0_25px_80px_-20px_rgba(0,0,0,0.7)] dark:backdrop-blur-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Mobile drag handle */}
             <div className="flex justify-center pt-3 sm:hidden">
-              <span className="h-1.5 w-12 rounded-full bg-slate-700" />
+              <span className="h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
             </div>
 
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/5 p-4 sm:p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 p-4 sm:p-5 dark:border-white/5">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="font-mono text-xl font-black text-orange-400">
+                <span className="font-mono text-xl font-black text-orange-500 dark:text-orange-400">
                   {selectedOrder.orderNumber}
                 </span>
                 <span
                   className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ring-1 ${
                     (selectedOrder.type || selectedOrder.orderType) === "delivery"
-                      ? "bg-orange-500/15 text-orange-300 ring-orange-500/30"
-                      : "bg-slate-700/60 text-slate-300 ring-slate-600/40"
+                      ? "bg-orange-100 text-orange-700 ring-orange-200 dark:bg-orange-500/15 dark:text-orange-300 dark:ring-orange-500/30"
+                      : "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-700/60 dark:text-slate-300 dark:ring-slate-600/40"
                   }`}
                 >
                   {(selectedOrder.type || selectedOrder.orderType) === "delivery" ? (
@@ -1573,52 +1794,53 @@ export default function KitchenSystem() {
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Body */}
             <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-white/5 bg-slate-800/40 p-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-slate-800/40">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     Customer
                   </p>
-                  <p className="mt-1 truncate text-sm font-black text-white">
+                  <p className="mt-1 truncate text-sm font-black text-slate-900 dark:text-white">
                     {selectedOrder.customerName}
                   </p>
                   {selectedOrder.phone && selectedOrder.phone !== "Counter" && (
-                    <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-400">
+                    <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                       {selectedOrder.phone}
                     </p>
                   )}
                 </div>
-                <div className="rounded-2xl border border-white/5 bg-slate-800/40 p-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-slate-800/40">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     Time Elapsed
                   </p>
-                  <p className="mt-1 font-mono text-sm font-black text-white">
+                  <p className="mt-1 font-mono text-sm font-black text-slate-900 dark:text-white">
                     {getElapsedMinutes(selectedOrder.createdAt)} min
                   </p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                     {selectedOrder.createdAt?.toDate
                       ? selectedOrder.createdAt
                           .toDate()
-                          .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                          .toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
                       : "—"}
                   </p>
                 </div>
               </div>
 
-              {/* Items */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     Order Items
                   </p>
-                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-300">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-white/5 dark:text-slate-300">
                     {selectedOrder.items?.length || 0}
                   </span>
                 </div>
@@ -1626,18 +1848,18 @@ export default function KitchenSystem() {
                   {selectedOrder.items?.map((item, idx) => (
                     <div
                       key={idx}
-                      className="flex items-start justify-between gap-3 rounded-2xl border border-white/5 bg-slate-800/40 p-3"
+                      className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-slate-800/40"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-500/15 font-mono text-sm font-black text-orange-400 ring-1 ring-orange-500/30">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-100 font-mono text-sm font-black text-orange-600 ring-1 ring-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:ring-orange-500/30">
                           {item.quantity}×
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-black text-white">
+                          <p className="truncate text-sm font-black text-slate-900 dark:text-white">
                             {item.name}
                           </p>
                           {item.notes && (
-                            <p className="mt-0.5 truncate text-[10px] font-bold text-amber-300">
+                            <p className="mt-0.5 truncate text-[10px] font-bold text-amber-600 dark:text-amber-300">
                               📝 {item.notes}
                             </p>
                           )}
@@ -1648,36 +1870,35 @@ export default function KitchenSystem() {
                 </div>
               </div>
 
-              {/* Notes */}
               {(selectedOrder.instructions || selectedOrder.kitchenNotes) && (
                 <div className="space-y-2">
                   {selectedOrder.instructions && (
-                    <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3">
+                    <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
                       <AlertTriangle
                         size={15}
-                        className="mt-0.5 shrink-0 text-amber-400"
+                        className="mt-0.5 shrink-0 text-amber-500 dark:text-amber-400"
                       />
                       <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-500">
                           Customer Note
                         </p>
-                        <p className="mt-0.5 text-xs font-bold text-amber-200">
+                        <p className="mt-0.5 text-xs font-bold text-amber-800 dark:text-amber-200">
                           {selectedOrder.instructions}
                         </p>
                       </div>
                     </div>
                   )}
                   {selectedOrder.kitchenNotes && (
-                    <div className="flex items-start gap-2 rounded-2xl border border-purple-500/30 bg-purple-500/10 p-3">
+                    <div className="flex items-start gap-2 rounded-2xl border border-purple-200 bg-purple-50 p-3 dark:border-purple-500/30 dark:bg-purple-500/10">
                       <ChefHat
                         size={15}
-                        className="mt-0.5 shrink-0 text-purple-400"
+                        className="mt-0.5 shrink-0 text-purple-500 dark:text-purple-400"
                       />
                       <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-purple-500">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-purple-600 dark:text-purple-500">
                           Kitchen Note
                         </p>
-                        <p className="mt-0.5 text-xs font-bold text-purple-200">
+                        <p className="mt-0.5 text-xs font-bold text-purple-800 dark:text-purple-200">
                           {selectedOrder.kitchenNotes}
                         </p>
                       </div>
@@ -1686,21 +1907,22 @@ export default function KitchenSystem() {
                 </div>
               )}
 
-              {/* Totals */}
-              <div className="rounded-2xl border border-white/5 bg-slate-800/40 p-3 text-xs">
-                <div className="flex justify-between text-slate-400">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-white/5 dark:bg-slate-800/40">
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span className="font-bold">Total Amount</span>
-                  <span className="font-mono text-base font-black text-emerald-400">
+                  <span className="font-mono text-base font-black text-emerald-600 dark:text-emerald-400">
                     ₹{Math.round(selectedOrder.total || 0)}
                   </span>
                 </div>
-                <div className="mt-2 flex items-center justify-between border-t border-white/5 pt-2">
-                  <span className="font-bold text-slate-400">Payment</span>
+                <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 dark:border-white/5">
+                  <span className="font-bold text-slate-500 dark:text-slate-400">
+                    Payment
+                  </span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ring-1 ${
                       selectedOrder.paymentStatus === "paid"
-                        ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
-                        : "bg-amber-500/15 text-amber-300 ring-amber-500/30"
+                        ? "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30"
+                        : "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-500/30"
                     }`}
                   >
                     {selectedOrder.paymentStatus === "paid"
@@ -1711,15 +1933,14 @@ export default function KitchenSystem() {
               </div>
             </div>
 
-            {/* Footer actions */}
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/5 bg-slate-950/60 p-4">
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/70 p-4 dark:border-white/5 dark:bg-slate-950/60">
               <button
                 onClick={() => {
                   setSelectedOrder(null);
                   setNoteOrder(selectedOrder);
                   setNoteInput(selectedOrder.kitchenNotes || "");
                 }}
-                className="flex items-center gap-1.5 rounded-xl border border-white/5 bg-slate-800 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-300 transition hover:bg-slate-700"
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 <FileText size={13} /> Add Note
               </button>
@@ -1728,7 +1949,7 @@ export default function KitchenSystem() {
                   setSelectedOrder(null);
                   handlePrintReceipt(selectedOrder);
                 }}
-                className="flex items-center gap-1.5 rounded-xl border border-white/5 bg-slate-800 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-300 transition hover:bg-slate-700"
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 <Printer size={13} /> Print
               </button>
@@ -1740,7 +1961,7 @@ export default function KitchenSystem() {
                       setSelectedOrder(null);
                       handleStartEditOrder(selectedOrder);
                     }}
-                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-amber-300 transition hover:bg-amber-500/20"
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-amber-700 transition hover:bg-amber-200 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
                   >
                     <Edit size={13} /> Edit
                   </button>
@@ -1752,7 +1973,7 @@ export default function KitchenSystem() {
                       setSelectedOrder(null);
                       handleCancelOrder(selectedOrder);
                     }}
-                    className="flex items-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-red-400 transition hover:bg-red-500/20"
+                    className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-red-600 transition hover:bg-red-100 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
                   >
                     <X size={13} /> Cancel
                   </button>
@@ -1766,18 +1987,20 @@ export default function KitchenSystem() {
       {/* KITCHEN NOTE MODAL                                     */}
       {/* ===================================================== */}
       {noteOrder && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-          <div className="w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-slate-900/95 shadow-2xl backdrop-blur-2xl">
-            <div className="flex items-center justify-between border-b border-white/5 p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md dark:bg-black/75">
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900/95 dark:backdrop-blur-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-white/5">
               <div className="min-w-0">
-                <h3 className="text-sm font-black text-white">Add Kitchen Note</h3>
-                <p className="mt-0.5 truncate font-mono text-[11px] font-bold text-orange-400">
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  Add Kitchen Note
+                </h3>
+                <p className="mt-0.5 truncate font-mono text-[11px] font-bold text-orange-500 dark:text-orange-400">
                   {noteOrder.orderNumber}
                 </p>
               </div>
               <button
                 onClick={() => setNoteOrder(null)}
-                className="grid h-8 w-8 place-items-center rounded-full bg-slate-800 text-slate-400 transition hover:text-white"
+                className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:text-slate-900 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
               >
                 <X size={14} />
               </button>
@@ -1789,14 +2012,14 @@ export default function KitchenSystem() {
                 onChange={(e) => setNoteInput(e.target.value)}
                 placeholder="e.g. Extra sauce, 2 min delay on fries…"
                 rows={3}
-                className="w-full resize-none rounded-2xl border border-white/5 bg-slate-800/80 px-3.5 py-2.5 text-xs font-semibold text-white placeholder-slate-500 focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-900 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40"
               />
             </div>
 
-            <div className="flex gap-2 border-t border-white/5 bg-slate-950/60 p-4">
+            <div className="flex gap-2 border-t border-slate-100 bg-slate-50/70 p-4 dark:border-white/5 dark:bg-slate-950/60">
               <button
                 onClick={() => setNoteOrder(null)}
-                className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-black text-slate-300 transition hover:bg-slate-700"
+                className="flex-1 rounded-xl bg-slate-200 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
@@ -1815,18 +2038,17 @@ export default function KitchenSystem() {
       {/* CREATE ORDER MODAL (POS)                               */}
       {/* ===================================================== */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/85 p-0 backdrop-blur-md sm:items-center sm:p-4">
-          <div className="flex h-full w-full flex-col overflow-hidden border border-white/10 bg-slate-900/95 backdrop-blur-2xl sm:h-[92vh] sm:max-w-6xl sm:rounded-3xl">
-            {/* Modal header */}
-            <div className="flex items-center justify-between gap-3 border-b border-white/5 bg-slate-900/90 p-4">
+        <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-slate-900/40 p-0 backdrop-blur-md sm:items-center sm:p-4 dark:bg-black/85">
+          <div className="flex h-full w-full flex-col overflow-hidden border border-slate-200 bg-white sm:h-[92vh] sm:max-w-6xl sm:rounded-3xl dark:border-white/10 dark:bg-slate-900/95 dark:backdrop-blur-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-white/90 p-4 dark:border-white/5 dark:bg-slate-900/90">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25">
                   <ChefHat size={20} />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="flex flex-wrap items-center gap-2 text-sm font-black text-white sm:text-base">
+                  <h3 className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-900 sm:text-base dark:text-white">
                     POS Order Entry
-                    <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-400 ring-1 ring-orange-500/30">
+                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-600 ring-1 ring-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:ring-orange-500/30">
                       Live
                     </span>
                   </h3>
@@ -1837,22 +2059,20 @@ export default function KitchenSystem() {
               </div>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-white"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Body: 2 column on lg */}
-            <div className="flex min-h-0 flex-1 flex-col divide-y divide-white/5 overflow-hidden lg:flex-row lg:divide-y-0 lg:divide-x lg:divide-white/5">
+            <div className="flex min-h-0 flex-1 flex-col divide-y divide-slate-100 overflow-hidden lg:flex-row lg:divide-x lg:divide-y-0 dark:divide-white/5">
               {/* LEFT: Menu */}
-              <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-950/40 p-3 sm:p-4">
-                {/* Quick dropdown */}
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/70 p-3 sm:p-4 dark:bg-slate-950/40">
                 <div className="mb-3 shrink-0 space-y-3">
-                  <div className="rounded-2xl border border-white/5 bg-slate-900/70 p-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/5 dark:bg-slate-900/70 dark:shadow-none">
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        <Utensils size={12} className="text-orange-400" />
+                      <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        <Utensils size={12} className="text-orange-500" />
                         Quick Dropdown Selector
                       </span>
                     </div>
@@ -1860,7 +2080,7 @@ export default function KitchenSystem() {
                       <select
                         value={selectedMenuItemId}
                         onChange={(e) => setSelectedMenuItemId(e.target.value)}
-                        className="flex-1 rounded-xl border border-white/5 bg-slate-800 px-3 py-2 text-xs font-semibold text-white focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-white/5 dark:bg-slate-800 dark:text-white"
                       >
                         <option value="">— Choose item —</option>
                         {availableMenuItems.map((item) => (
@@ -1870,21 +2090,23 @@ export default function KitchenSystem() {
                         ))}
                       </select>
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center overflow-hidden rounded-xl border border-white/5 bg-slate-800">
+                        <div className="flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/5 dark:bg-slate-800">
                           <button
                             type="button"
-                            onClick={() => setSelectedQuantity((q) => Math.max(1, q - 1))}
-                            className="px-2.5 py-2 text-slate-400 transition hover:text-white"
+                            onClick={() =>
+                              setSelectedQuantity((q) => Math.max(1, q - 1))
+                            }
+                            className="px-2.5 py-2 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                           >
                             −
                           </button>
-                          <span className="min-w-[24px] px-2 text-center font-mono text-xs font-black text-white">
+                          <span className="min-w-[24px] px-2 text-center font-mono text-xs font-black text-slate-900 dark:text-white">
                             {selectedQuantity}
                           </span>
                           <button
                             type="button"
                             onClick={() => setSelectedQuantity((q) => q + 1)}
-                            className="px-2.5 py-2 text-slate-400 transition hover:text-white"
+                            className="px-2.5 py-2 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                           >
                             +
                           </button>
@@ -1901,10 +2123,9 @@ export default function KitchenSystem() {
                     </div>
                   </div>
 
-                  {/* Search */}
                   <div className="relative">
                     <Search
-                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
                       size={14}
                     />
                     <input
@@ -1912,11 +2133,10 @@ export default function KitchenSystem() {
                       placeholder="Search menu item or category…"
                       value={menuSearchFilter}
                       onChange={(e) => setMenuSearchFilter(e.target.value)}
-                      className="w-full rounded-2xl border border-white/5 bg-slate-900 px-4 py-2.5 pl-10 text-xs font-semibold text-white placeholder-slate-500 focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 pl-10 text-xs font-semibold text-slate-900 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-white/5 dark:bg-slate-900 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40"
                     />
                   </div>
 
-                  {/* Categories */}
                   <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto pb-1">
                     {["All", ...CATEGORIES].map((cat) => (
                       <button
@@ -1926,7 +2146,7 @@ export default function KitchenSystem() {
                         className={`whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-black transition ${
                           menuCategoryFilter === cat
                             ? "border-orange-500/30 bg-orange-500 text-white shadow-md shadow-orange-500/25"
-                            : "border-white/5 bg-slate-900 text-slate-400 hover:text-white"
+                            : "border-slate-200 bg-white text-slate-500 hover:text-slate-900 dark:border-white/5 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white"
                         }`}
                       >
                         {cat}
@@ -1935,15 +2155,14 @@ export default function KitchenSystem() {
                   </div>
                 </div>
 
-                {/* Items grid */}
                 <div className="flex-1 overflow-y-auto pr-1">
                   {filteredDropdownMenuItems.length === 0 ? (
                     <div className="flex flex-col items-center py-16 text-center">
-                      <Utensils size={32} className="text-slate-700" />
+                      <Utensils size={32} className="text-slate-300 dark:text-slate-700" />
                       <p className="mt-2 text-xs font-black text-slate-500">
                         No items match
                       </p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400 dark:text-slate-600">
                         Try another category or clear your search
                       </p>
                     </div>
@@ -1955,10 +2174,10 @@ export default function KitchenSystem() {
                           <div
                             key={item.id}
                             onClick={() => !inBill && handleAddItemDirect(item)}
-                            className={`group flex cursor-pointer flex-col justify-between rounded-2xl border p-3 transition-all ${
+                            className={`group flex cursor-pointer flex-col justify-between rounded-2xl border p-3 shadow-sm transition-all ${
                               inBill
-                                ? "border-orange-500/50 bg-orange-950/25 ring-1 ring-orange-500/30"
-                                : "border-white/5 bg-slate-900 hover:-translate-y-0.5 hover:border-orange-500/40 hover:bg-slate-900/80"
+                                ? "border-orange-400 bg-orange-50 ring-1 ring-orange-200 dark:border-orange-500/50 dark:bg-orange-950/25 dark:ring-orange-500/30"
+                                : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-orange-400 hover:shadow-md dark:border-white/5 dark:bg-slate-900 dark:hover:border-orange-500/40 dark:hover:bg-slate-900/80"
                             }`}
                           >
                             <div>
@@ -1967,39 +2186,39 @@ export default function KitchenSystem() {
                                   className="h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20"
                                   title="Veg"
                                 />
-                                <span className="truncate text-[10px] font-black uppercase tracking-widest text-orange-400">
+                                <span className="truncate text-[10px] font-black uppercase tracking-widest text-orange-500 dark:text-orange-400">
                                   {item.category || "Menu"}
                                 </span>
                               </div>
-                              <p className="line-clamp-2 text-xs font-bold leading-snug text-white">
+                              <p className="line-clamp-2 text-xs font-bold leading-snug text-slate-900 dark:text-white">
                                 {item.name}
                               </p>
                             </div>
 
-                            <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2">
-                              <span className="font-mono text-sm font-black text-emerald-400">
+                            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-white/5">
+                              <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">
                                 ₹{item.price}
                               </span>
 
                               {inBill ? (
                                 <div
                                   onClick={(e) => e.stopPropagation()}
-                                  className="flex items-center overflow-hidden rounded-lg border border-orange-500/50 bg-orange-500/20"
+                                  className="flex items-center overflow-hidden rounded-lg border border-orange-300 bg-orange-100 dark:border-orange-500/50 dark:bg-orange-500/20"
                                 >
                                   <button
                                     type="button"
                                     onClick={() => handleUpdateItemQuantity(item.id, -1)}
-                                    className="px-2 py-0.5 text-xs text-orange-300 transition hover:bg-orange-500/40"
+                                    className="px-2 py-0.5 text-xs text-orange-600 transition hover:bg-orange-200 dark:text-orange-300 dark:hover:bg-orange-500/40"
                                   >
                                     −
                                   </button>
-                                  <span className="px-1.5 font-mono text-xs font-black text-white">
+                                  <span className="px-1.5 font-mono text-xs font-black text-slate-900 dark:text-white">
                                     {inBill.quantity}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => handleUpdateItemQuantity(item.id, 1)}
-                                    className="px-2 py-0.5 text-xs text-orange-300 transition hover:bg-orange-500/40"
+                                    className="px-2 py-0.5 text-xs text-orange-600 transition hover:bg-orange-200 dark:text-orange-300 dark:hover:bg-orange-500/40"
                                   >
                                     +
                                   </button>
@@ -2011,7 +2230,7 @@ export default function KitchenSystem() {
                                     e.stopPropagation();
                                     handleAddItemDirect(item);
                                   }}
-                                  className="flex items-center gap-1 rounded-lg border border-white/5 bg-slate-800 px-2.5 py-1 text-xs font-black text-slate-300 transition group-hover:border-orange-500 group-hover:bg-orange-500 group-hover:text-white"
+                                  className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600 transition group-hover:border-orange-500 group-hover:bg-orange-500 group-hover:text-white dark:border-white/5 dark:bg-slate-800 dark:text-slate-300"
                                 >
                                   <Plus size={12} strokeWidth={3} /> Add
                                 </button>
@@ -2026,16 +2245,16 @@ export default function KitchenSystem() {
               </div>
 
               {/* RIGHT: Live bill */}
-              <div className="flex w-full flex-col overflow-hidden bg-slate-900/60 lg:w-[420px]">
-                <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-4 py-3">
+              <div className="flex w-full flex-col overflow-hidden bg-slate-50 lg:w-[420px] dark:bg-slate-900/60">
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-white/5">
                   <div className="flex items-center gap-2">
-                    <div className="grid h-7 w-7 place-items-center rounded-xl bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/25">
+                    <div className="grid h-7 w-7 place-items-center rounded-xl bg-orange-100 text-orange-600 ring-1 ring-orange-200 dark:bg-orange-500/15 dark:text-orange-400 dark:ring-orange-500/25">
                       <Receipt size={13} />
                     </div>
-                    <span className="text-[11px] font-black uppercase tracking-widest text-white">
+                    <span className="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">
                       Live Bill
                     </span>
-                    <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-300">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-white/5 dark:text-slate-300">
                       {newOrderItems.reduce((acc, i) => acc + i.quantity, 0)}
                     </span>
                   </div>
@@ -2043,7 +2262,7 @@ export default function KitchenSystem() {
                     <button
                       type="button"
                       onClick={() => setNewOrderItems([])}
-                      className="text-[10px] font-black uppercase tracking-wider text-red-400 transition hover:text-red-300"
+                      className="text-[10px] font-black uppercase tracking-wider text-red-500 transition hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
                     >
                       Clear
                     </button>
@@ -2053,25 +2272,49 @@ export default function KitchenSystem() {
                 <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 text-xs">
                   {/* Order source */}
                   <div>
-                    <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Order Source
                     </label>
                     <div className="grid grid-cols-2 gap-1.5">
                       {[
-                        { id: "kitchen", label: "On Spot", icon: "🏪", sub: "Editable", color: "emerald" },
-                        { id: "swiggy", label: "Swiggy", icon: "🟠", sub: "Locked", color: "orange" },
-                        { id: "zomato", label: "Zomato", icon: "🔴", sub: "Locked", color: "red" },
-                        { id: "website", label: "Website", icon: "🌐", sub: "Locked", color: "blue" },
+                        {
+                          id: "kitchen",
+                          label: "On Spot",
+                          icon: "🏪",
+                          sub: "Editable",
+                          color: "emerald",
+                        },
+                        {
+                          id: "swiggy",
+                          label: "Swiggy",
+                          icon: "🟠",
+                          sub: "Locked",
+                          color: "orange",
+                        },
+                        {
+                          id: "zomato",
+                          label: "Zomato",
+                          icon: "🔴",
+                          sub: "Locked",
+                          color: "red",
+                        },
+                        {
+                          id: "website",
+                          label: "Website",
+                          icon: "🌐",
+                          sub: "Locked",
+                          color: "blue",
+                        },
                       ].map((s) => {
                         const active = newOrderSource === s.id;
                         const activeCls =
                           s.color === "emerald"
-                            ? "bg-emerald-500/15 border-emerald-500/60 text-emerald-300"
+                            ? "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-500/15 dark:border-emerald-500/60 dark:text-emerald-300"
                             : s.color === "orange"
-                            ? "bg-orange-500/15 border-orange-500/60 text-orange-300"
+                            ? "bg-orange-100 border-orange-300 text-orange-700 dark:bg-orange-500/15 dark:border-orange-500/60 dark:text-orange-300"
                             : s.color === "red"
-                            ? "bg-red-500/15 border-red-500/60 text-red-300"
-                            : "bg-blue-500/15 border-blue-500/60 text-blue-300";
+                            ? "bg-red-100 border-red-300 text-red-700 dark:bg-red-500/15 dark:border-red-500/60 dark:text-red-300"
+                            : "bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-500/15 dark:border-blue-500/60 dark:text-blue-300";
                         return (
                           <button
                             key={s.id}
@@ -2080,7 +2323,7 @@ export default function KitchenSystem() {
                             className={`flex flex-col rounded-xl border p-2 text-left transition ${
                               active
                                 ? activeCls
-                                : "border-white/5 bg-slate-800/50 text-slate-400 hover:text-white"
+                                : "border-slate-200 bg-white text-slate-500 hover:text-slate-900 dark:border-white/5 dark:bg-slate-800/50 dark:text-slate-400 dark:hover:text-white"
                             }`}
                           >
                             <span className="flex items-center gap-1.5 text-[11px] font-black">
@@ -2095,10 +2338,9 @@ export default function KitchenSystem() {
                     </div>
                   </div>
 
-                  {/* Customer */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                         Customer
                       </label>
                       <input
@@ -2106,11 +2348,11 @@ export default function KitchenSystem() {
                         value={newOrderCustomer}
                         onChange={(e) => setNewOrderCustomer(e.target.value)}
                         placeholder="Name / Table"
-                        className="w-full rounded-xl border border-white/5 bg-slate-800/80 px-2.5 py-2 text-xs font-semibold text-white placeholder-slate-500 focus:border-orange-500/40 focus:outline-none"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                         Phone
                       </label>
                       <input
@@ -2118,25 +2360,24 @@ export default function KitchenSystem() {
                         value={newOrderPhone}
                         onChange={(e) => setNewOrderPhone(e.target.value)}
                         placeholder="Optional"
-                        className="w-full rounded-xl border border-white/5 bg-slate-800/80 px-2.5 py-2 text-xs font-semibold text-white placeholder-slate-500 focus:border-orange-500/40 focus:outline-none"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40"
                       />
                     </div>
                   </div>
 
-                  {/* Type + Payment */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                         Order Type
                       </label>
-                      <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/5 bg-slate-800 p-0.5">
+                      <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-0.5 dark:border-white/5 dark:bg-slate-800">
                         <button
                           type="button"
                           onClick={() => setNewOrderType("takeaway")}
                           className={`rounded-lg py-1.5 text-[10px] font-black transition ${
                             newOrderType === "takeaway"
                               ? "bg-orange-500 text-white shadow-sm"
-                              : "text-slate-400"
+                              : "text-slate-500 dark:text-slate-400"
                           }`}
                         >
                           Pickup
@@ -2147,7 +2388,7 @@ export default function KitchenSystem() {
                           className={`rounded-lg py-1.5 text-[10px] font-black transition ${
                             newOrderType === "delivery"
                               ? "bg-orange-500 text-white shadow-sm"
-                              : "text-slate-400"
+                              : "text-slate-500 dark:text-slate-400"
                           }`}
                         >
                           Dine-in
@@ -2156,17 +2397,17 @@ export default function KitchenSystem() {
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                         Payment
                       </label>
-                      <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/5 bg-slate-800 p-0.5">
+                      <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-0.5 dark:border-white/5 dark:bg-slate-800">
                         <button
                           type="button"
                           onClick={() => setNewOrderPaymentMethod("cash")}
                           className={`rounded-lg py-1.5 text-[10px] font-black transition ${
                             newOrderPaymentMethod === "cash"
                               ? "bg-amber-500 text-white shadow-sm"
-                              : "text-slate-400"
+                              : "text-slate-500 dark:text-slate-400"
                           }`}
                         >
                           💵 Cash
@@ -2177,7 +2418,7 @@ export default function KitchenSystem() {
                           className={`rounded-lg py-1.5 text-[10px] font-black transition ${
                             newOrderPaymentMethod === "online"
                               ? "bg-emerald-500 text-white shadow-sm"
-                              : "text-slate-400"
+                              : "text-slate-500 dark:text-slate-400"
                           }`}
                         >
                           📱 Online
@@ -2186,9 +2427,8 @@ export default function KitchenSystem() {
                     </div>
                   </div>
 
-                  {/* Instructions */}
                   <div>
-                    <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Cooking Notes
                     </label>
                     <input
@@ -2196,24 +2436,23 @@ export default function KitchenSystem() {
                       value={newOrderInstructions}
                       onChange={(e) => setNewOrderInstructions(e.target.value)}
                       placeholder="e.g. Extra cheese…"
-                      className="w-full rounded-xl border border-white/5 bg-slate-800/80 px-2.5 py-2 text-xs font-semibold text-white placeholder-slate-500 focus:border-orange-500/40 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-900 placeholder-slate-400 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:placeholder-slate-500 dark:focus:border-orange-500/40"
                     />
                   </div>
 
-                  {/* Items list */}
-                  <div className="overflow-hidden rounded-2xl border border-white/5 bg-slate-950/60">
-                    <div className="flex items-center justify-between bg-slate-900/80 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/5 dark:bg-slate-950/60">
+                    <div className="flex items-center justify-between bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:bg-slate-900/80">
                       <span>Item</span>
                       <span>Qty × Price</span>
                     </div>
-                    <div className="divide-y divide-white/5">
+                    <div className="divide-y divide-slate-100 dark:divide-white/5">
                       {newOrderItems.length === 0 ? (
                         <div className="flex flex-col items-center py-8">
-                          <ShoppingBag size={24} className="text-slate-700" />
+                          <ShoppingBag size={24} className="text-slate-300 dark:text-slate-700" />
                           <p className="mt-2 text-[11px] font-black text-slate-500">
                             Cart is empty
                           </p>
-                          <p className="mt-0.5 text-[10px] font-semibold text-slate-600">
+                          <p className="mt-0.5 text-[10px] font-semibold text-slate-400 dark:text-slate-600">
                             Tap items on the left to add
                           </p>
                         </div>
@@ -2221,10 +2460,10 @@ export default function KitchenSystem() {
                         newOrderItems.map((item) => (
                           <div
                             key={item.id}
-                            className="flex items-center justify-between gap-2 px-3 py-2.5 transition hover:bg-slate-800/30"
+                            className="flex items-center justify-between gap-2 px-3 py-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800/30"
                           >
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-bold text-white">
+                              <p className="truncate text-xs font-bold text-slate-900 dark:text-white">
                                 {item.name}
                               </p>
                               <p className="mt-0.5 font-mono text-[10px] font-semibold text-slate-500">
@@ -2233,34 +2472,34 @@ export default function KitchenSystem() {
                             </div>
 
                             <div className="flex shrink-0 items-center gap-2">
-                              <div className="flex items-center overflow-hidden rounded-lg border border-white/5 bg-slate-900">
+                              <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/5 dark:bg-slate-900">
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateItemQuantity(item.id, -1)}
-                                  className="px-1.5 py-0.5 text-slate-400 transition hover:text-white"
+                                  className="px-1.5 py-0.5 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                                 >
                                   −
                                 </button>
-                                <span className="px-1.5 font-mono text-xs font-black text-orange-400">
+                                <span className="px-1.5 font-mono text-xs font-black text-orange-500 dark:text-orange-400">
                                   {item.quantity}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateItemQuantity(item.id, 1)}
-                                  className="px-1.5 py-0.5 text-slate-400 transition hover:text-white"
+                                  className="px-1.5 py-0.5 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                                 >
                                   +
                                 </button>
                               </div>
 
-                              <span className="min-w-[46px] text-right font-mono text-xs font-black text-white">
+                              <span className="min-w-[46px] text-right font-mono text-xs font-black text-slate-900 dark:text-white">
                                 ₹{item.price * item.quantity}
                               </span>
 
                               <button
                                 type="button"
                                 onClick={() => handleRemoveItemFromOrder(item.id)}
-                                className="p-0.5 text-slate-500 transition hover:text-red-400"
+                                className="p-0.5 text-slate-400 transition hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
                               >
                                 <Trash2 size={12} />
                               </button>
@@ -2272,36 +2511,45 @@ export default function KitchenSystem() {
                   </div>
                 </div>
 
-                {/* Bill footer */}
-                <div className="shrink-0 space-y-2.5 border-t border-white/5 px-4 py-3">
+                <div className="shrink-0 space-y-2.5 border-t border-slate-100 bg-white px-4 py-3 dark:border-white/5 dark:bg-transparent">
                   <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between text-slate-400">
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
                       <span className="font-bold">Subtotal</span>
-                      <span className="font-mono font-black text-white">
-                        ₹{newOrderItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0)}
+                      <span className="font-mono font-black text-slate-900 dark:text-white">
+                        ₹
+                        {newOrderItems.reduce(
+                          (acc, i) => acc + (i.price || 0) * i.quantity,
+                          0
+                        )}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-slate-400">
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
                       <span className="font-bold">Discount (₹)</span>
                       <input
                         type="number"
                         min="0"
                         value={newOrderDiscount || ""}
-                        onChange={(e) => setNewOrderDiscount(Number(e.target.value) || 0)}
+                        onChange={(e) =>
+                          setNewOrderDiscount(Number(e.target.value) || 0)
+                        }
                         placeholder="0"
-                        className="w-20 rounded-lg border border-white/5 bg-slate-800 px-2 py-1 text-right font-mono text-xs font-black text-white focus:border-orange-500/40 focus:outline-none"
+                        className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-right font-mono text-xs font-black text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-white/5 pt-2">
-                      <span className="text-sm font-black text-white">Grand Total</span>
-                      <span className="font-mono text-lg font-black text-emerald-400">
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 dark:border-white/5">
+                      <span className="text-sm font-black text-slate-900 dark:text-white">
+                        Grand Total
+                      </span>
+                      <span className="font-mono text-lg font-black text-emerald-600 dark:text-emerald-400">
                         ₹
                         {Math.max(
                           0,
-                          newOrderItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0) -
-                            (newOrderDiscount || 0)
+                          newOrderItems.reduce(
+                            (acc, i) => acc + (i.price || 0) * i.quantity,
+                            0
+                          ) - (newOrderDiscount || 0)
                         )}
                       </span>
                     </div>
@@ -2312,7 +2560,7 @@ export default function KitchenSystem() {
                       type="button"
                       disabled={isSubmittingOrder || newOrderItems.length === 0}
                       onClick={() => handleCreateKitchenOrder(undefined, true)}
-                      className="flex items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-slate-800 px-3 py-2.5 text-xs font-black text-slate-300 transition hover:bg-slate-700 disabled:opacity-40"
+                      className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 transition hover:bg-slate-100 disabled:opacity-40 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                       title="Create + print KOT"
                     >
                       <Printer size={14} /> Print
@@ -2346,22 +2594,22 @@ export default function KitchenSystem() {
       {/* EDIT ORDER MODAL                                       */}
       {/* ===================================================== */}
       {editingOrder && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/85 p-0 backdrop-blur-md sm:items-center sm:p-4">
-          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-slate-900/95 backdrop-blur-2xl sm:rounded-3xl">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/40 p-0 backdrop-blur-md sm:items-center sm:p-4 dark:bg-black/85">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-3xl dark:border-white/10 dark:bg-slate-900/95 dark:backdrop-blur-2xl">
             <div className="flex justify-center pt-3 sm:hidden">
-              <span className="h-1.5 w-12 rounded-full bg-slate-700" />
+              <span className="h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-b border-white/5 p-4">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-white/5">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-black text-white sm:text-base">
+                  <h3 className="text-sm font-black text-slate-900 sm:text-base dark:text-white">
                     Edit Order
                   </h3>
-                  <span className="font-mono text-sm font-black text-orange-400">
+                  <span className="font-mono text-sm font-black text-orange-500 dark:text-orange-400">
                     {editingOrder.orderNumber}
                   </span>
-                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-300 ring-1 ring-emerald-500/30">
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30">
                     Editable
                   </span>
                 </div>
@@ -2371,23 +2619,22 @@ export default function KitchenSystem() {
               </div>
               <button
                 onClick={() => setEditingOrder(null)}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-800 text-slate-400 transition hover:text-white"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 transition hover:text-slate-900 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
               >
                 <X size={16} />
               </button>
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              {/* Quick add */}
-              <div className="rounded-2xl border border-white/5 bg-slate-800/40 p-3">
-                <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-slate-800/40">
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                   Add Item From Menu
                 </span>
                 <div className="flex gap-2">
                   <select
                     value={editSelectedMenuItemId}
                     onChange={(e) => setEditSelectedMenuItemId(e.target.value)}
-                    className="flex-1 rounded-xl border border-white/5 bg-slate-900 px-3 py-2 text-xs font-semibold text-white focus:border-orange-500/40 focus:outline-none"
+                    className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-900 dark:text-white"
                   >
                     <option value="">— Choose item —</option>
                     {availableMenuItems.map((item) => (
@@ -2413,25 +2660,24 @@ export default function KitchenSystem() {
                 </div>
               </div>
 
-              {/* Items */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                     Items in order
                   </span>
-                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-black text-slate-300">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-white/5 dark:text-slate-300">
                     {editOrderItems.length}
                   </span>
                 </div>
-                <div className="overflow-hidden rounded-2xl border border-white/5 bg-slate-950/60">
-                  <div className="divide-y divide-white/5">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/5 dark:bg-slate-950/60">
+                  <div className="divide-y divide-slate-100 dark:divide-white/5">
                     {editOrderItems.map((item) => (
                       <div
                         key={item.id}
                         className="flex items-center justify-between gap-3 p-3"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-bold text-white">
+                          <p className="truncate text-xs font-bold text-slate-900 dark:text-white">
                             {item.name}
                           </p>
                           <p className="mt-0.5 font-mono text-[10px] font-semibold text-slate-500">
@@ -2439,32 +2685,32 @@ export default function KitchenSystem() {
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
-                          <div className="flex items-center overflow-hidden rounded-lg border border-white/5 bg-slate-900">
+                          <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/5 dark:bg-slate-900">
                             <button
                               type="button"
                               onClick={() => handleUpdateEditItemQty(item.id, -1)}
-                              className="px-2 py-1 text-slate-400 transition hover:text-white"
+                              className="px-2 py-1 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                             >
                               −
                             </button>
-                            <span className="px-2 font-mono text-xs font-black text-orange-400">
+                            <span className="px-2 font-mono text-xs font-black text-orange-500 dark:text-orange-400">
                               {item.quantity}
                             </span>
                             <button
                               type="button"
                               onClick={() => handleUpdateEditItemQty(item.id, 1)}
-                              className="px-2 py-1 text-slate-400 transition hover:text-white"
+                              className="px-2 py-1 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                             >
                               +
                             </button>
                           </div>
-                          <span className="min-w-[50px] text-right font-mono text-xs font-black text-white">
+                          <span className="min-w-[50px] text-right font-mono text-xs font-black text-slate-900 dark:text-white">
                             ₹{item.price * item.quantity}
                           </span>
                           <button
                             type="button"
                             onClick={() => handleRemoveEditItem(item.id)}
-                            className="p-1 text-slate-500 transition hover:text-red-400"
+                            className="p-1 text-slate-400 transition hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
                           >
                             <Trash2 size={13} />
                           </button>
@@ -2475,25 +2721,30 @@ export default function KitchenSystem() {
                 </div>
               </div>
 
-              {/* Notes */}
               <div>
-                <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                   Special Instructions
                 </label>
                 <input
                   type="text"
                   value={editOrderInstructions}
                   onChange={(e) => setEditOrderInstructions(e.target.value)}
-                  className="w-full rounded-xl border border-white/5 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-white focus:border-orange-500/40 focus:outline-none"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-800/80 dark:text-white dark:focus:border-orange-500/40"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-white/5 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-white/5 dark:bg-slate-950/60">
               <div className="text-xs">
-                <span className="font-bold text-slate-400">Recalculated Total:</span>
-                <span className="ml-2 font-mono text-base font-black text-emerald-400">
-                  ₹{editOrderItems.reduce((acc, i) => acc + (i.price || 0) * i.quantity, 0)}
+                <span className="font-bold text-slate-500 dark:text-slate-400">
+                  Recalculated Total:
+                </span>
+                <span className="ml-2 font-mono text-base font-black text-emerald-600 dark:text-emerald-400">
+                  ₹
+                  {editOrderItems.reduce(
+                    (acc, i) => acc + (i.price || 0) * i.quantity,
+                    0
+                  )}
                 </span>
               </div>
 
@@ -2501,7 +2752,7 @@ export default function KitchenSystem() {
                 <button
                   type="button"
                   onClick={() => setEditingOrder(null)}
-                  className="flex-1 rounded-xl border border-white/5 bg-slate-800 px-4 py-2.5 text-xs font-black text-slate-300 transition hover:bg-slate-700 sm:flex-none"
+                  className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-600 transition hover:bg-slate-100 sm:flex-none dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 >
                   Cancel
                 </button>
@@ -2530,3 +2781,35 @@ export default function KitchenSystem() {
   );
 }
 
+/* ============== Small helper component ============== */
+function ThemeQuickToggle({
+  themeMode,
+  setThemeMode,
+}: {
+  themeMode: ThemeMode;
+  setThemeMode: (t: ThemeMode) => void;
+}) {
+  const cycle: Record<ThemeMode, ThemeMode> = {
+    light: "dark",
+    dark: "system",
+    system: "light",
+  };
+  const Icon =
+    themeMode === "light" ? Sun : themeMode === "dark" ? Moon : Monitor;
+  const label =
+    themeMode === "light"
+      ? "Light theme"
+      : themeMode === "dark"
+      ? "Dark theme"
+      : "System theme";
+
+  return (
+    <button
+      onClick={() => setThemeMode(cycle[themeMode])}
+      title={`${label} (click to cycle)`}
+      className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-900 dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
+    >
+      <Icon size={15} />
+    </button>
+  );
+}
