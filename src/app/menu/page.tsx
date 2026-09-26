@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
-import Circular3DHero from "@/components/Menu/Circular3DHero";
 import TrendingNow from "@/components/Menu/TrendingNow";
 import { subscribeAllProductRatings, ProductRatingSummary } from "@/lib/ratingService";
 
@@ -153,10 +152,6 @@ export default function MenuPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50/40 via-orange-50/30 to-rose-50/30 pb-32">
-      {/* ============================================================ */}
-      {/* 0. 3D CIRCULAR HERO                                           */}
-      {/* ============================================================ */}
-      <Circular3DHero />
 
       {/* ============================================================ */}
       {/* 1. RESTAURANT HEADER BANNER                                    */}
