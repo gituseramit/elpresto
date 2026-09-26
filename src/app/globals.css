@@ -77,3 +77,13 @@ body {
   scrollbar-width: none;
 }
 
+@keyframes scooterFloat {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+  100% { transform: translateY(0px); }
+}
+
+.scooter-pin {
+  animation: scooterFloat 1.8s ease-in-out infinite;
+}
+

@@ -84,7 +84,7 @@ interface DeliveryOrder {
 }
 
 type SortMode = "distance" | "time" | "value";
-type FilterMode = "all" | "assigned" | "out_for_delivery";
+type FilterMode = "all" | "ready" | "out_for_delivery";
 
 /* ============================================================= */
 /* Haversine distance (km)                                       */
@@ -115,12 +115,23 @@ function getElapsedMins(createdAt: any): number {
 /* ============================================================= */
 /* Reusable small components                                     */
 /* ============================================================= */
-function StatusBadge({ status }: { status?: string }) {
-  const s = status || "pending";
+function StatusBadge({
+  status,
+  orderStatus,
+}: {
+  status?: string;
+  orderStatus?: string;
+}) {
+  const isReady = orderStatus === "ready" || status === "ready";
+  const s = isReady ? "ready" : status || "pending";
   const map: Record<string, { label: string; cls: string }> = {
+    ready: {
+      label: "Ready for Delivery",
+      cls: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+    },
     pending: {
-      label: "New Order",
-      cls: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+      label: "Ready for Delivery",
+      cls: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
     },
     assigned: {
       label: "Assigned",
@@ -135,7 +146,7 @@ function StatusBadge({ status }: { status?: string }) {
       cls: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
     },
   };
-  const info = map[s] || map.pending;
+  const info = map[s] || map.ready;
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${info.cls}`}
@@ -474,6 +485,15 @@ export default function DeliveryPortal() {
   };
 
   const handleStartDelivery = async (order: DeliveryOrder) => {
+    if (
+      order.status !== "ready" &&
+      order.deliveryStatus !== "ready" &&
+      order.status !== "out_for_delivery" &&
+      order.deliveryStatus !== "out_for_delivery"
+    ) {
+      alert("This order has not been marked ready by the kitchen yet. You can only start delivery once it is marked ready.");
+      return;
+    }
     startGpsTracking(order.id);
     try {
       await updateDoc(doc(db, "orders", order.id), {
@@ -537,10 +557,17 @@ export default function DeliveryPortal() {
   };
 
   /* ---- Derived ---- */
+  // Delivery partner only sees orders after they are marked READY by the kitchen (or already in transit)
   const activeOrders = useMemo(
     () =>
       orders.filter(
-        (o) => o.deliveryStatus !== "delivered" && o.status !== "cancelled"
+        (o) =>
+          o.deliveryStatus !== "delivered" &&
+          o.status !== "cancelled" &&
+          (o.status === "ready" ||
+            o.deliveryStatus === "ready" ||
+            o.status === "out_for_delivery" ||
+            o.deliveryStatus === "out_for_delivery")
       ),
     [orders]
   );
@@ -580,7 +607,21 @@ export default function DeliveryPortal() {
 
     // Filter by status
     if (filterMode !== "all") {
-      list = list.filter((o) => (o.deliveryStatus || "pending") === filterMode);
+      if (filterMode === "ready") {
+        list = list.filter(
+          (o) =>
+            (o.status === "ready" || o.deliveryStatus === "ready" || o.deliveryStatus === "pending") &&
+            o.deliveryStatus !== "out_for_delivery" &&
+            o.status !== "out_for_delivery"
+        );
+      } else if (filterMode === "out_for_delivery") {
+        list = list.filter(
+          (o) =>
+            o.deliveryStatus === "out_for_delivery" || o.status === "out_for_delivery"
+        );
+      } else {
+        list = list.filter((o) => (o.deliveryStatus || "pending") === filterMode);
+      }
     }
 
     // Search
@@ -935,9 +976,8 @@ export default function DeliveryPortal() {
                   {/* Filter pills */}
                   <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
                     {[
-                      { id: "all", label: "All" },
-                      { id: "pending", label: "New" },
-                      { id: "assigned", label: "Assigned" },
+                      { id: "all", label: "All Active" },
+                      { id: "ready", label: "Ready to Deliver" },
                       { id: "out_for_delivery", label: "In Transit" },
                     ].map((f) => (
                       <button
@@ -1045,7 +1085,7 @@ export default function DeliveryPortal() {
                           <span className="font-mono text-sm font-black text-white">
                             {order.orderNumber}
                           </span>
-                          <StatusBadge status={order.deliveryStatus} />
+                          <StatusBadge status={order.deliveryStatus} orderStatus={order.status} />
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
                           {isLate && (

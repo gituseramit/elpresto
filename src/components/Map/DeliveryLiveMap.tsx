@@ -207,6 +207,43 @@ export default function DeliveryLiveMap({
       .bindPopup(`<strong>${customerName}</strong><br/>Delivery Destination`);
     customerMarkerRef.current = customerMarker;
 
+    // 3. Delivery Partner Scooter Marker (always visible on map)
+    const effectiveInitRiderLat = riderLat ?? cafeLat;
+    const effectiveInitRiderLng = riderLng ?? cafeLng;
+
+    const riderIcon = L.divIcon({
+      html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+        <div style="background:linear-gradient(135deg, #2563eb, #1d4ed8);color:white;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 8px 24px rgba(37,99,235,0.6);border:3px solid white;animation:scooterFloat 1.8s ease-in-out infinite;">🛵</div>
+        <div style="background:#0f172a;color:#93c5fd;font-size:10px;font-weight:900;padding:2px 8px;border-radius:9999px;margin-top:3px;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:1px solid rgba(147,197,253,0.35);letter-spacing:0.5px;">RIDER 🛵</div>
+      </div>`,
+      className: "scooter-pin",
+      iconSize: [60, 68],
+      iconAnchor: [30, 22],
+    });
+
+    const riderMarker = L.marker([effectiveInitRiderLat, effectiveInitRiderLng], {
+      icon: riderIcon,
+      zIndexOffset: 1000,
+    })
+      .addTo(map)
+      .bindPopup(
+        riderLat && riderLng
+          ? "<strong>🛵 Delivery Partner</strong><br/>Live GPS Location"
+          : "<strong>🛵 Delivery Partner</strong><br/>Pickup Hub (Ready to start)"
+      );
+    riderMarkerRef.current = riderMarker;
+
+    if (riderLat && riderLng) {
+      const pulse = L.circle([riderLat, riderLng], {
+        radius: 35,
+        color: "#3b82f6",
+        fillColor: "#93c5fd",
+        fillOpacity: 0.25,
+        weight: 1.5,
+      }).addTo(map);
+      riderPulseRef.current = pulse;
+    }
+
     mapRef.current = map;
 
     // Initial Road Route: From Rider if active, else from Cafe
@@ -228,15 +265,18 @@ export default function DeliveryLiveMap({
       // 1. Create or update Rider Marker
       if (!riderMarkerRef.current) {
         const riderIcon = L.divIcon({
-          html: `<div style="background:#2563eb;color:white;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 6px 18px rgba(37,99,235,0.55);border:3px solid white;transform:translateZ(0);">🛵</div>`,
-          className: "rider-live-marker",
-          iconSize: [42, 42],
-          iconAnchor: [21, 21],
+          html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+            <div style="background:linear-gradient(135deg, #2563eb, #1d4ed8);color:white;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 8px 24px rgba(37,99,235,0.6);border:3px solid white;animation:scooterFloat 1.8s ease-in-out infinite;">🛵</div>
+            <div style="background:#0f172a;color:#93c5fd;font-size:10px;font-weight:900;padding:2px 8px;border-radius:9999px;margin-top:3px;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:1px solid rgba(147,197,253,0.35);letter-spacing:0.5px;">RIDER 🛵</div>
+          </div>`,
+          className: "scooter-pin",
+          iconSize: [60, 68],
+          iconAnchor: [30, 22],
         });
 
         const riderMarker = L.marker([riderLat, riderLng], { icon: riderIcon, zIndexOffset: 1000 })
           .addTo(map)
-          .bindPopup("<strong>Delivery Partner</strong><br/>Live GPS Location");
+          .bindPopup("<strong>🛵 Delivery Partner</strong><br/>Live GPS Location");
         riderMarkerRef.current = riderMarker;
 
         // Pulsing accuracy halo
@@ -251,8 +291,18 @@ export default function DeliveryLiveMap({
       } else {
         // Smoothly update positions
         riderMarkerRef.current.setLatLng([riderLat, riderLng]);
+        riderMarkerRef.current.setPopupContent("<strong>🛵 Delivery Partner</strong><br/>Live GPS Location");
         if (riderPulseRef.current) {
           riderPulseRef.current.setLatLng([riderLat, riderLng]);
+        } else {
+          const pulse = L.circle([riderLat, riderLng], {
+            radius: 35,
+            color: "#3b82f6",
+            fillColor: "#93c5fd",
+            fillOpacity: 0.25,
+            weight: 1.5,
+          }).addTo(map);
+          riderPulseRef.current = pulse;
         }
       }
 
