@@ -26,12 +26,12 @@ export const metadata: Metadata = {
   title: "Home",
   description:
     "Welcome to EL PRESTO Cafeteria. Enjoy our 100% whole wheat pizzas, healthy burgers, and zero palm oil dishes. Order online for quick delivery!",
-  alternates: { canonical: "https://aquaarogya.web.app/" },
+  alternates: { canonical: "https://elpresto.co.in/" },
   openGraph: {
     title: "EL PRESTO Cafeteria | 100% Whole Wheat & Zero Palm Oil",
     description:
       "Welcome to EL PRESTO Cafeteria. Enjoy our 100% whole wheat pizzas, healthy burgers, and zero palm oil dishes. Order online for quick delivery!",
-    url: "https://aquaarogya.web.app/",
+    url: "https://elpresto.co.in/",
   },
 };
 

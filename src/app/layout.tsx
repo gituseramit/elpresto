@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://aquaarogya.web.app"),
+  metadataBase: new URL("https://elpresto.co.in"),
   title: {
     template: "%s | EL PRESTO Cafeteria",
     default: "EL PRESTO Cafeteria | 100% Whole Wheat & Zero Palm Oil",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_IN",
-    url: "https://aquaarogya.web.app",
+    url: "https://elpresto.co.in",
     siteName: "EL PRESTO Cafeteria",
     title: "EL PRESTO Cafeteria",
     description: "Modern, warm, and appetizing cafeteria ordering at EL PRESTO. Guilt-free, healthy, and delicious.",

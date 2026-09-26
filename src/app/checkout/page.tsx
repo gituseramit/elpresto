@@ -318,7 +318,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
+      const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_TdSLGs65hSMWBD";
       const receiptId = `rcpt_${Date.now()}`;
       let orderIdFromBackend: string | undefined;
 

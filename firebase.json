@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "aquaarogya",
+    "site": "elpresto-70b3f",
     "public": "out",
     "cleanUrls": true,
     "ignore": [
@@ -8,5 +8,8 @@
       "**/.*",
       "**/node_modules/**"
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }

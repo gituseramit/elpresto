@@ -11,4 +11,4 @@ Disallow: /profile
 Disallow: /seed
 Disallow: /track
 
-Sitemap: https://aquaarogya.web.app/sitemap.xml
+Sitemap: https://elpresto.co.in/sitemap.xml
