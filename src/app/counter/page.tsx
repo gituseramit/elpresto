@@ -23,7 +23,7 @@ import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
-import { DEFAULT_MAIN_BRANCH_ID } from "@/lib/branchService";
+import { DEFAULT_MAIN_BRANCH_ID, getActiveBranches, getCountersForBranch, Branch, Counter } from "@/lib/branchService";
 
 /* ============================================================ */
 /* Constants                                                    */
@@ -2225,3 +2225,4 @@ export default function CounterPOSPage() {
     </div>
   );
 }
+
