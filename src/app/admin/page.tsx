@@ -3362,6 +3362,35 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Centralized Multi-Outlet Developer Platform Hub */}
+        <div className="rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 via-purple-950/40 to-slate-900/60 p-6 backdrop-blur-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/25">
+                <ShieldCheck size={24} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white">Centralized Developer &amp; Multi-Outlet Platform</h3>
+                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[9px] font-mono font-bold text-indigo-300 border border-indigo-500/30">
+                    Cross-Branch
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Manage multiple restaurant outlets, kitchens, counters, delivery fleets, RBAC roles, and audit trails.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/developer"
+              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5 text-xs font-black text-white shadow-lg shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-95 shrink-0"
+            >
+              Open Developer Hub &rarr;
+            </Link>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           {panelConfigs.map((item) => {
             const config = panelAccess[item.key] || DEFAULT_PANEL_CONFIGS[item.key];

@@ -37,6 +37,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { validatePromoCode, recordPromoUsage } from "@/lib/promoService";
 import { PromoCode } from "@/lib/types";
+import { DEFAULT_MAIN_BRANCH_ID } from "@/lib/branchService";
 
 /* ------------------------------------------------------------------ */
 /* Reusable: Section header                                            */
@@ -443,6 +444,8 @@ export default function CheckoutPage() {
         paymentStatus: chosenPaymentStatus,
         status: "pending",
         source: "website",
+        orderSource: "website",
+        branchId: DEFAULT_MAIN_BRANCH_ID,
         createdAt: new Date().toISOString(),
         razorpayOrderId: paymentDetails?.razorpayOrderId || null,
         razorpayPaymentId: paymentDetails?.razorpayPaymentId || null,

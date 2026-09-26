@@ -128,6 +128,22 @@ export interface Order {
   discountAmount?: number;
   razorpayOrderId?: string | null;
   razorpayPaymentId?: string | null;
+  // Multi-outlet platform extensions
+  branchId?: string;
+  kitchenId?: string | null;
+  counterId?: string | null;
+  deliveryPartnerId?: string | null;
+  createdBy?: string | null;
+  orderSource?: "website" | "counter" | "kitchen" | "swiggy" | "zomato" | string;
+  customerLocation?: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  assignedAt?: any;
+  assignedBy?: string;
+  acceptedAt?: any;
+  pickedUpAt?: any;
 }
 
 export interface PromoCode {
@@ -155,3 +171,171 @@ export interface PromoValidationResult {
   finalTotal: number;
 }
 
+/* ============================================================ */
+/* MULTI-OUTLET HIERARCHY & ROLES DATA MODEL                   */
+/* ============================================================ */
+
+export interface BranchPrinterConfig {
+  cafeName: string;
+  phone: string;
+  address: string;
+  paperWidth?: "58mm" | "80mm";
+  footerText?: string;
+  gstNumber?: string;
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  code: string; // e.g. "BR-01", "main"
+  address: string;
+  lat: number;
+  lng: number;
+  contactPhone: string;
+  contactEmail: string;
+  operatingHours: {
+    openTime: string; // "10:00"
+    closeTime: string; // "23:00"
+    isOpen: boolean;
+  };
+  active: boolean;
+  deliveryRadiusKm: number;
+  baseDeliveryFee: number;
+  freeDeliveryThreshold: number;
+  printerConfig?: BranchPrinterConfig;
+  taxSettings?: {
+    gstNumber?: string;
+    vatPercent?: number;
+  };
+  isDefault?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface Kitchen {
+  id: string;
+  branchId: string;
+  name: string;
+  active: boolean;
+  assignedStaff?: string[]; // Array of User IDs
+  supportedCategories?: string[]; // Empty means all categories
+  orderQueueCount?: number;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface Counter {
+  id: string;
+  branchId: string;
+  name: string;
+  counterNumber: string;
+  assignedStaff?: string[]; // Array of User IDs
+  active: boolean;
+  printerConfig?: BranchPrinterConfig;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export type DeliveryPartnerAvailability = "AVAILABLE" | "BUSY" | "OFFLINE";
+
+export interface DeliveryPartner {
+  id: string;
+  userId?: string; // Firebase Auth UID if user account linked
+  name: string;
+  mobile: string;
+  email?: string;
+  assignedBranchId: string;
+  active: boolean;
+  availability: DeliveryPartnerAvailability;
+  liveLocation?: {
+    lat: number;
+    lng: number;
+    updatedAt: any;
+  };
+  currentOrderId?: string | null;
+  completedDeliveriesCount: number;
+  rating?: number;
+  vehicleType?: "scooter" | "bike" | "bicycle";
+  vehicleNumber?: string;
+  permissions?: string[];
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export type UserRole =
+  | "SUPER_ADMIN"
+  | "DEVELOPER"
+  | "ADMIN"
+  | "BRANCH_MANAGER"
+  | "KITCHEN_MANAGER"
+  | "KITCHEN_STAFF"
+  | "COUNTER_MANAGER"
+  | "DELIVERY_MANAGER"
+  | "DELIVERY_PARTNER"
+  | "CUSTOMER";
+
+export type Permission =
+  | "orders.view"
+  | "orders.create"
+  | "orders.edit"
+  | "orders.cancel"
+  | "orders.assign"
+  | "orders.deliver"
+  | "menu.view"
+  | "menu.create"
+  | "menu.edit"
+  | "menu.delete"
+  | "kitchen.view"
+  | "kitchen.manage"
+  | "counter.view"
+  | "counter.manage"
+  | "delivery.view"
+  | "delivery.assign"
+  | "delivery.track"
+  | "users.view"
+  | "users.manage"
+  | "branches.view"
+  | "branches.manage"
+  | "promos.manage"
+  | "payments.view"
+  | "payments.manage"
+  | "reports.view"
+  | "system.manage";
+
+export interface StaffProfile {
+  id: string; // Auth UID
+  name: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  branchId: string; // Specific branchId or "ALL" for super_admin/developer
+  assignedKitchenIds?: string[];
+  assignedCounterIds?: string[];
+  customPermissions?: Permission[];
+  active: boolean;
+  avatarUrl?: string;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface BranchMenuAvailability {
+  id: string; // `${branchId}_${menuItemId}`
+  branchId: string;
+  menuItemId: string;
+  available: boolean;
+  priceOverride?: number | null;
+  updatedAt?: any;
+}
+
+export interface AuditLog {
+  id: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  branchId?: string | null;
+  action: string;
+  targetType: "branch" | "kitchen" | "counter" | "order" | "user" | "menu" | "delivery" | "system" | string;
+  targetId?: string;
+  metadata?: Record<string, any>;
+  timestamp: any;
+}

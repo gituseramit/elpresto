@@ -1,7 +1,4 @@
-// Thermal Printer Engine optimized for F2C Mobile Thermal Printer (58mm / 72mm)
-// Includes anti-duplicate protection, loading states, and thermal-optimized typography.
-
-import { Order } from "./types";
+import { Order, BranchPrinterConfig } from "./types";
 
 // Mutex to prevent duplicate print jobs from double-clicks or React re-renders
 const activePrintJobs = new Set<string>();
@@ -10,6 +7,13 @@ export interface PrintSettings {
   cafeName?: string;
   phone?: string;
   address?: string;
+  branchName?: string;
+  branchCode?: string;
+  counterNumber?: string;
+  counterName?: string;
+  gstNumber?: string;
+  footerText?: string;
+  paperWidth?: "58mm" | "80mm";
 }
 
 export interface PrintResult {
@@ -148,8 +152,10 @@ export async function printThermalReceipt(
         <!-- STORE HEADER -->
         <div class="header center">
           <h1>🍕 ${cafeName}</h1>
+          ${settings.branchName ? `<p class="bold" style="font-size: 11px; margin-top: 1px;">${settings.branchName}</p>` : ""}
           <p>${address}</p>
           <p>Phone: ${phone}</p>
+          ${settings.gstNumber ? `<p style="font-size: 8.5px; margin-top: 1px;">GSTIN: ${settings.gstNumber}</p>` : ""}
         </div>
 
         <div class="dashed"></div>
@@ -171,6 +177,11 @@ export async function printThermalReceipt(
           <span>Date: ${dateStr}</span>
           <span>Time: ${timeStr}</span>
         </div>
+        ${
+          settings.counterNumber || settings.counterName || order.counterId
+            ? `<div class="info-row"><span>Register:</span><span class="bold">${settings.counterName || settings.counterNumber || order.counterId}</span></div>`
+            : ""
+        }
         ${
           order.customerName
             ? `<div class="info-row"><span>Customer:</span><span class="bold">${order.customerName}</span></div>`
@@ -309,7 +320,8 @@ export async function printThermalReceipt(
  * Generates and prints an F2C-compatible Kitchen Order Ticket (KOT)
  */
 export async function printThermalKOT(
-  order: Order
+  order: Order,
+  settings: PrintSettings = {}
 ): Promise<PrintResult> {
   const orderId = (order.id || order.orderNumber) + "-kot";
 
@@ -370,7 +382,7 @@ export async function printThermalKOT(
       <body>
         <div class="center">
           <h2 style="font-size: 16px; font-weight: 900;">*** KITCHEN TICKET ***</h2>
-          <p style="font-size: 11px;">EL PRESTO KDS</p>
+          <p style="font-size: 11px;">${settings.branchName || "EL PRESTO"} KDS</p>
         </div>
         <div class="dashed"></div>
         <div style="font-size: 18px; font-weight: 900; text-align: center;">

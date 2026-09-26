@@ -22,6 +22,7 @@ import { initializeCategoriesIfEmpty } from "@/lib/categories";
 import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
 import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import { DEFAULT_MAIN_BRANCH_ID } from "@/lib/branchService";
 
 /* ============================================================ */
 /* Constants                                                    */
@@ -774,6 +775,9 @@ export default function CounterPOSPage() {
         paymentMethod: paymentMethod,
         paymentStatus: counterPaymentStatus,
         source: "counter",
+        orderSource: "counter",
+        branchId: DEFAULT_MAIN_BRANCH_ID,
+        counterId: "counter-1",
         updatedAt: Timestamp.now(),
         ...(linkedCustomer ? { customerId: linkedCustomer.uid } : {}),
       };
@@ -818,7 +822,9 @@ export default function CounterPOSPage() {
     try {
       const res = await printThermalReceipt(order, {
         paperWidth: "58mm",
-        copyCount: 1,
+        branchName: "EL PRESTO - UCER Naini Hub",
+        counterNumber: "C-01",
+        counterName: "Register 1",
       });
       setPrintStatus(res.success ? "success" : "error");
       setTimeout(() => setPrintStatus("idle"), 3000);
@@ -830,7 +836,10 @@ export default function CounterPOSPage() {
 
   const handlePrintKOT = async (order: Order) => {
     try {
-      await printKOT(order);
+      await printKOT(order, {
+        branchName: "EL PRESTO - UCER Naini Hub",
+        counterNumber: "C-01",
+      });
       showToast("KOT sent to kitchen", "success");
     } catch {
       showToast("KOT print failed", "error");
