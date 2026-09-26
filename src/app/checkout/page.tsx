@@ -155,6 +155,15 @@ export default function CheckoutPage() {
   const [paymentError, setPaymentError] = useState("");
   const [createdDeliveryOtp, setCreatedDeliveryOtp] = useState<string | null>(null);
 
+  /* multi-branch location state */
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [resolvedBranch, setResolvedBranch] = useState<Branch | null>(null);
+  const [branchResolution, setBranchResolution] = useState<ResolveNearestBranchResult | null>(null);
+  const [manualBranchId, setManualBranchId] = useState<string | null>(null);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [locationDetected, setLocationDetected] = useState(false);
+  const [cartAvailabilityWarning, setCartAvailabilityWarning] = useState<string[]>([]);
+
   /* promo */
   const [promoInput, setPromoInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<PromoCode | null>(null);
@@ -183,34 +192,191 @@ export default function CheckoutPage() {
     }
   }, [userProfile]);
 
-  /* fetch settings */
+  /* fetch settings & load active branches with location detection */
   useEffect(() => {
-    const fetchSettings = async () => {
+    let isMounted = true;
+    const initBranchesAndLocation = async () => {
       try {
-        const { doc, getDoc } = await import("firebase/firestore");
-        const { db } = await import("@/lib/firebase");
-        const docSnap = await getDoc(doc(db, "settings", "general"));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setSettings({
-            cafeName: data.cafeName || DEFAULT_DELIVERY_SETTINGS.cafeName,
-            cafeLat: data.cafeLat || data.restaurantLat || DEFAULT_DELIVERY_SETTINGS.cafeLat,
-            cafeLng: data.cafeLng || data.restaurantLng || DEFAULT_DELIVERY_SETTINGS.cafeLng,
-            deliveryRadiusKm: data.deliveryRadiusKm || 7,
-            baseDeliveryFee:
-              data.baseDeliveryFee !== undefined ? data.baseDeliveryFee : 30,
-            freeDeliveryThreshold: data.freeDeliveryThreshold || 499,
-            deliveryEnabled:
-              data.deliveryEnabled !== undefined ? data.deliveryEnabled : true,
-          });
+        const activeList = await getActiveBranches();
+        if (!isMounted) return;
+        setBranches(activeList);
+
+        const initialBranch = activeList.find((b) => b.isDefault) || activeList[0];
+        if (initialBranch) {
+          setResolvedBranch(initialBranch);
+          setSettings((prev) => ({
+            ...prev,
+            cafeName: initialBranch.name,
+            cafeLat: initialBranch.lat,
+            cafeLng: initialBranch.lng,
+            deliveryRadiusKm: initialBranch.deliveryRadiusKm,
+            baseDeliveryFee: initialBranch.baseDeliveryFee,
+            freeDeliveryThreshold: initialBranch.freeDeliveryThreshold,
+          }));
+        }
+
+        if (activeList.length === 1) {
+          return;
+        }
+
+        if (typeof window !== "undefined" && "geolocation" in navigator) {
+          setIsDetectingLocation(true);
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (!isMounted) return;
+              const { latitude, longitude } = pos.coords;
+              const res = resolveNearestBranch(latitude, longitude, activeList, {
+                isDelivery: formData.type === "delivery",
+              });
+              setResolvedBranch(res.branch);
+              setBranchResolution(res);
+              setDeliveryCoords({
+                lat: latitude,
+                lng: longitude,
+                distanceKm: res.distanceKm,
+                isWithinRadius: res.isWithinRadius,
+              });
+              setSettings((prev) => ({
+                ...prev,
+                cafeName: res.branch.name,
+                cafeLat: res.branch.lat,
+                cafeLng: res.branch.lng,
+                deliveryRadiusKm: res.branch.deliveryRadiusKm,
+                baseDeliveryFee: res.branch.baseDeliveryFee,
+                freeDeliveryThreshold: res.branch.freeDeliveryThreshold,
+              }));
+              setLocationDetected(true);
+              setIsDetectingLocation(false);
+            },
+            () => {
+              if (!isMounted) return;
+              setIsDetectingLocation(false);
+            },
+            { timeout: 7000, enableHighAccuracy: true }
+          );
         }
       } catch (err) {
-        console.warn("Using default delivery settings:", err);
+        console.warn("Branch initialization error:", err);
       }
     };
-    fetchSettings();
+    initBranchesAndLocation();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
+  /* Recompute nearest outlet whenever location coordinates, delivery type, or manual branch changes */
+  useEffect(() => {
+    if (branches.length === 0) return;
+
+    if (manualBranchId) {
+      const selected = branches.find((b) => b.id === manualBranchId);
+      if (selected) {
+        const { calculateDistance } = require("@/lib/delivery");
+        const dist = Math.round(calculateDistance(deliveryCoords.lat, deliveryCoords.lng, selected.lat, selected.lng) * 100) / 100;
+        const within = dist <= selected.deliveryRadiusKm;
+        setResolvedBranch(selected);
+        setDeliveryCoords((prev) => ({
+          ...prev,
+          distanceKm: dist,
+          isWithinRadius: within,
+        }));
+        setSettings((prev) => ({
+          ...prev,
+          cafeName: selected.name,
+          cafeLat: selected.lat,
+          cafeLng: selected.lng,
+          deliveryRadiusKm: selected.deliveryRadiusKm,
+          baseDeliveryFee: selected.baseDeliveryFee,
+          freeDeliveryThreshold: selected.freeDeliveryThreshold,
+        }));
+        return;
+      }
+    }
+
+    const res = resolveNearestBranch(deliveryCoords.lat, deliveryCoords.lng, branches, {
+      isDelivery: formData.type === "delivery",
+    });
+    setResolvedBranch(res.branch);
+    setBranchResolution(res);
+    setDeliveryCoords((prev) => ({
+      ...prev,
+      distanceKm: res.distanceKm,
+      isWithinRadius: res.isWithinRadius,
+    }));
+    setSettings((prev) => ({
+      ...prev,
+      cafeName: res.branch.name,
+      cafeLat: res.branch.lat,
+      cafeLng: res.branch.lng,
+      deliveryRadiusKm: res.branch.deliveryRadiusKm,
+      baseDeliveryFee: res.branch.baseDeliveryFee,
+      freeDeliveryThreshold: res.branch.freeDeliveryThreshold,
+    }));
+  }, [deliveryCoords.lat, deliveryCoords.lng, formData.type, manualBranchId, branches]);
+
+  /* Menu availability scoping per branch */
+  useEffect(() => {
+    if (!resolvedBranch) return;
+    const checkAvailability = async () => {
+      try {
+        const availabilityMap = await getBranchMenuAvailabilityMap(resolvedBranch.id);
+        const unavailable: string[] = [];
+        items.forEach((cartItem) => {
+          if (cartItem.id && availabilityMap[cartItem.id]?.available === false) {
+            unavailable.push(cartItem.name);
+          }
+        });
+        setCartAvailabilityWarning(unavailable);
+      } catch (err) {
+        console.warn("Could not check branch menu availability:", err);
+      }
+    };
+    checkAvailability();
+  }, [resolvedBranch, items]);
+
+  const handleManualLocationDetect = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      alert("Geolocation is not supported by your browser. Please choose on the map below.");
+      return;
+    }
+    setIsDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setManualBranchId(null);
+        if (branches.length > 0) {
+          const res = resolveNearestBranch(latitude, longitude, branches, {
+            isDelivery: formData.type === "delivery",
+          });
+          setResolvedBranch(res.branch);
+          setBranchResolution(res);
+          setDeliveryCoords({
+            lat: latitude,
+            lng: longitude,
+            distanceKm: res.distanceKm,
+            isWithinRadius: res.isWithinRadius,
+          });
+          setSettings((prev) => ({
+            ...prev,
+            cafeName: res.branch.name,
+            cafeLat: res.branch.lat,
+            cafeLng: res.branch.lng,
+            deliveryRadiusKm: res.branch.deliveryRadiusKm,
+            baseDeliveryFee: res.branch.baseDeliveryFee,
+            freeDeliveryThreshold: res.branch.freeDeliveryThreshold,
+          }));
+        }
+        setIsDetectingLocation(false);
+        setLocationDetected(true);
+      },
+      () => {
+        setIsDetectingLocation(false);
+        alert("Location access denied or unavailable. Please pick your address on the map below or choose your nearest outlet.");
+      },
+      { timeout: 7000, enableHighAccuracy: true }
+    );
+  };
   /* realtime order listener */
   useEffect(() => {
     let unsubscribe: any;
@@ -457,7 +623,14 @@ export default function CheckoutPage() {
         status: "pending",
         source: "website",
         orderSource: "website",
-        branchId: DEFAULT_MAIN_BRANCH_ID,
+        branchId: resolvedBranch?.id || DEFAULT_MAIN_BRANCH_ID,
+        branchName: resolvedBranch?.name || "EL PRESTO PIZZA",
+        branchCode: resolvedBranch?.code || "BR-01",
+        customerLocation: {
+          lat: deliveryCoords.lat,
+          lng: deliveryCoords.lng,
+          address: fullAddressString,
+        },
         createdAt: new Date().toISOString(),
         razorpayOrderId: paymentDetails?.razorpayOrderId || null,
         razorpayPaymentId: paymentDetails?.razorpayPaymentId || null,
