@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Truck,
   Phone,
@@ -9,10 +9,8 @@ import {
   MapPin,
   Clock,
   Compass,
-  Lock,
   LogOut,
   AlertCircle,
-  RefreshCw,
   ShoppingBag,
   Check,
   Bell,
@@ -26,8 +24,6 @@ import {
   Sparkles,
   Loader2,
   Award,
-  Target,
-  Zap,
   Eye,
   ChevronDown,
   Flame,
@@ -35,7 +31,6 @@ import {
   User,
   Activity,
 } from "lucide-react";
-import Link from "next/link";
 import LiveMap from "@/components/Map/LiveMap";
 import { db } from "@/lib/firebase";
 import { DEFAULT_DELIVERY_SETTINGS, DeliverySettings } from "@/lib/delivery";
@@ -45,52 +40,131 @@ import {
   onSnapshot,
   doc,
   updateDoc,
+  getDoc,
+  Timestamp,
 } from "firebase/firestore";
-import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
+import { subscribePanelStatus } from "@/lib/panelAuth";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
-import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
+import {
+  subscribeDayOrders,
+  getISTDateString,
+  formatISTDisplayDate,
+} from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
-import { getActiveBranches, Branch, DeliveryPartner } from "@/lib/branchService";
 
 /* ============================================================= */
 /* Types                                                         */
 /* ============================================================= */
+
+interface DeliveryAddress {
+  houseFlat?: string;
+  streetArea?: string;
+  landmark?: string;
+  city?: string;
+  pincode?: string;
+  fullAddress?: string;
+}
+
+interface DeliveryOrderItem {
+  name: string;
+  quantity: number;
+  price: number;
+}
+
 interface DeliveryOrder {
   id: string;
   orderNumber: string;
   customerName: string;
   customerPhone?: string;
   phone?: string;
-  type: string;
+  type?: string;
+  orderType?: string;
   status: string;
   deliveryStatus?: string;
-  deliveryAddress?: {
-    houseFlat?: string;
-    streetArea?: string;
-    landmark?: string;
-    city?: string;
-    pincode?: string;
-    fullAddress?: string;
-  };
-  location?: any;
+  deliveryAddress?: DeliveryAddress | string;
+  location?: unknown;
   deliveryLatitude?: number;
   deliveryLongitude?: number;
   deliveryDistance?: number;
   deliveryFee?: number;
-  items: Array<{ name: string; quantity: number; price: number }>;
+  items: DeliveryOrderItem[];
   total: number;
   instructions?: string;
-  createdAt: string | any;
+  createdAt: unknown;
+  deliveredAt?: unknown;
   deliveryOtp?: string;
   paymentStatus?: string;
+  branchId?: string;
+}
+
+interface StaffSession {
+  email?: string;
+  name?: string;
+  role?: string;
+  staffId?: string;
+  branchId?: string;
+  [key: string]: unknown;
 }
 
 type SortMode = "distance" | "time" | "value";
 type FilterMode = "all" | "ready" | "out_for_delivery";
+type ToastKind = "success" | "error" | "info";
+
+interface Toast {
+  id: number;
+  kind: ToastKind;
+  message: string;
+}
+
+interface ConfirmState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
 
 /* ============================================================= */
-/* Haversine distance (km)                                       */
+/* Constants                                                     */
 /* ============================================================= */
+
+const SOUND_STORAGE_KEY = "elpestro_rider_sound";
+const SEEN_ORDERS_MAX = 2000;
+const GPS_WRITE_INTERVAL_MS = 6000;
+
+/* ============================================================= */
+/* Helpers                                                       */
+/* ============================================================= */
+
+function safeString(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
+function toDate(value: unknown): Date {
+  if (!value) return new Date();
+  if (typeof (value as { toDate?: () => Date }).toDate === "function") {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  if (value instanceof Date) return value;
+  const d = new Date(value as string | number);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+function getElapsedMins(createdAt: unknown): number {
+  const d = toDate(createdAt);
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+}
+
+function getISTDateKey(value: unknown): string {
+  const d = toDate(value);
+  try {
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  } catch {
+    return "";
+  }
+}
+
 function calcDistance(
   lat1: number,
   lng1: number,
@@ -108,15 +182,56 @@ function calcDistance(
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-function getElapsedMins(createdAt: any): number {
-  if (!createdAt) return 0;
-  const d = createdAt?.toDate ? createdAt.toDate() : new Date(createdAt);
-  return Math.floor((Date.now() - d.getTime()) / 60000);
+function getOrderLat(order: DeliveryOrder): number | undefined {
+  if (typeof order.deliveryLatitude === "number") return order.deliveryLatitude;
+  const loc = order.location as { lat?: number } | undefined;
+  if (loc && typeof loc === "object" && typeof loc.lat === "number") {
+    return loc.lat;
+  }
+  return undefined;
+}
+
+function getOrderLng(order: DeliveryOrder): number | undefined {
+  if (typeof order.deliveryLongitude === "number") return order.deliveryLongitude;
+  const loc = order.location as { lng?: number } | undefined;
+  if (loc && typeof loc === "object" && typeof loc.lng === "number") {
+    return loc.lng;
+  }
+  return undefined;
+}
+
+function getFullAddress(order: DeliveryOrder): string {
+  if (typeof order.deliveryAddress === "string") return order.deliveryAddress;
+  if (order.deliveryAddress?.fullAddress) {
+    return order.deliveryAddress.fullAddress;
+  }
+  const loc = order.location as { address?: string } | string | undefined;
+  if (typeof loc === "string") return loc;
+  if (loc && typeof loc === "object" && typeof loc.address === "string") {
+    return loc.address;
+  }
+  return "Address not specified";
+}
+
+function getRiderIdentity(session: StaffSession | null): {
+  id: string;
+  name: string;
+} {
+  const id =
+    safeString(session?.staffId) ||
+    safeString(session?.email) ||
+    "rider_portal";
+  const name =
+    safeString(session?.name) ||
+    safeString(session?.email) ||
+    "El Presto Delivery Partner";
+  return { id, name };
 }
 
 /* ============================================================= */
-/* Reusable small components                                     */
+/* Status badge                                                  */
 /* ============================================================= */
+
 function StatusBadge({
   status,
   orderStatus,
@@ -158,6 +273,10 @@ function StatusBadge({
   );
 }
 
+/* ============================================================= */
+/* Stat tile                                                     */
+/* ============================================================= */
+
 function StatTile({
   label,
   value,
@@ -196,30 +315,164 @@ function StatTile({
 }
 
 /* ============================================================= */
+/* Toast stack                                                   */
+/* ============================================================= */
+
+function ToastStack({
+  toasts,
+  onDismiss,
+}: {
+  toasts: Toast[];
+  onDismiss: (id: number) => void;
+}) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="pointer-events-none fixed right-3 top-3 z-[200] flex w-[min(360px,calc(100vw-1.5rem))] flex-col gap-2">
+      {toasts.map((t) => {
+        const base =
+          t.kind === "success"
+            ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+            : t.kind === "error"
+            ? "border-red-500/40 bg-red-500/15 text-red-200"
+            : "border-white/10 bg-slate-800/90 text-slate-100";
+        return (
+          <div
+            key={t.id}
+            role="status"
+            className={`pointer-events-auto flex items-start gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-black shadow-lg backdrop-blur ${base}`}
+          >
+            <span className="mt-0.5 shrink-0">
+              {t.kind === "success" ? (
+                <CheckCircle size={14} />
+              ) : t.kind === "error" ? (
+                <AlertCircle size={14} />
+              ) : (
+                <Bell size={14} />
+              )}
+            </span>
+            <span className="min-w-0 flex-1 break-words">{t.message}</span>
+            <button
+              type="button"
+              onClick={() => onDismiss(t.id)}
+              aria-label="Dismiss notification"
+              className="shrink-0 rounded-md p-0.5 opacity-70 transition hover:opacity-100"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================= */
+/* Confirm dialog                                                */
+/* ============================================================= */
+
+function ConfirmDialog({
+  state,
+  onClose,
+}: {
+  state: ConfirmState | null;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!state) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state, busy, onClose]);
+
+  if (!state) return null;
+
+  const handleConfirm = async () => {
+    setBusy(true);
+    try {
+      await state.onConfirm();
+    } finally {
+      setBusy(false);
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md"
+      role="dialog"
+      aria-modal="true"
+      aria-label={state.title}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-slate-900/95 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5">
+          <h3 className="text-sm font-black text-white">{state.title}</h3>
+          <p className="mt-1.5 text-xs font-semibold text-slate-400">
+            {state.message}
+          </p>
+        </div>
+        <div className="flex gap-2 border-t border-white/5 bg-slate-950/60 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-black text-slate-300 transition hover:bg-slate-700 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={busy}
+            className={`flex-1 rounded-xl py-2.5 text-xs font-black text-white shadow-md transition hover:-translate-y-0.5 disabled:opacity-60 ${
+              state.destructive
+                ? "bg-red-600 shadow-red-500/25 hover:bg-red-500"
+                : "bg-gradient-to-r from-orange-500 to-amber-500 shadow-orange-500/25"
+            }`}
+          >
+            {busy ? "Working…" : state.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================= */
 /* Main component                                                */
 /* ============================================================= */
+
 export default function DeliveryPortal() {
   /* ---- Auth ---- */
-  /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [staffSession, setStaffSession] = useState<any>(null);
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [activeBranchId, setActiveBranchId] = useState<string>("branch-main");
-  const [branchPartners, setBranchPartners] = useState<DeliveryPartner[]>([]);
-  const isElevatedUser = staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
+  const [activeBranchId, setActiveBranchId] = useState<string>("");
+
   /* ---- Data ---- */
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(() => getISTDateString(0));
+  const [selectedDate, setSelectedDate] = useState<string>(() =>
+    getISTDateString(0)
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const lastGpsWriteRef = useRef<number>(0);
+
   const [activeTab, setActiveTab] = useState<"active" | "history">("active");
-  const [selectedOrder, setSelectedOrder] = useState<DeliveryOrder | null>(null);
 
   /* ---- Tracking ---- */
-  const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<string | null>(null);
-  const [riderCoords, setRiderCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [activeTrackingOrderId, setActiveTrackingOrderId] = useState<
+    string | null
+  >(null);
+  const [riderCoords, setRiderCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsActive, setGpsActive] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -227,7 +480,9 @@ export default function DeliveryPortal() {
   const [orderRoadStats, setOrderRoadStats] = useState<
     Record<string, { distanceKm: number; durationMinutes: number }>
   >({});
-  const [settings, setSettings] = useState<DeliverySettings>(DEFAULT_DELIVERY_SETTINGS);
+  const [settings, setSettings] = useState<DeliverySettings>(
+    DEFAULT_DELIVERY_SETTINGS
+  );
 
   /* ---- OTP modal ---- */
   const [otpModalOrder, setOtpModalOrder] = useState<DeliveryOrder | null>(null);
@@ -239,118 +494,191 @@ export default function DeliveryPortal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("distance");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem(SOUND_STORAGE_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [expandedMapId, setExpandedMapId] = useState<string | null>(null);
   const [newOrderPulse, setNewOrderPulse] = useState(false);
+  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
 
+  /* ---- Toasts / confirm ---- */
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const toastIdRef = useRef(0);
+
+  /* ---- Refs ---- */
   const watchIdRef = useRef<number | null>(null);
-  const audioCtxRef = useRef<any>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const seenOrdersRef = useRef<Set<string>>(new Set());
+  const lastGpsWriteRef = useRef<number>(0);
+  const soundEnabledRef = useRef<boolean>(soundEnabled);
+  const pulseTimeoutRef = useRef<number | null>(null);
+  const staffSessionRef = useRef<StaffSession | null>(null);
 
-  /* =============================================== */
-  /* Effects                                         */
-  /* =============================================== */
+  /* ============================================================= */
+  /* Toasts                                                        */
+  /* ============================================================= */
+
+  const pushToast = useCallback((kind: ToastKind, message: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, kind, message }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  /* ============================================================= */
+  /* Session bootstrap                                             */
+  /* ============================================================= */
+
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
-        const session = getStaffSession("delivery");
-        if (session && isSessionValid(session)) {
-          setStaffSession(session);
-          setIsAuthenticated(true);
-          if (session.branchId) {
-            setActiveBranchId(session.branchId);
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+
+    import("@/lib/staffAuth")
+      .then(({ getStaffSession, isSessionValid }) => {
+        if (cancelled) return;
+        try {
+          const session = getStaffSession("delivery") as StaffSession | null;
+          if (session && isSessionValid(session as never)) {
+            setStaffSession(session);
+            setIsAuthenticated(true);
+            if (session.branchId) setActiveBranchId(session.branchId);
           }
+        } finally {
+          setIsVerifyingAuth(false);
         }
-        setIsVerifyingAuth(false);
+      })
+      .catch((err) => {
+        console.warn("Failed to load staff session:", err);
+        if (!cancelled) setIsVerifyingAuth(false);
       });
-      const soundPref = localStorage.getItem("elpestro_rider_sound");
-      if (soundPref === "false") setSoundEnabled(false);
-    }
 
     const unsub = subscribePanelStatus("delivery", () => {
-      stopGpsTracking();
+      // Clean up state on forced logout.
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
       setIsAuthenticated(false);
       setStaffSession(null);
-      import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("delivery"));
-      sessionStorage.removeItem("elpestro_delivery_auth");
+      setOrders([]);
+      seenOrdersRef.current.clear();
+      setActiveTrackingOrderId(null);
+      setGpsActive(false);
+      import("@/lib/staffAuth")
+        .then(({ clearStaffSession }) => clearStaffSession("delivery"))
+        .catch(() => {
+          /* ignore */
+        });
     });
-    return () => unsub();
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
-  /* Load branches & branch-scoped delivery partners */
+  /* Keep refs in sync */
   useEffect(() => {
-    getActiveBranches().then((list) => setBranches(list)).catch(() => {});
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    staffSessionRef.current = staffSession;
+  }, [staffSession]);
+
+  /* Audio cleanup */
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {
+          /* ignore */
+        });
+        audioCtxRef.current = null;
+      }
+      if (pulseTimeoutRef.current != null) {
+        window.clearTimeout(pulseTimeoutRef.current);
+      }
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
   }, []);
 
-  useEffect(() => {
-    if (!isAuthenticated || !activeBranchId) return;
-    const qPartners = query(
-      collection(db, "deliveryPartners"),
-      where("assignedBranchId", "==", activeBranchId)
-    );
-    const unsub = onSnapshot(qPartners, (snap: any) => {
-      setBranchPartners(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, [isAuthenticated, activeBranchId]);
-
-  const handleBranchSwitch = async (newBranchId: string) => {
-    if (!isElevatedUser) return;
-    setActiveBranchId(newBranchId);
-    const { logAuditEvent } = await import("@/lib/rbac");
-    logAuditEvent({
-      actorId: staffSession?.staffId || "dev",
-      actorName: staffSession?.name || "Developer",
-      actorRole: staffSession?.role || "DEVELOPER",
-      branchId: newBranchId,
-      action: "CROSS_BRANCH_VIEW",
-      targetType: "delivery",
-      targetId: newBranchId,
-      metadata: { fromBranchId: activeBranchId, toBranchId: newBranchId },
-    }).catch(() => {});
-  };
+  /* ============================================================= */
+  /* Settings fetch                                                */
+  /* ============================================================= */
 
   useEffect(() => {
-    const fetchSettings = async () => {
+    let cancelled = false;
+    (async () => {
       try {
-        const { doc: fDoc, getDoc } = await import("firebase/firestore");
-        const docSnap = await getDoc(fDoc(db, "settings", "general"));
+        const docSnap = await getDoc(doc(db, "settings", "general"));
+        if (cancelled) return;
         if (docSnap.exists()) {
           const data = docSnap.data();
           setSettings({
-            cafeName: data.cafeName || DEFAULT_DELIVERY_SETTINGS.cafeName,
-            cafeLat: data.cafeLat || data.restaurantLat || DEFAULT_DELIVERY_SETTINGS.cafeLat,
-            cafeLng: data.cafeLng || data.restaurantLng || DEFAULT_DELIVERY_SETTINGS.cafeLng,
+            cafeName:
+              data.cafeName || DEFAULT_DELIVERY_SETTINGS.cafeName,
+            cafeLat:
+              data.cafeLat ||
+              data.restaurantLat ||
+              DEFAULT_DELIVERY_SETTINGS.cafeLat,
+            cafeLng:
+              data.cafeLng ||
+              data.restaurantLng ||
+              DEFAULT_DELIVERY_SETTINGS.cafeLng,
             deliveryRadiusKm: data.deliveryRadiusKm || 7,
             baseDeliveryFee: data.baseDeliveryFee || 30,
             freeDeliveryThreshold: data.freeDeliveryThreshold || 499,
-            deliveryEnabled: data.deliveryEnabled !== undefined ? data.deliveryEnabled : true,
+            deliveryEnabled:
+              data.deliveryEnabled !== undefined
+                ? data.deliveryEnabled
+                : true,
           });
         }
       } catch (err) {
         console.warn("Using default delivery settings:", err);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    fetchSettings();
   }, []);
 
-  const handleLogout = () => {
-    stopGpsTracking();
-    setIsAuthenticated(false);
-    setStaffSession(null);
-    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("delivery"));
-    sessionStorage.removeItem("elpestro_delivery_auth");
-  };
+  /* ============================================================= */
+  /* Sound                                                         */
+  /* ============================================================= */
 
-  /* ---- Sound ---- */
-  const playNewOrderChime = () => {
-    if (!soundEnabled) return;
+  const playNewOrderChime = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+    if (typeof window === "undefined") return;
     try {
       if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctor) return;
+        audioCtxRef.current = new Ctor();
       }
       const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {
+          /* ignore */
+        });
+      }
       const now = ctx.currentTime;
       [880, 1108, 1318].forEach((freq, i) => {
         const osc = ctx.createOscillator();
@@ -365,19 +693,54 @@ export default function DeliveryPortal() {
         osc.start(start);
         osc.stop(start + 0.15);
       });
-    } catch (e) {}
-  };
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
-  const toggleSound = () => {
-    const next = !soundEnabled;
-    setSoundEnabled(next);
-    localStorage.setItem("elpestro_rider_sound", String(next));
-    if (next) playNewOrderChime();
-  };
+  const toggleSound = useCallback(() => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SOUND_STORAGE_KEY, String(next));
+      } catch {
+        /* ignore */
+      }
+      if (next) playNewOrderChime();
+      return next;
+    });
+  }, [playNewOrderChime]);
 
-  /* ---- Realtime subscription ---- */
+  /* ============================================================= */
+  /* Logout                                                        */
+  /* ============================================================= */
+
+  const handleLogout = useCallback(() => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    setIsAuthenticated(false);
+    setStaffSession(null);
+    setOrders([]);
+    seenOrdersRef.current.clear();
+    setActiveTrackingOrderId(null);
+    setGpsActive(false);
+    import("@/lib/staffAuth")
+      .then(({ clearStaffSession }) => clearStaffSession("delivery"))
+      .catch(() => {
+        /* ignore */
+      });
+  }, []);
+
+  /* ============================================================= */
+  /* Realtime subscription                                         */
+  /* ============================================================= */
+
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (!activeBranchId) return;
+
     setLoading(true);
     setError(null);
 
@@ -385,13 +748,15 @@ export default function DeliveryPortal() {
       selectedDate,
       (list) => {
         const deliveryList: DeliveryOrder[] = [];
-        list.forEach((docData) => {
-          if (docData.type === "delivery" || docData.orderType === "delivery") {
+        list.forEach((docData: any) => {
+          if (
+            docData.type === "delivery" ||
+            docData.orderType === "delivery"
+          ) {
             deliveryList.push(docData as DeliveryOrder);
           }
         });
 
-        // detect new orders
         const newOnes = deliveryList.filter(
           (o) =>
             o.deliveryStatus !== "delivered" &&
@@ -401,9 +766,22 @@ export default function DeliveryPortal() {
         if (newOnes.length > 0) {
           playNewOrderChime();
           setNewOrderPulse(true);
-          setTimeout(() => setNewOrderPulse(false), 2500);
+          if (pulseTimeoutRef.current != null) {
+            window.clearTimeout(pulseTimeoutRef.current);
+          }
+          pulseTimeoutRef.current = window.setTimeout(() => {
+            setNewOrderPulse(false);
+            pulseTimeoutRef.current = null;
+          }, 2500);
         }
+
         deliveryList.forEach((o) => seenOrdersRef.current.add(o.id));
+        if (seenOrdersRef.current.size > SEEN_ORDERS_MAX) {
+          const trimmed = Array.from(seenOrdersRef.current).slice(
+            -SEEN_ORDERS_MAX
+          );
+          seenOrdersRef.current = new Set(trimmed);
+        }
 
         setOrders(deliveryList);
         setLoading(false);
@@ -413,166 +791,246 @@ export default function DeliveryPortal() {
         console.error("Delivery orders error:", err);
         setError("Unable to load orders. Please try again.");
         setLoading(false);
-      }
+      },
+      activeBranchId
     );
     return () => unsubscribe();
-  }, [isAuthenticated, selectedDate, soundEnabled]);
+  }, [
+    isAuthenticated,
+    selectedDate,
+    activeBranchId,
+    playNewOrderChime,
+  ]);
 
-  // Keep selectedOrder in sync with orders list without re-subscribing
+  /* Reset seen IDs on date/branch change */
   useEffect(() => {
-    if (selectedOrder) {
-      const updated = orders.find((o) => o.id === selectedOrder.id);
-      if (updated && (updated.deliveryStatus !== selectedOrder.deliveryStatus || updated.status !== selectedOrder.status)) {
-        setSelectedOrder(updated);
-      }
-    }
-  }, [orders, selectedOrder]);
+    seenOrdersRef.current.clear();
+  }, [selectedDate, activeBranchId]);
 
-  useEffect(() => {
-    return () => {
-      stopGpsTracking();
-    };
-  }, []);
+  /* ============================================================= */
+  /* GPS                                                           */
+  /* ============================================================= */
 
-  /* ---- GPS ---- */
-  const startGpsTracking = (orderId: string) => {
-    if (!navigator.geolocation) {
-      setGpsError("GPS is not supported on this device/browser.");
-      return;
-    }
-    stopGpsTracking();
-    setActiveTrackingOrderId(orderId);
-    setGpsActive(true);
-    setGpsError(null);
-
-    const id = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        setRiderCoords({ lat: latitude, lng: longitude });
-        setGpsAccuracy(Math.round(accuracy));
-        setGpsActive(true);
-        const now = Date.now();
-        // Throttle Firestore writes: at most once every 6 seconds to prevent freezing
-        if (now - lastGpsWriteRef.current >= 6000) {
-          lastGpsWriteRef.current = now;
-          try {
-            await updateDoc(doc(db, "orders", orderId), {
-              deliveryStatus: "out_for_delivery",
-              deliveryPersonLatitude: latitude,
-              deliveryPersonLongitude: longitude,
-              deliveryPersonName: "El Presto Delivery Partner",
-              deliveryLocationUpdatedAt: new Date().toISOString(),
-            });
-          } catch (err) {
-            console.error("GPS update error:", err);
-          }
-        }
-      },
-      (err) => {
-        setGpsActive(false);
-        setGpsError(err.message || "GPS connection lost");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-    watchIdRef.current = id;
-  };
-
-  const stopGpsTracking = () => {
+  const stopGpsTracking = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
     setGpsActive(false);
     setActiveTrackingOrderId(null);
-  };
+  }, []);
 
-  /* ---- Actions ---- */
-  const handleAccept = async (order: DeliveryOrder) => {
-    try {
-      await updateDoc(doc(db, "orders", order.id), {
-        deliveryStatus: "assigned",
-        deliveryPersonName: "El Presto Delivery Partner",
-        deliveryPersonId: "rider_portal",
-      });
-    } catch (err: any) {
-      alert("Error accepting delivery: " + err.message);
-    }
-  };
+  const startGpsTracking = useCallback(
+    (orderId: string) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setGpsError("GPS is not supported on this device/browser.");
+        return;
+      }
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      lastGpsWriteRef.current = 0;
+      setActiveTrackingOrderId(orderId);
+      setGpsActive(true);
+      setGpsError(null);
 
-  const handleStartDelivery = async (order: DeliveryOrder) => {
-    if (
-      order.status !== "ready" &&
-      order.deliveryStatus !== "ready" &&
-      order.status !== "out_for_delivery" &&
-      order.deliveryStatus !== "out_for_delivery"
-    ) {
-      alert("This order has not been marked ready by the kitchen yet. You can only start delivery once it is marked ready.");
-      return;
-    }
-    startGpsTracking(order.id);
-    try {
-      await updateDoc(doc(db, "orders", order.id), {
-        status: "out_for_delivery",
-        deliveryStatus: "out_for_delivery",
-        deliveryPersonName: "El Presto Delivery Partner",
-        deliveryPersonId: "rider_portal",
-      });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
+      const rider = getRiderIdentity(staffSessionRef.current);
+      const id = navigator.geolocation.watchPosition(
+        async (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          setRiderCoords({ lat: latitude, lng: longitude });
+          setGpsAccuracy(Math.round(accuracy));
+          setGpsActive(true);
+          const now = Date.now();
+          if (now - lastGpsWriteRef.current >= GPS_WRITE_INTERVAL_MS) {
+            lastGpsWriteRef.current = now;
+            try {
+              await updateDoc(doc(db, "orders", orderId), {
+                deliveryStatus: "out_for_delivery",
+                deliveryPersonLatitude: latitude,
+                deliveryPersonLongitude: longitude,
+                deliveryPersonName: rider.name,
+                deliveryPersonId: rider.id,
+                deliveryLocationUpdatedAt: Timestamp.now(),
+                updatedAt: Timestamp.now(),
+                updatedBy: rider.id,
+              });
+            } catch (err) {
+              console.error("GPS update error:", err);
+            }
+          }
+        },
+        (err) => {
+          setGpsActive(false);
+          setGpsError(err.message || "GPS connection lost");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+      watchIdRef.current = id;
+    },
+    []
+  );
 
-  const handleMarkDelivered = (order: DeliveryOrder) => {
+  /* ============================================================= */
+  /* Order actions                                                 */
+  /* ============================================================= */
+
+  const handleStartDelivery = useCallback(
+    async (order: DeliveryOrder) => {
+      if (busyOrderId) return;
+
+      const canStart =
+        order.status === "ready" ||
+        order.deliveryStatus === "ready" ||
+        order.deliveryStatus === "pending" ||
+        order.deliveryStatus === "assigned" ||
+        order.status === "out_for_delivery" ||
+        order.deliveryStatus === "out_for_delivery";
+
+      if (!canStart) {
+        pushToast(
+          "error",
+          "This order has not been marked ready by the kitchen yet."
+        );
+        return;
+      }
+
+      setBusyOrderId(order.id);
+      const rider = getRiderIdentity(staffSessionRef.current);
+      try {
+        await updateDoc(doc(db, "orders", order.id), {
+          status: "out_for_delivery",
+          deliveryStatus: "out_for_delivery",
+          deliveryPersonName: rider.name,
+          deliveryPersonId: rider.id,
+          updatedAt: Timestamp.now(),
+          updatedBy: rider.id,
+        });
+        // Start GPS only after the write succeeded.
+        startGpsTracking(order.id);
+        pushToast("success", `Delivery started for ${order.orderNumber}.`);
+      } catch (err: any) {
+        console.error("Error starting delivery:", err);
+        pushToast(
+          "error",
+          `Failed to start delivery: ${err?.message || err}`
+        );
+      } finally {
+        setBusyOrderId(null);
+      }
+    },
+    [busyOrderId, pushToast, startGpsTracking]
+  );
+
+  const openOtpModal = useCallback((order: DeliveryOrder) => {
     setOtpModalOrder(order);
     setEnteredOtp("");
     setOtpError("");
-  };
+  }, []);
 
-  const handleVerifyOtpAndDeliver = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerifyOtpAndDeliver = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!otpModalOrder) return;
+      setOtpError("");
+
+      const inputOtp = enteredOtp.trim();
+
+      // Fail closed: refuse delivery if the order has no OTP on record.
+      if (!otpModalOrder.deliveryOtp) {
+        setOtpError(
+          "This order has no OTP on record. Please contact the dispatcher."
+        );
+        return;
+      }
+      if (!/^\d{4}$/.test(inputOtp)) {
+        setOtpError("Please enter the 4-digit OTP provided by the customer.");
+        return;
+      }
+      if (inputOtp !== otpModalOrder.deliveryOtp) {
+        setOtpError(
+          "❌ Incorrect OTP! Please ask the customer for their 4-digit code."
+        );
+        return;
+      }
+
+      setIsVerifyingOtp(true);
+      const rider = getRiderIdentity(staffSessionRef.current);
+      try {
+        await updateDoc(doc(db, "orders", otpModalOrder.id), {
+          status: "completed",
+          deliveryStatus: "delivered",
+          deliveredAt: Timestamp.now(),
+          otpVerified: true,
+          deliveredBy: rider.id,
+          deliveredByName: rider.name,
+          updatedAt: Timestamp.now(),
+          updatedBy: rider.id,
+        });
+
+        // If this order was the one being tracked, stop GPS.
+        if (activeTrackingOrderId === otpModalOrder.id) {
+          stopGpsTracking();
+        }
+        pushToast(
+          "success",
+          `Order ${otpModalOrder.orderNumber} delivered successfully.`
+        );
+        setOtpModalOrder(null);
+        setEnteredOtp("");
+      } catch (err: any) {
+        console.error("Error completing delivery:", err);
+        setOtpError("Could not complete delivery. Please retry.");
+      } finally {
+        setIsVerifyingOtp(false);
+      }
+    },
+    [
+      otpModalOrder,
+      enteredOtp,
+      activeTrackingOrderId,
+      stopGpsTracking,
+      pushToast,
+    ]
+  );
+
+  const openNavigationApp = useCallback(
+    (lat?: number, lng?: number) => {
+      if (typeof lat !== "number" || typeof lng !== "number") {
+        pushToast("error", "Customer coordinates are not set.");
+        return;
+      }
+      const originParam = riderCoords
+        ? `&origin=${riderCoords.lat},${riderCoords.lng}`
+        : `&origin=${settings.cafeLat},${settings.cafeLng}`;
+      const url = `https://www.google.com/maps/dir/?api=1${originParam}&destination=${lat},${lng}&travelmode=driving`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [riderCoords, settings.cafeLat, settings.cafeLng, pushToast]
+  );
+
+  /* ============================================================= */
+  /* OTP modal escape                                              */
+  /* ============================================================= */
+
+  useEffect(() => {
     if (!otpModalOrder) return;
-    setOtpError("");
-    const inputOtp = enteredOtp.trim();
-    if (!inputOtp) {
-      setOtpError("Please enter the 4-digit OTP provided by the customer.");
-      return;
-    }
-    if (otpModalOrder.deliveryOtp && inputOtp !== otpModalOrder.deliveryOtp) {
-      setOtpError("❌ Incorrect OTP! Please ask the customer for their 4-digit code.");
-      return;
-    }
-    setIsVerifyingOtp(true);
-    stopGpsTracking();
-    try {
-      await updateDoc(doc(db, "orders", otpModalOrder.id), {
-        status: "completed",
-        deliveryStatus: "delivered",
-        deliveredAt: new Date().toISOString(),
-        otpVerified: true,
-      });
-      setOtpModalOrder(null);
-      setEnteredOtp("");
-    } catch (err: any) {
-      setOtpError("Error completing delivery: " + err.message);
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isVerifyingOtp) {
+        setOtpModalOrder(null);
+        setEnteredOtp("");
+        setOtpError("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [otpModalOrder, isVerifyingOtp]);
 
-  const openNavigationApp = (lat?: number, lng?: number) => {
-    if (!lat || !lng) {
-      alert("Customer coordinates are not set.");
-      return;
-    }
-    const originParam = riderCoords
-      ? `&origin=${riderCoords.lat},${riderCoords.lng}`
-      : `&origin=${settings.cafeLat},${settings.cafeLng}`;
-    const url = `https://www.google.com/maps/dir/?api=1${originParam}&destination=${lat},${lng}&travelmode=driving`;
-    window.open(url, "_blank");
-  };
+  /* ============================================================= */
+  /* Derived                                                       */
+  /* ============================================================= */
 
-  /* ---- Derived ---- */
-  // Delivery partner only sees orders after they are marked READY by the kitchen (or already in transit)
   const activeOrders = useMemo(
     () =>
       orders.filter(
@@ -586,77 +1044,69 @@ export default function DeliveryPortal() {
       ),
     [orders]
   );
+
   const deliveredOrders = useMemo(
     () => orders.filter((o) => o.deliveryStatus === "delivered"),
     [orders]
   );
 
   const deliveredToday = useMemo(() => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const ts = todayStart.getTime();
-    return deliveredOrders.filter((o: any) => {
-      const t = o.deliveredAt ? new Date(o.deliveredAt).getTime() : 0;
-      return t >= ts;
-    }).length;
+    const today = getISTDateString(0);
+    return deliveredOrders.filter(
+      (o) => getISTDateKey(o.deliveredAt) === today
+    ).length;
   }, [deliveredOrders]);
 
   const earningsToday = useMemo(() => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const ts = todayStart.getTime();
+    const today = getISTDateString(0);
     return deliveredOrders
-      .filter((o: any) => {
-        const t = o.deliveredAt ? new Date(o.deliveredAt).getTime() : 0;
-        return t >= ts;
-      })
-      .reduce((sum: number, o: any) => sum + (o.deliveryFee || 0), 0);
+      .filter((o) => getISTDateKey(o.deliveredAt) === today)
+      .reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
   }, [deliveredOrders]);
 
   const riderLat = riderCoords?.lat ?? settings.cafeLat;
   const riderLng = riderCoords?.lng ?? settings.cafeLng;
 
-  /* ---- Sort + filter active orders (distance priority default) ---- */
   const processedOrders = useMemo(() => {
     let list = [...activeOrders];
 
-    // Filter by status
-    if (filterMode !== "all") {
-      if (filterMode === "ready") {
-        list = list.filter(
-          (o) =>
-            (o.status === "ready" || o.deliveryStatus === "ready" || o.deliveryStatus === "pending") &&
-            o.deliveryStatus !== "out_for_delivery" &&
-            o.status !== "out_for_delivery"
-        );
-      } else if (filterMode === "out_for_delivery") {
-        list = list.filter(
-          (o) =>
-            o.deliveryStatus === "out_for_delivery" || o.status === "out_for_delivery"
-        );
-      } else {
-        list = list.filter((o) => (o.deliveryStatus || "pending") === filterMode);
-      }
+    if (filterMode === "ready") {
+      list = list.filter(
+        (o) =>
+          (o.status === "ready" ||
+            o.deliveryStatus === "ready" ||
+            o.deliveryStatus === "pending" ||
+            o.deliveryStatus === "assigned") &&
+          o.deliveryStatus !== "out_for_delivery" &&
+          o.status !== "out_for_delivery"
+      );
+    } else if (filterMode === "out_for_delivery") {
+      list = list.filter(
+        (o) =>
+          o.deliveryStatus === "out_for_delivery" ||
+          o.status === "out_for_delivery"
+      );
     }
 
-    // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter(
         (o) =>
-          o.orderNumber?.toLowerCase().includes(q) ||
-          o.customerName?.toLowerCase().includes(q) ||
-          o.customerPhone?.includes(q) ||
-          o.phone?.includes(q)
+          (o.orderNumber || "").toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q) ||
+          safeString(o.customerPhone).includes(q) ||
+          safeString(o.phone).includes(q)
       );
     }
 
-    // Compute distance for sorting
     const withDistance = list.map((o) => {
-      const cLat = o.deliveryLatitude || o.location?.lat;
-      const cLng = o.deliveryLongitude || o.location?.lng;
+      const cLat = getOrderLat(o);
+      const cLng = getOrderLng(o);
       let distance = o.deliveryDistance || 999;
-      if (cLat && cLng) {
+      if (
+        typeof cLat === "number" &&
+        typeof cLng === "number"
+      ) {
         distance = calcDistance(riderLat, riderLng, cLat, cLng);
       }
       return { order: o, distance };
@@ -664,20 +1114,28 @@ export default function DeliveryPortal() {
 
     withDistance.sort((a, b) => {
       if (sortMode === "distance") return a.distance - b.distance;
-      if (sortMode === "value") return (b.order.total || 0) - (a.order.total || 0);
-      // time (newest first)
+      if (sortMode === "value")
+        return (b.order.total || 0) - (a.order.total || 0);
       return (
-        new Date(b.order.createdAt || 0).getTime() -
-        new Date(a.order.createdAt || 0).getTime()
+        toDate(b.order.createdAt).getTime() -
+        toDate(a.order.createdAt).getTime()
       );
     });
 
     return withDistance;
-  }, [activeOrders, filterMode, searchQuery, sortMode, riderLat, riderLng]);
+  }, [
+    activeOrders,
+    filterMode,
+    searchQuery,
+    sortMode,
+    riderLat,
+    riderLng,
+  ]);
 
-  /* =============================================== */
-  /* LOGIN SCREEN                                    */
-  /* =============================================== */
+  /* ============================================================= */
+  /* Login gate                                                    */
+  /* ============================================================= */
+
   if (isVerifyingAuth) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
@@ -692,24 +1150,26 @@ export default function DeliveryPortal() {
         panel="delivery"
         panelDisplayName="Delivery Partner & Fleet Dispatch"
         panelIcon={<Truck size={28} />}
-        onSuccess={(session) => {
-          setStaffSession(session);
+        onSuccess={(session: unknown) => {
+          const s = (session as StaffSession) || null;
+          setStaffSession(s);
           setIsAuthenticated(true);
-          if (session.branchId) {
-            setActiveBranchId(session.branchId);
-          }
+          if (s?.branchId) setActiveBranchId(s.branchId);
         }}
       />
     );
   }
-  /* =============================================== */
-  /* MAIN PORTAL                                     */
-  /* =============================================== */
+
+  /* ============================================================= */
+  /* Render                                                        */
+  /* ============================================================= */
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white pb-20">
-      {/* ============================================ */}
-      {/* HEADER                                       */}
-      {/* ============================================ */}
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-20 text-white">
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+
+      {/* HEADER */}
       <header className="sticky top-0 z-40 border-b border-white/5 bg-slate-950/80 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -730,7 +1190,6 @@ export default function DeliveryPortal() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* GPS chip */}
             <div
               className={`hidden items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider sm:flex ${
                 gpsActive
@@ -746,22 +1205,33 @@ export default function DeliveryPortal() {
               {gpsActive ? `GPS ±${gpsAccuracy}m` : "GPS Idle"}
             </div>
 
-            {/* Sound toggle */}
             <button
+              type="button"
               onClick={toggleSound}
+              aria-label={
+                soundEnabled
+                  ? "Mute new order alerts"
+                  : "Enable new order alerts"
+              }
+              aria-pressed={soundEnabled}
               className={`grid h-9 w-9 place-items-center rounded-xl border transition ${
                 soundEnabled
                   ? "border-orange-500/40 bg-orange-500/15 text-orange-400"
                   : "border-white/5 bg-slate-800 text-slate-500"
               }`}
-              title={soundEnabled ? "Mute new order alerts" : "Enable new order alerts"}
+              title={
+                soundEnabled
+                  ? "Mute new order alerts"
+                  : "Enable new order alerts"
+              }
             >
               {soundEnabled ? <Bell size={15} /> : <BellOff size={15} />}
             </button>
 
-            {/* Logout */}
             <button
+              type="button"
               onClick={handleLogout}
+              aria-label="Sign out"
               className="grid h-9 w-9 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
               title="Logout"
             >
@@ -772,18 +1242,17 @@ export default function DeliveryPortal() {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4">
-        {/* ============================================ */}
-        {/* NEW ORDER PULSE BANNER                        */}
-        {/* ============================================ */}
+        {/* NEW ORDER PULSE */}
         {newOrderPulse && (
-          <div className="animate-pulse rounded-2xl border border-orange-500/40 bg-gradient-to-r from-orange-600/20 to-amber-600/20 px-4 py-3 text-xs font-black uppercase tracking-wider text-orange-300">
+          <div
+            role="status"
+            className="animate-pulse rounded-2xl border border-orange-500/40 bg-gradient-to-r from-orange-600/20 to-amber-600/20 px-4 py-3 text-xs font-black uppercase tracking-wider text-orange-300"
+          >
             🔔 New delivery order received!
           </div>
         )}
 
-        {/* ============================================ */}
-        {/* GPS TRACKING BANNER                           */}
-        {/* ============================================ */}
+        {/* GPS BANNER */}
         {activeTrackingOrderId && (
           <div className="relative overflow-hidden rounded-3xl border border-blue-500/40 bg-gradient-to-r from-blue-950/60 via-indigo-950/40 to-slate-900/60 p-4 backdrop-blur-xl">
             <span className="pointer-events-none absolute -left-10 -top-10 h-32 w-32 rounded-full bg-blue-500/20 blur-3xl" />
@@ -805,7 +1274,17 @@ export default function DeliveryPortal() {
                 </div>
               </div>
               <button
-                onClick={stopGpsTracking}
+                type="button"
+                onClick={() =>
+                  setConfirm({
+                    title: "Pause live GPS sharing?",
+                    message:
+                      "The customer will stop seeing your location until you resume.",
+                    confirmLabel: "Pause GPS",
+                    destructive: true,
+                    onConfirm: () => stopGpsTracking(),
+                  })
+                }
                 className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/15 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/25"
               >
                 Pause GPS
@@ -817,15 +1296,21 @@ export default function DeliveryPortal() {
         {gpsError && (
           <div className="flex items-start gap-2 rounded-2xl border border-red-500/25 bg-red-500/10 p-3">
             <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-400" />
-            <p className="text-xs font-semibold text-red-300">
+            <p className="flex-1 text-xs font-semibold text-red-300">
               GPS Warning: {gpsError}
             </p>
+            <button
+              type="button"
+              onClick={() => setGpsError(null)}
+              aria-label="Dismiss GPS warning"
+              className="shrink-0 rounded-md p-0.5 text-red-300 transition hover:text-white"
+            >
+              <X size={13} />
+            </button>
           </div>
         )}
 
-        {/* ============================================ */}
-        {/* STATS GRID                                    */}
-        {/* ============================================ */}
+        {/* STATS */}
         <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
           <StatTile
             label="Active"
@@ -836,8 +1321,9 @@ export default function DeliveryPortal() {
           <StatTile
             label="In Transit"
             value={
-              activeOrders.filter((o) => o.deliveryStatus === "out_for_delivery")
-                .length
+              activeOrders.filter(
+                (o) => o.deliveryStatus === "out_for_delivery"
+              ).length
             }
             icon={<Truck size={16} />}
             tone="blue"
@@ -856,11 +1342,26 @@ export default function DeliveryPortal() {
           />
         </div>
 
-        {/* ============================================ */}
-        {/* TABS                                          */}
-        {/* ============================================ */}
-        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/5 bg-slate-900/60 p-1 backdrop-blur-xl">
+        {/* DATE */}
+        <div className="flex items-center justify-center">
+          <DateNavigator
+            selectedDate={selectedDate}
+            onChangeDate={setSelectedDate}
+            orderCount={orders.length}
+            isLoading={loading}
+          />
+        </div>
+
+        {/* TABS */}
+        <div
+          role="tablist"
+          aria-label="Delivery views"
+          className="grid grid-cols-2 gap-1 rounded-2xl border border-white/5 bg-slate-900/60 p-1 backdrop-blur-xl"
+        >
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "active"}
             onClick={() => setActiveTab("active")}
             className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black uppercase tracking-wider transition ${
               activeTab === "active"
@@ -874,6 +1375,9 @@ export default function DeliveryPortal() {
             </span>
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "history"}
             onClick={() => setActiveTab("history")}
             className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black uppercase tracking-wider transition ${
               activeTab === "history"
@@ -888,21 +1392,21 @@ export default function DeliveryPortal() {
           </button>
         </div>
 
-        {/* ============================================ */}
-        {/* ACTIVE TAB                                    */}
-        {/* ============================================ */}
+        {/* ACTIVE TAB */}
         {activeTab === "active" ? (
           <>
-            {/* Filter + sort toolbar */}
             {activeOrders.length > 0 && (
               <div className="space-y-3 rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
-                {/* Search */}
                 <div className="relative">
                   <Search
                     size={15}
                     className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
                   />
+                  <label htmlFor="rider-search" className="sr-only">
+                    Search orders
+                  </label>
                   <input
+                    id="rider-search"
                     type="text"
                     placeholder="Search by order #, name, or phone…"
                     value={searchQuery}
@@ -911,7 +1415,9 @@ export default function DeliveryPortal() {
                   />
                   {searchQuery && (
                     <button
+                      type="button"
                       onClick={() => setSearchQuery("")}
+                      aria-label="Clear search"
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-white"
                     >
                       <X size={14} />
@@ -919,18 +1425,21 @@ export default function DeliveryPortal() {
                   )}
                 </div>
 
-                {/* Sort + filter row */}
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  {/* Filter pills */}
                   <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
                     {[
-                      { id: "all", label: "All Active" },
-                      { id: "ready", label: "Ready to Deliver" },
-                      { id: "out_for_delivery", label: "In Transit" },
+                      { id: "all" as const, label: "All Active" },
+                      { id: "ready" as const, label: "Ready to Deliver" },
+                      {
+                        id: "out_for_delivery" as const,
+                        label: "In Transit",
+                      },
                     ].map((f) => (
                       <button
                         key={f.id}
-                        onClick={() => setFilterMode(f.id as FilterMode)}
+                        type="button"
+                        onClick={() => setFilterMode(f.id)}
+                        aria-pressed={filterMode === f.id}
                         className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
                           filterMode === f.id
                             ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm"
@@ -942,21 +1451,30 @@ export default function DeliveryPortal() {
                     ))}
                   </div>
 
-                  {/* Sort toggle */}
                   <div className="flex items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
                     <span className="px-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
                       <ArrowUpDown size={11} className="inline" /> Sort:
                     </span>
                     {[
-                      { id: "distance", label: "Nearest", icon: Route },
-                      { id: "time", label: "Newest", icon: Clock },
-                      { id: "value", label: "Highest ₹", icon: TrendingUp },
+                      {
+                        id: "distance" as const,
+                        label: "Nearest",
+                        icon: Route,
+                      },
+                      { id: "time" as const, label: "Newest", icon: Clock },
+                      {
+                        id: "value" as const,
+                        label: "Highest ₹",
+                        icon: TrendingUp,
+                      },
                     ].map((s) => {
                       const Icon = s.icon;
                       return (
                         <button
                           key={s.id}
-                          onClick={() => setSortMode(s.id as SortMode)}
+                          type="button"
+                          onClick={() => setSortMode(s.id)}
+                          aria-pressed={sortMode === s.id}
                           className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
                             sortMode === s.id
                               ? "bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/30"
@@ -972,8 +1490,19 @@ export default function DeliveryPortal() {
               </div>
             )}
 
-            {/* Orders list */}
-            {processedOrders.length === 0 ? (
+            {loading ? (
+              <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/40 py-20">
+                <Loader2 size={32} className="animate-spin text-orange-500" />
+                <p className="mt-4 text-sm font-black text-slate-400">
+                  Loading deliveries…
+                </p>
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center rounded-3xl border border-red-500/20 bg-red-500/5 py-20">
+                <AlertCircle size={32} className="text-red-400" />
+                <p className="mt-4 text-sm font-black text-red-300">{error}</p>
+              </div>
+            ) : processedOrders.length === 0 ? (
               <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/40 py-20">
                 <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-800/60">
                   <ShoppingBag size={36} className="text-slate-600" />
@@ -990,19 +1519,16 @@ export default function DeliveryPortal() {
             ) : (
               <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
                 {processedOrders.map(({ order, distance }) => {
-                  const cLat = order.deliveryLatitude || order.location?.lat;
-                  const cLng = order.deliveryLongitude || order.location?.lng;
-                  const isCurrentTracking = activeTrackingOrderId === order.id;
-                  const fullAddress =
-                    order.deliveryAddress?.fullAddress ||
-                    (typeof order.location === "string"
-                      ? order.location
-                      : order.location?.address) ||
-                    "Address not specified";
+                  const cLat = getOrderLat(order);
+                  const cLng = getOrderLng(order);
+                  const isCurrentTracking =
+                    activeTrackingOrderId === order.id;
+                  const fullAddress = getFullAddress(order);
                   const phoneNum = order.customerPhone || order.phone || "";
                   const elapsed = getElapsedMins(order.createdAt);
                   const isLate =
-                    elapsed >= 25 && order.deliveryStatus !== "out_for_delivery";
+                    elapsed >= 25 &&
+                    order.deliveryStatus !== "out_for_delivery";
                   const road = orderRoadStats[order.id];
                   const distanceLabel = road
                     ? `${road.distanceKm} km`
@@ -1015,6 +1541,7 @@ export default function DeliveryPortal() {
                     ? `~${Math.max(3, Math.round(distance * 3))} min`
                     : "—";
                   const isMapOpen = expandedMapId === order.id;
+                  const isBusy = busyOrderId === order.id;
 
                   return (
                     <div
@@ -1027,13 +1554,15 @@ export default function DeliveryPortal() {
                           : "border-white/5 bg-slate-900/60 hover:border-white/10"
                       }`}
                     >
-                      {/* Distance ribbon */}
                       <div className="flex items-center justify-between border-b border-white/5 bg-slate-950/40 px-4 py-2.5">
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="font-mono text-sm font-black text-white">
                             {order.orderNumber}
                           </span>
-                          <StatusBadge status={order.deliveryStatus} orderStatus={order.status} />
+                          <StatusBadge
+                            status={order.deliveryStatus}
+                            orderStatus={order.status}
+                          />
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
                           {isLate && (
@@ -1055,14 +1584,17 @@ export default function DeliveryPortal() {
                         </div>
                       </div>
 
-                      {/* Body */}
                       <div className="flex-1 space-y-3 p-4">
-                        {/* Customer row */}
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="flex items-center gap-1.5 text-sm font-black text-white">
-                              <User size={13} className="shrink-0 text-orange-400" />
-                              <span className="truncate">{order.customerName}</span>
+                              <User
+                                size={13}
+                                className="shrink-0 text-orange-400"
+                              />
+                              <span className="truncate">
+                                {order.customerName}
+                              </span>
                             </p>
                             {phoneNum && (
                               <p className="mt-0.5 font-mono text-[11px] font-semibold text-slate-400">
@@ -1080,7 +1612,6 @@ export default function DeliveryPortal() {
                           </div>
                         </div>
 
-                        {/* Address */}
                         <p className="flex items-start gap-1.5 text-[11px] font-semibold leading-snug text-slate-400">
                           <MapPin
                             size={12}
@@ -1089,62 +1620,64 @@ export default function DeliveryPortal() {
                           <span className="line-clamp-2">{fullAddress}</span>
                         </p>
 
-                        {/* ETA chip */}
                         <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-800/40 px-2.5 py-2">
                           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-400">
                             <Clock size={11} /> ETA {etaLabel}
                           </div>
                           <span className="h-3 w-px bg-white/10" />
                           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                            <Package size={11} /> {order.items?.length || 0} items
+                            <Package size={11} /> {order.items?.length || 0}{" "}
+                            items
                           </div>
                         </div>
 
-                        {/* Items preview */}
                         <p className="line-clamp-1 text-[11px] font-semibold text-slate-500">
                           {order.items
                             ?.map((i) => `${i.quantity}× ${i.name}`)
                             .join(" · ")}
                         </p>
 
-                        {/* Instructions */}
                         {order.instructions && (
                           <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] font-bold italic text-amber-300">
                             💬 {order.instructions}
                           </p>
                         )}
 
-                        {/* Optional map (expandable) */}
-                        {isMapOpen && cLat && cLng && (
-                          <div className="overflow-hidden rounded-2xl border border-white/10">
-                            <LiveMap
-                              riderLat={riderCoords?.lat}
-                              riderLng={riderCoords?.lng}
-                              customerLat={cLat}
-                              customerLng={cLng}
-                              cafeLat={settings.cafeLat}
-                              cafeLng={settings.cafeLng}
-                              customerName={order.customerName}
-                              onRouteCalculated={(route) => {
-                                setOrderRoadStats((prev) => ({
-                                  ...prev,
-                                  [order.id]: {
-                                    distanceKm: route.distanceKm,
-                                    durationMinutes: route.durationMinutes,
-                                  },
-                                }));
-                              }}
-                              className="h-48 w-full"
-                            />
-                          </div>
-                        )}
+                        {isMapOpen &&
+                          typeof cLat === "number" &&
+                          typeof cLng === "number" && (
+                            <div className="overflow-hidden rounded-2xl border border-white/10">
+                              <LiveMap
+                                riderLat={riderCoords?.lat}
+                                riderLng={riderCoords?.lng}
+                                customerLat={cLat}
+                                customerLng={cLng}
+                                cafeLat={settings.cafeLat}
+                                cafeLng={settings.cafeLng}
+                                customerName={order.customerName}
+                                onRouteCalculated={(route: {
+                                  distanceKm: number;
+                                  durationMinutes: number;
+                                }) => {
+                                  setOrderRoadStats((prev) => ({
+                                    ...prev,
+                                    [order.id]: {
+                                      distanceKm: route.distanceKm,
+                                      durationMinutes:
+                                        route.durationMinutes,
+                                    },
+                                  }));
+                                }}
+                                className="h-48 w-full"
+                              />
+                            </div>
+                          )}
                       </div>
 
-                      {/* Actions */}
                       <div className="grid grid-cols-2 gap-2 border-t border-white/5 p-3 sm:grid-cols-4">
                         {phoneNum ? (
                           <a
-                            href={`tel:${phoneNum}`}
+                            href={`tel:${phoneNum.replace(/[^\d+]/g, "")}`}
                             className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/20"
                           >
                             <Phone size={12} /> Call
@@ -1156,54 +1689,64 @@ export default function DeliveryPortal() {
                         )}
 
                         <button
+                          type="button"
                           onClick={() => openNavigationApp(cLat, cLng)}
                           className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 py-2 text-[10px] font-black uppercase tracking-wider text-blue-300 transition hover:bg-blue-500/20"
                         >
                           <Navigation size={12} /> Navigate
                         </button>
 
-                        {order.deliveryStatus !== "out_for_delivery" ? (
+                        {order.deliveryStatus !== "out_for_delivery" &&
+                        order.status !== "out_for_delivery" ? (
                           <button
+                            type="button"
+                            disabled={isBusy}
                             onClick={() => handleStartDelivery(order)}
-                            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
+                            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95 disabled:opacity-60"
                           >
-                            <Truck size={12} /> Start
+                            {isBusy ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Truck size={12} />
+                            )}
+                            Start
                           </button>
                         ) : (
-                          <button
-                            onClick={() => setActiveTrackingOrderId(order.id)}
-                            disabled
-                            className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-500/20 py-2 text-[10px] font-black uppercase tracking-wider text-blue-300"
-                          >
-                            <Compass size={12} className="animate-spin" /> Transit
-                          </button>
+                          <span className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-500/20 py-2 text-[10px] font-black uppercase tracking-wider text-blue-300">
+                            <Compass size={12} className="animate-spin" />{" "}
+                            Transit
+                          </span>
                         )}
 
                         <button
-                          onClick={() => handleMarkDelivered(order)}
+                          type="button"
+                          onClick={() => openOtpModal(order)}
                           className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition hover:scale-[1.03] active:scale-95"
                         >
                           <Check size={12} /> Done
                         </button>
 
-                        {/* Map toggle row (full width) */}
-                        {cLat && cLng && (
-                          <button
-                            onClick={() =>
-                              setExpandedMapId(isMapOpen ? null : order.id)
-                            }
-                            className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-slate-800/60 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 transition hover:bg-slate-700/60 sm:col-span-4"
-                          >
-                            <Eye size={12} />
-                            {isMapOpen ? "Hide Map" : "Show Route Map"}
-                            <ChevronDown
-                              size={12}
-                              className={`transition-transform ${
-                                isMapOpen ? "rotate-180" : ""
-                              }`}
-                            />
-                          </button>
-                        )}
+                        {typeof cLat === "number" &&
+                          typeof cLng === "number" && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedMapId(
+                                  isMapOpen ? null : order.id
+                                )
+                              }
+                              className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-slate-800/60 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 transition hover:bg-slate-700/60 sm:col-span-4"
+                            >
+                              <Eye size={12} />
+                              {isMapOpen ? "Hide Map" : "Show Route Map"}
+                              <ChevronDown
+                                size={12}
+                                className={`transition-transform ${
+                                  isMapOpen ? "rotate-180" : ""
+                                }`}
+                              />
+                            </button>
+                          )}
                       </div>
                     </div>
                   );
@@ -1212,9 +1755,7 @@ export default function DeliveryPortal() {
             )}
           </>
         ) : (
-          /* ============================================ */
-          /* HISTORY TAB                                   */
-          /* ============================================ */
+          /* HISTORY TAB */
           <div className="space-y-3">
             {deliveredOrders.length === 0 ? (
               <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/40 py-20">
@@ -1247,7 +1788,7 @@ export default function DeliveryPortal() {
                       👤 {order.customerName}
                     </p>
                     <p className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-slate-500">
-                      {order.deliveryAddress?.fullAddress || "Delivered"}
+                      {getFullAddress(order)}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
@@ -1267,27 +1808,40 @@ export default function DeliveryPortal() {
         )}
       </main>
 
-      {/* ============================================ */}
-      {/* OTP VERIFICATION MODAL                        */}
-      {/* ============================================ */}
+      {/* OTP MODAL */}
       {otpModalOrder && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-md sm:items-center sm:p-4">
-          <div className="relative w-full max-w-md overflow-hidden rounded-t-3xl border border-white/10 bg-slate-900/95 shadow-2xl backdrop-blur-2xl sm:rounded-3xl">
-            {/* Decorative glow */}
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-md sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Verify delivery OTP"
+          onClick={() => {
+            if (isVerifyingOtp) return;
+            setOtpModalOrder(null);
+            setEnteredOtp("");
+            setOtpError("");
+          }}
+        >
+          <div
+            className="relative w-full max-w-md overflow-hidden rounded-t-3xl border border-white/10 bg-slate-900/95 shadow-2xl backdrop-blur-2xl sm:rounded-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <span className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-emerald-500/20 blur-3xl" />
             <span className="pointer-events-none absolute -bottom-16 -right-16 h-40 w-40 rounded-full bg-teal-500/15 blur-3xl" />
 
-            {/* Mobile drag handle */}
             <div className="flex justify-center pt-3 sm:hidden">
               <span className="h-1.5 w-12 rounded-full bg-slate-700" />
             </div>
 
             <button
+              type="button"
               onClick={() => {
+                if (isVerifyingOtp) return;
                 setOtpModalOrder(null);
                 setEnteredOtp("");
                 setOtpError("");
               }}
+              aria-label="Close OTP modal"
               className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full bg-slate-800 text-slate-400 transition hover:text-white"
             >
               <X size={14} />
@@ -1312,23 +1866,37 @@ export default function DeliveryPortal() {
                   <span className="font-black text-white">
                     {otpModalOrder.customerName}
                   </span>{" "}
-                  for the 4-digit confirmation code shown on their tracking screen.
+                  for the 4-digit confirmation code shown on their tracking
+                  screen.
                 </p>
               </div>
 
               {otpError && (
-                <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-                  <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-400" />
+                <div
+                  role="alert"
+                  className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3"
+                >
+                  <AlertCircle
+                    size={15}
+                    className="mt-0.5 shrink-0 text-red-400"
+                  />
                   <p className="text-xs font-bold text-red-300">{otpError}</p>
                 </div>
               )}
 
-              <form onSubmit={handleVerifyOtpAndDeliver} className="space-y-4">
+              <form
+                onSubmit={handleVerifyOtpAndDeliver}
+                className="space-y-4"
+              >
                 <div>
-                  <label className="mb-2 block text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <label
+                    htmlFor="otp-input"
+                    className="mb-2 block text-center text-[10px] font-black uppercase tracking-widest text-slate-400"
+                  >
                     4-Digit Customer Code
                   </label>
                   <input
+                    id="otp-input"
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
@@ -1338,9 +1906,11 @@ export default function DeliveryPortal() {
                     placeholder="• • • •"
                     value={enteredOtp}
                     onChange={(e) =>
-                      setEnteredOtp(e.target.value.replace(/\D/g, "").slice(0, 4))
+                      setEnteredOtp(
+                        e.target.value.replace(/\D/g, "").slice(0, 4)
+                      )
                     }
-                    className="w-full rounded-2xl border-2 border-emerald-500/60 bg-slate-800/60 py-3.5 px-4 text-center font-mono text-3xl font-black tracking-[0.4em] text-emerald-400 placeholder-slate-600 shadow-inner transition focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 sm:text-4xl"
+                    className="w-full rounded-2xl border-2 border-emerald-500/60 bg-slate-800/60 px-4 py-3.5 text-center font-mono text-3xl font-black tracking-[0.4em] text-emerald-400 placeholder-slate-600 shadow-inner transition focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 sm:text-4xl"
                   />
                 </div>
 
@@ -1348,6 +1918,7 @@ export default function DeliveryPortal() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (isVerifyingOtp) return;
                       setOtpModalOrder(null);
                       setEnteredOtp("");
                       setOtpError("");
@@ -1363,7 +1934,8 @@ export default function DeliveryPortal() {
                   >
                     {isVerifyingOtp ? (
                       <>
-                        <Loader2 size={14} className="animate-spin" /> Verifying…
+                        <Loader2 size={14} className="animate-spin" />{" "}
+                        Verifying…
                       </>
                     ) : (
                       <>
@@ -1380,5 +1952,3 @@ export default function DeliveryPortal() {
     </div>
   );
 }
-
-

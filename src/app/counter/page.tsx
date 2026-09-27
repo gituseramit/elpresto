@@ -1,36 +1,133 @@
 ﻿"use client";
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  ShoppingCart, Clock, CheckCircle, AlertCircle, Search, Plus, Minus,
-  Trash2, Printer, Utensils, LogOut, Lock, Bike, Coffee, ShoppingBag,
-  DollarSign, Receipt, CreditCard, Menu as MenuIcon, X, Store,
-  Bell, BellOff, Loader2, Maximize2, Minimize2, Undo2, Pencil,
-  Copy, Star, Keyboard, Zap, Wifi, WifiOff, Percent,
-  StickyNote, RotateCcw, History, Hash, Info, ChevronRight,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ShoppingCart,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Search,
+  Plus,
+  Minus,
+  Trash2,
+  Printer,
+  Utensils,
+  LogOut,
+  Bike,
+  Store,
+  Bell,
+  BellOff,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Undo2,
+  Pencil,
+  Copy,
+  Star,
+  Keyboard,
+  Wifi,
+  StickyNote,
+  RotateCcw,
+  Info,
+  ChevronRight,
+  X,
 } from "lucide-react";
-import Link from "next/link";
 import { db } from "@/lib/firebase";
 import {
-  collection, onSnapshot, query, orderBy, where, getDocs,
-  doc, updateDoc, addDoc, Timestamp,
+  collection,
+  onSnapshot,
+  query,
+  where,
+  getDocs,
+  doc,
+  updateDoc,
+  addDoc,
+  Timestamp,
 } from "firebase/firestore";
 import { DUMMY_MENU } from "@/data/menu";
 import { Order, MenuItem, Category } from "@/lib/types";
 import { printThermalReceipt, printKOT } from "@/lib/printer";
 import { initializeCategoriesIfEmpty } from "@/lib/categories";
-import { verifyPanelAccess, subscribePanelStatus } from "@/lib/panelAuth";
+import { subscribePanelStatus } from "@/lib/panelAuth";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
-import { subscribeDayOrders, getISTDateString, formatISTDisplayDate } from "@/lib/orderQueries";
+import {
+  subscribeDayOrders,
+  getISTDateString,
+  formatISTDisplayDate,
+} from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
-import { DEFAULT_MAIN_BRANCH_ID, getActiveBranches, getCountersForBranch, Branch, Counter } from "@/lib/branchService";
+import {
+  DEFAULT_MAIN_BRANCH_ID,
+  getActiveBranches,
+  getCountersForBranch,
+  type Branch,
+  type Counter,
+} from "@/lib/branchService";
+
+/* ============================================================ */
+/* Types                                                        */
+/* ============================================================ */
+
+type OrderType = "counter" | "delivery";
+type PaymentMethod = "cash" | "online";
+type PaymentStatus = "paid" | "pending";
+type DiscountMode = "percent" | "flat";
+type ActiveTab = "pos" | "history";
+
+interface CartItem {
+  item: MenuItem;
+  quantity: number;
+  notes?: string;
+}
+
+interface StaffSession {
+  email?: string;
+  name?: string;
+  role?: string;
+  staffId?: string;
+  branchId?: string;
+  [key: string]: unknown;
+}
+
+interface LinkedCustomer {
+  uid: string;
+  name: string;
+  phone: string;
+}
+
+interface ToastState {
+  id: number;
+  type: "success" | "info" | "error";
+  message: string;
+  undo?: () => void;
+}
+
+interface ConfirmState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
 
 /* ============================================================ */
 /* Constants                                                    */
 /* ============================================================ */
-const CART_STORAGE_KEY = "elpestro_counter_cart_v1";
+
+const CART_STORAGE_KEY = "elpestro_counter_cart_v2";
+const SOUND_STORAGE_KEY = "elpestro_counter_sound";
 const DELIVERY_FEE = 30;
 const FREQUENT_ITEMS_LIMIT = 8;
+const RECENT_ORDERS_SCAN = 100;
+const ACTIVE_ORDERS_PREVIEW = 15;
+const SEEN_ORDERS_MAX = 2000;
+
 const DISCOUNT_PRESETS = [
   { label: "5%", mode: "percent" as const, value: 5 },
   { label: "10%", mode: "percent" as const, value: 10 },
@@ -41,161 +138,497 @@ const DISCOUNT_PRESETS = [
 /* ============================================================ */
 /* Helpers                                                      */
 /* ============================================================ */
-function getElapsed(createdAt: any): number {
-  if (!createdAt) return 0;
-  const d = createdAt?.toDate ? createdAt.toDate() : new Date(createdAt);
-  return Math.floor((Date.now() - d.getTime()) / 60000);
+
+function toDate(value: unknown): Date {
+  if (!value) return new Date();
+  const v = value as { toDate?: () => Date };
+  if (typeof v?.toDate === "function") return v.toDate();
+  if (value instanceof Date) return value;
+  const d = new Date(value as string | number);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
 }
 
-function urgencyOf(elapsed: number, status: string) {
+function getElapsed(createdAt: unknown): number {
+  const d = toDate(createdAt);
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+}
+
+type Urgency = "ready" | "critical" | "warn" | "ok";
+
+function urgencyOf(elapsed: number, status: string): Urgency {
   if (status === "ready") return "ready";
   if (elapsed >= 20) return "critical";
   if (elapsed >= 12) return "warn";
   return "ok";
 }
 
+function safeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function generateOrderNumber(type: OrderType): string {
+  const prefix = type === "delivery" ? "D" : "C";
+  const stamp = Date.now().toString(36).toUpperCase().slice(-5);
+  const rand = Math.floor(Math.random() * 1296)
+    .toString(36)
+    .toUpperCase()
+    .padStart(2, "0");
+  return `#ELP-${prefix}${stamp}${rand}`;
+}
+
+function getStaffIdentity(session: StaffSession | null): {
+  id: string;
+  name: string;
+} {
+  const id =
+    String(session?.staffId || session?.email || "counter").trim() || "counter";
+  const name =
+    String(session?.name || session?.email || "Counter Staff").trim() ||
+    "Counter Staff";
+  return { id, name };
+}
+
+function normaliseOrderType(raw: unknown): OrderType {
+  const s = String(raw || "").toLowerCase();
+  if (s === "delivery") return "delivery";
+  return "counter";
+}
+
+function normalisePhone(raw: string): string {
+  return raw.replace(/\D/g, "").slice(0, 10);
+}
+
+function sanitiseTel(raw: string): string {
+  return raw.replace(/[^\d+]/g, "");
+}
+
+/* ============================================================ */
+/* Toast                                                        */
+/* ============================================================ */
+
+function Toast({
+  state,
+  onDismiss,
+}: {
+  state: ToastState | null;
+  onDismiss: () => void;
+}) {
+  if (!state) return null;
+  const tone =
+    state.type === "success"
+      ? "border-emerald-200 bg-white"
+      : state.type === "error"
+      ? "border-red-200 bg-white"
+      : "border-slate-200 bg-white";
+  const iconTone =
+    state.type === "success"
+      ? "bg-emerald-500"
+      : state.type === "error"
+      ? "bg-red-500"
+      : "bg-slate-700";
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="pointer-events-none fixed bottom-5 left-1/2 z-[80] w-[min(420px,calc(100vw-1.5rem))] -translate-x-1/2"
+    >
+      <div
+        className={`pointer-events-auto flex items-center gap-3 rounded-2xl border ${tone} px-4 py-3 shadow-xl`}
+      >
+        <div
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white ${iconTone}`}
+        >
+          {state.type === "success" ? (
+            <CheckCircle size={15} />
+          ) : state.type === "error" ? (
+            <AlertCircle size={15} />
+          ) : (
+            <Info size={15} />
+          )}
+        </div>
+        <p className="min-w-0 flex-1 text-sm font-bold text-slate-800">
+          {state.message}
+        </p>
+        {state.undo && (
+          <button
+            type="button"
+            onClick={() => {
+              state.undo?.();
+              onDismiss();
+            }}
+            className="flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-white"
+          >
+            <Undo2 size={10} /> Undo
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss notification"
+          className="rounded-md p-0.5 text-slate-400 transition hover:text-slate-900"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================ */
+/* Confirm dialog                                               */
+/* ============================================================ */
+
+function ConfirmDialog({
+  state,
+  onClose,
+}: {
+  state: ConfirmState | null;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!state) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state, busy, onClose]);
+
+  if (!state) return null;
+
+  const handleConfirm = async () => {
+    setBusy(true);
+    try {
+      await state.onConfirm();
+    } finally {
+      setBusy(false);
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={state.title}
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      >
+        <div className="p-5">
+          <h3 className="text-sm font-black text-slate-900">{state.title}</h3>
+          <p className="mt-1.5 text-xs font-semibold text-slate-500">
+            {state.message}
+          </p>
+        </div>
+        <div className="flex gap-2 border-t border-slate-100 bg-slate-50/70 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-slate-200 py-2.5 text-xs font-black text-slate-700 transition hover:bg-slate-300 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={busy}
+            className={`flex-1 rounded-xl py-2.5 text-xs font-black text-white shadow-md transition hover:-translate-y-0.5 disabled:opacity-60 ${
+              state.destructive
+                ? "bg-red-600 shadow-red-500/25 hover:bg-red-500"
+                : "bg-[#D92312] shadow-red-500/25 hover:bg-[#B8190B]"
+            }`}
+          >
+            {busy ? "Working…" : state.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================ */
 /* Main                                                         */
 /* ============================================================ */
+
 export default function CounterPOSPage() {
-  /* Auth */
-  /* Auth */
+  /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [staffSession, setStaffSession] = useState<any>(null);
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [activeBranchId, setActiveBranchId] = useState<string>("branch-main");
+  const [activeBranchId, setActiveBranchId] = useState<string>("");
   const [activeCounter, setActiveCounter] = useState<Counter | null>(null);
-  const isElevatedUser = staffSession?.role === "DEVELOPER" || staffSession?.role === "SUPER_ADMIN";
-  /* View */
-  const [activeTab, setActiveTab] = useState<"pos" | "history">("pos");
+  const isElevatedUser =
+    staffSession?.role === "DEVELOPER" ||
+    staffSession?.role === "SUPER_ADMIN";
+
+  /* ---- View ---- */
+  const [activeTab, setActiveTab] = useState<ActiveTab>("pos");
   const [isMobileOrdersOpen, setIsMobileOrdersOpen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-  /* Data */
+  /* ---- Data ---- */
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [firestoreCategories, setFirestoreCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(() => getISTDateString(0));
+  const [selectedDate, setSelectedDate] = useState<string>(() =>
+    getISTDateString(0)
+  );
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
 
-  /* Menu filters */
+  /* ---- Menu filters ---- */
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("all");
 
-  /* Cart */
-  const [cartItems, setCartItems] = useState<
-    { item: MenuItem; quantity: number; notes?: string }[]
-  >([]);
-  const [orderType, setOrderType] = useState<"counter" | "delivery">("counter");
+  /* ---- Cart ---- */
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [orderType, setOrderType] = useState<OrderType>("counter");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
 
-  /* Discount — supports percent OR flat */
-  const [discountMode, setDiscountMode] = useState<"percent" | "flat">("flat");
+  /* ---- Discount ---- */
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("flat");
   const [discountValue, setDiscountValue] = useState<number>(0);
 
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "online">("cash");
-  const [counterPaymentStatus, setCounterPaymentStatus] = useState<"paid" | "pending">(
-    "pending"
-  );
+  /* ---- Payment ---- */
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [counterPaymentStatus, setCounterPaymentStatus] =
+    useState<PaymentStatus>("paid");
+
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [editingOrderNumber, setEditingOrderNumber] = useState<string | null>(
+    null
+  );
 
-  /* Customer linking */
-  const [linkedCustomer, setLinkedCustomer] = useState<{
-    uid: string;
-    name: string;
-    phone: string;
-  } | null>(null);
+  /* ---- Customer linking ---- */
+  const [linkedCustomer, setLinkedCustomer] = useState<LinkedCustomer | null>(
+    null
+  );
 
-  /* Per-item notes */
+  /* ---- Per-item notes ---- */
   const [noteEditingItem, setNoteEditingItem] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
 
-  /* Print */
+  /* ---- Print ---- */
   const [printStatus, setPrintStatus] = useState<
     "idle" | "printing" | "success" | "error"
   >("idle");
   const [lastPlacedOrder, setLastPlacedOrder] = useState<Order | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /* Toast / feedback */
-  const [toast, setToast] = useState<{
-    type: "success" | "info" | "error";
-    message: string;
-    undo?: () => void;
-  } | null>(null);
-  const toastTimerRef = useRef<any>(null);
+  /* ---- Feedback ---- */
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
-  /* Alerts */
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  /* ---- Alerts ---- */
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem(SOUND_STORAGE_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [ordersSearch, setOrdersSearch] = useState("");
   const [showAllOrders, setShowAllOrders] = useState(false);
 
-  /* Refs */
+  /* ---- Refs ---- */
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
-  const audioCtxRef = useRef<any>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const cartSnapshotRef = useRef<any>(null);
-  const [nowTick, setNowTick] = useState(0);
+  const cartSnapshotRef = useRef<CartItem[] | null>(null);
+  const toastIdRef = useRef(0);
+  const toastTimerRef = useRef<number | null>(null);
+  const printStatusTimerRef = useRef<number | null>(null);
+
+  // Refs mirror state used inside keyboard handler to avoid stale closures.
+  const cartItemsRef = useRef(cartItems);
+  const customerNameRef = useRef(customerName);
+  const customerPhoneRef = useRef(customerPhone);
+  const orderTypeRef = useRef(orderType);
+  const discountModeRef = useRef(discountMode);
+  const discountValueRef = useRef(discountValue);
+  const paymentMethodRef = useRef(paymentMethod);
+  const counterPaymentStatusRef = useRef(counterPaymentStatus);
+  const linkedCustomerRef = useRef(linkedCustomer);
+  const editingOrderIdRef = useRef(editingOrderId);
+  const isSubmittingRef = useRef(isSubmitting);
+  const staffSessionRef = useRef(staffSession);
+  const activeBranchIdRef = useRef(activeBranchId);
+  const activeCounterRef = useRef(activeCounter);
+  const soundEnabledRef = useRef(soundEnabled);
+
+  useEffect(() => {
+    cartItemsRef.current = cartItems;
+  }, [cartItems]);
+  useEffect(() => {
+    customerNameRef.current = customerName;
+  }, [customerName]);
+  useEffect(() => {
+    customerPhoneRef.current = customerPhone;
+  }, [customerPhone]);
+  useEffect(() => {
+    orderTypeRef.current = orderType;
+  }, [orderType]);
+  useEffect(() => {
+    discountModeRef.current = discountMode;
+  }, [discountMode]);
+  useEffect(() => {
+    discountValueRef.current = discountValue;
+  }, [discountValue]);
+  useEffect(() => {
+    paymentMethodRef.current = paymentMethod;
+  }, [paymentMethod]);
+  useEffect(() => {
+    counterPaymentStatusRef.current = counterPaymentStatus;
+  }, [counterPaymentStatus]);
+  useEffect(() => {
+    linkedCustomerRef.current = linkedCustomer;
+  }, [linkedCustomer]);
+  useEffect(() => {
+    editingOrderIdRef.current = editingOrderId;
+  }, [editingOrderId]);
+  useEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+  useEffect(() => {
+    staffSessionRef.current = staffSession;
+  }, [staffSession]);
+  useEffect(() => {
+    activeBranchIdRef.current = activeBranchId;
+  }, [activeBranchId]);
+  useEffect(() => {
+    activeCounterRef.current = activeCounter;
+  }, [activeCounter]);
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   /* ============================================================ */
-  /* Effects                                                      */
+  /* Toast helper                                                 */
   /* ============================================================ */
-  useEffect(() => {
-    const t = setInterval(() => setNowTick((v) => v + 1), 30000);
-    return () => clearInterval(t);
+
+  const showToast = useCallback(
+    (
+      message: string,
+      type: ToastState["type"] = "success",
+      undo?: () => void
+    ) => {
+      if (toastTimerRef.current != null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      const id = ++toastIdRef.current;
+      setToast({ id, message, type, undo });
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast(null);
+        toastTimerRef.current = null;
+      }, 4500);
+    },
+    []
+  );
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current != null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(null);
   }, []);
 
-  /* Restore session + saved cart */
+  /* ============================================================ */
+  /* Session bootstrap                                            */
+  /* ============================================================ */
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
-      const session = getStaffSession("counter");
-      if (session && isSessionValid(session)) {
-        setStaffSession(session);
-        setIsAuthenticated(true);
-        if (session.branchId) {
-          setActiveBranchId(session.branchId);
-        }
-      } else {
-        const auth = sessionStorage.getItem("elpestro_counter_auth");
-        if (auth === "true") setIsAuthenticated(true);
-      }
-      setIsVerifyingAuth(false);
-    });
-    const snd = localStorage.getItem("elpestro_counter_sound");
-    if (snd === "false") setSoundEnabled(false);
+    let cancelled = false;
 
+    import("@/lib/staffAuth")
+      .then(({ getStaffSession, isSessionValid }) => {
+        if (cancelled) return;
+        try {
+          const session = getStaffSession("counter") as StaffSession | null;
+          if (session && isSessionValid(session as never)) {
+            setStaffSession(session);
+            setIsAuthenticated(true);
+            if (session.branchId) setActiveBranchId(session.branchId);
+          }
+        } finally {
+          setIsVerifyingAuth(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load staff session:", err);
+        if (!cancelled) setIsVerifyingAuth(false);
+      });
+
+    // Load saved cart
     try {
-      const raw = localStorage.getItem(CART_STORAGE_KEY);
+      const raw = window.localStorage.getItem(CART_STORAGE_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
-        if (saved?.cartItems?.length) {
-          setCartItems(saved.cartItems);
-          setOrderType(saved.orderType || "counter");
-          setCustomerName(saved.customerName || "");
-          setCustomerPhone(saved.customerPhone || "");
-          setPaymentMethod(saved.paymentMethod || "cash");
-          setCounterPaymentStatus(saved.counterPaymentStatus || "pending");
-
-          // Discount restore (new schema) + migration from old discountAmount
-          if (saved.discountMode === "percent" || saved.discountMode === "flat") {
+        if (Array.isArray(saved?.cartItems) && saved.cartItems.length > 0) {
+          setCartItems(saved.cartItems as CartItem[]);
+          setOrderType(normaliseOrderType(saved.orderType));
+          setCustomerName(String(saved.customerName || ""));
+          setCustomerPhone(normalisePhone(String(saved.customerPhone || "")));
+          setPaymentMethod(
+            saved.paymentMethod === "online" ? "online" : "cash"
+          );
+          setCounterPaymentStatus(
+            saved.counterPaymentStatus === "pending" ? "pending" : "paid"
+          );
+          if (
+            saved.discountMode === "percent" ||
+            saved.discountMode === "flat"
+          ) {
             setDiscountMode(saved.discountMode);
-            setDiscountValue(Number(saved.discountValue) || 0);
-          } else if (typeof saved.discountAmount === "number") {
-            setDiscountMode("flat");
-            setDiscountValue(saved.discountAmount);
+            setDiscountValue(Math.max(0, safeNumber(saved.discountValue)));
           }
         }
       }
-    } catch (e) {
-      console.warn("Cart restore failed:", e);
+    } catch (err) {
+      console.warn("Cart restore failed:", err);
     }
+
+    const unsub = subscribePanelStatus("counter", () => {
+      setIsAuthenticated(false);
+      setStaffSession(null);
+      setCartItems([]);
+      seenOrderIdsRef.current.clear();
+      try {
+        window.sessionStorage.removeItem("elpestro_counter_auth");
+      } catch {
+        /* ignore */
+      }
+      import("@/lib/staffAuth")
+        .then(({ clearStaffSession }) => clearStaffSession("counter"))
+        .catch(() => {
+          /* ignore */
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   /* Persist cart */
@@ -212,8 +645,10 @@ export default function CounterPOSPage() {
         paymentMethod,
         counterPaymentStatus,
       };
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(payload));
-    } catch (e) {}
+      window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      /* ignore */
+    }
   }, [
     cartItems,
     orderType,
@@ -225,70 +660,114 @@ export default function CounterPOSPage() {
     counterPaymentStatus,
   ]);
 
-  /* Panel disable watcher */
+  /* Fullscreen state sync */
   useEffect(() => {
-    const unsub = subscribePanelStatus("counter", () => {
-      setIsAuthenticated(false);
-      sessionStorage.removeItem("elpestro_counter_auth");
-      setPinError(true);
-      setPinErrorMessage("The Counter POS Panel has been disabled by the administrator.");
-    });
-    return () => unsub();
+    if (typeof document === "undefined") return;
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  /* Toast helper */
-  const showToast = useCallback(
-    (message: string, type: "success" | "info" | "error" = "success", undo?: () => void) => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      setToast({ message, type, undo });
-      toastTimerRef.current = setTimeout(() => setToast(null), 4500);
-    },
-    []
-  );
-
-  /* Keyboard shortcuts */
+  /* Audio + toast + print-status cleanup */
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "F2") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
+    return () => {
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {
+          /* ignore */
+        });
+        audioCtxRef.current = null;
       }
-      if (e.key === "F4") {
-        e.preventDefault();
-        if (cartItems.length > 0 && !isSubmitting) handlePlaceOrder(true);
+      if (toastTimerRef.current != null) {
+        window.clearTimeout(toastTimerRef.current);
       }
-      if (e.key === "F6") {
-        e.preventDefault();
-        if (cartItems.length > 0 && !isSubmitting) handlePlaceOrder(false);
-      }
-      if (e.key === "F8") {
-        e.preventDefault();
-        if (cartItems.length > 0) confirmClearCart();
-      }
-      if (e.key === "Escape") {
-        setShowShortcuts(false);
-        setIsMobileCartOpen(false);
-        setIsMobileOrdersOpen(false);
-        setNoteEditingItem(null);
-      }
-      if (e.key === "F1") {
-        e.preventDefault();
-        setShowShortcuts((v) => !v);
+      if (printStatusTimerRef.current != null) {
+        window.clearTimeout(printStatusTimerRef.current);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [cartItems, isSubmitting, discountMode, discountValue, orderType]);
+  }, []);
 
-  /* Sound */
-  const playChime = () => {
-    if (!soundEnabled) return;
+  /* Reset soundEnabledRef on external change */
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  /* Load branches */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    getActiveBranches()
+      .then((list) => {
+        if (!cancelled) setBranches(list);
+      })
+      .catch((err) => {
+        console.warn("Failed to load branches:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  /* Resolve counter for branch */
+  useEffect(() => {
+    if (!activeBranchId) {
+      setActiveCounter(null);
+      return;
+    }
+    let cancelled = false;
+    getCountersForBranch(activeBranchId)
+      .then((counters) => {
+        if (cancelled) return;
+        if (counters.length > 0) {
+          setActiveCounter(counters[0]);
+        } else {
+          setActiveCounter({
+            id: `counter-${activeBranchId}`,
+            branchId: activeBranchId,
+            name: "Main Counter",
+            counterNumber: "1",
+            active: true,
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load counters:", err);
+        if (!cancelled) {
+          setActiveCounter({
+            id: `counter-${activeBranchId}`,
+            branchId: activeBranchId,
+            name: "Main Counter",
+            counterNumber: "1",
+            active: true,
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchId]);
+
+  /* ============================================================ */
+  /* Sound                                                        */
+  /* ============================================================ */
+
+  const playChime = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+    if (typeof window === "undefined") return;
     try {
       if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctor) return;
+        audioCtxRef.current = new Ctor();
       }
       const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {
+          /* ignore */
+        });
+      }
       const now = ctx.currentTime;
       [880, 1174].forEach((freq, i) => {
         const osc = ctx.createOscillator();
@@ -303,100 +782,123 @@ export default function CounterPOSPage() {
         osc.start(s);
         osc.stop(s + 0.18);
       });
-    } catch {}
-  };
-
-  const toggleSound = () => {
-    const next = !soundEnabled;
-    setSoundEnabled(next);
-    localStorage.setItem("elpestro_counter_sound", String(next));
-    if (next) playChime();
-  };
-
-  const handleLogout = () => {
-    if (cartItems.length > 0 && !confirm("You have items in cart. Sign out anyway?")) return;
-    setIsAuthenticated(false);
-    setStaffSession(null);
-    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("counter"));
-    sessionStorage.removeItem("elpestro_counter_auth");
-  };
-
-  /* Load branches & resolve dedicated counter */
-  useEffect(() => {
-    getActiveBranches().then((list) => setBranches(list)).catch(() => {});
+    } catch {
+      /* ignore */
+    }
   }, []);
 
-  useEffect(() => {
-    if (!activeBranchId) return;
-    getCountersForBranch(activeBranchId).then((counters) => {
-      if (counters.length > 0) {
-        setActiveCounter(counters[0]);
-      } else {
-        setActiveCounter({
-          id: `counter-${activeBranchId}`,
-          branchId: activeBranchId,
-          name: "Main Counter",
-          counterNumber: "1",
-          active: true,
-        });
+  const toggleSound = useCallback(() => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SOUND_STORAGE_KEY, String(next));
+      } catch {
+        /* ignore */
       }
-    }).catch(() => {});
-  }, [activeBranchId]);
+      if (next) playChime();
+      return next;
+    });
+  }, [playChime]);
 
-  const handleBranchSwitch = async (newBranchId: string) => {
-    if (!isElevatedUser) return;
-    setActiveBranchId(newBranchId);
-    const { logAuditEvent } = await import("@/lib/rbac");
-    logAuditEvent({
-      actorId: staffSession?.staffId || "dev",
-      actorName: staffSession?.name || "Developer",
-      actorRole: staffSession?.role || "DEVELOPER",
-      branchId: newBranchId,
-      action: "CROSS_BRANCH_VIEW",
-      targetType: "counter",
-      targetId: newBranchId,
-      metadata: { fromBranchId: activeBranchId, toBranchId: newBranchId },
-    }).catch(() => {});
-  };
+  /* ============================================================ */
+  /* Logout                                                       */
+  /* ============================================================ */
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
+  const handleLogout = useCallback(() => {
+    const doLogout = () => {
+      setIsAuthenticated(false);
+      setStaffSession(null);
+      setOrders([]);
+      setLastPlacedOrder(null);
+      seenOrderIdsRef.current.clear();
+      try {
+        window.sessionStorage.removeItem("elpestro_counter_auth");
+      } catch {
+        /* ignore */
+      }
+      import("@/lib/staffAuth")
+        .then(({ clearStaffSession }) => clearStaffSession("counter"))
+        .catch(() => {
+          /* ignore */
+        });
+    };
+
+    if (cartItemsRef.current.length > 0) {
+      setConfirm({
+        title: "Sign out with items in cart?",
+        message:
+          "Your current cart will be cleared when you sign out. Continue?",
+        confirmLabel: "Sign out",
+        destructive: true,
+        onConfirm: doLogout,
+      });
     } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
+      doLogout();
     }
-  };
+  }, []);
 
   /* ============================================================ */
   /* Data subscriptions                                           */
   /* ============================================================ */
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const fetchCats = async () => {
+    let cancelled = false;
+
+    (async () => {
       try {
         const cats = await initializeCategoriesIfEmpty();
-        setFirestoreCategories(cats);
-      } catch (e) {
-        console.warn("Firestore categories unavailable:", e);
+        if (!cancelled) setFirestoreCategories(cats);
+      } catch (err) {
+        console.warn("Firestore categories unavailable:", err);
       }
-    };
-    fetchCats();
+    })();
 
-    const unsubMenu = onSnapshot(collection(db, "menuItems"), (snap) => {
-      const map = new Map<string, MenuItem>();
-      DUMMY_MENU.forEach((item) => map.set(item.id, item as any));
-      snap.docs.forEach((d) => {
-        map.set(d.id, { id: d.id, ...(d.data() as any) });
-      });
-      setMenuItems(Array.from(map.values()));
-    });
+    const unsubMenu = onSnapshot(
+      collection(db, "menuItems"),
+      (snap) => {
+        const map = new Map<string, MenuItem>();
+        (DUMMY_MENU as MenuItem[]).forEach((item) => map.set(item.id, item));
+        snap.docs.forEach((d) => {
+          const data = d.data() as Partial<MenuItem>;
+          map.set(d.id, {
+            id: d.id,
+            name: String(data.name || "Unnamed"),
+            price: safeNumber(data.price),
+            category: String(data.category || ""),
+            subcategory: data.subcategory ? String(data.subcategory) : undefined,
+            description: data.description
+              ? String(data.description)
+              : undefined,
+            available: data.available !== false,
+          } as MenuItem);
+        });
+        setMenuItems(Array.from(map.values()));
+      },
+      (err) => {
+        console.error("Menu subscription error:", err);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubMenu();
+    };
+  }, [isAuthenticated]);
+
+  /* Orders subscription — needs branch to be set. */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!activeBranchId) {
+      setOrdersLoading(false);
+      return;
+    }
 
     setOrdersLoading(true);
     setOrdersError(null);
-    const unsubOrders = subscribeDayOrders(
+
+    const unsubscribe = subscribeDayOrders(
       selectedDate,
       (fetched: Order[]) => {
         const newPending = fetched.filter(
@@ -407,6 +909,12 @@ export default function CounterPOSPage() {
         );
         if (newPending.length > 0) playChime();
         fetched.forEach((o) => seenOrderIdsRef.current.add(o.id));
+        if (seenOrderIdsRef.current.size > SEEN_ORDERS_MAX) {
+          const trimmed = Array.from(seenOrderIdsRef.current).slice(
+            -SEEN_ORDERS_MAX
+          );
+          seenOrderIdsRef.current = new Set(trimmed);
+        }
         setOrders(fetched);
         setOrdersLoading(false);
         setOrdersError(null);
@@ -415,40 +923,32 @@ export default function CounterPOSPage() {
         console.error("Orders error:", err);
         setOrdersError("Unable to load orders. Please try again.");
         setOrdersLoading(false);
-      }
+      },
+      activeBranchId
     );
 
-    return () => {
-      unsubMenu();
-      unsubOrders();
-    };
-  }, [isAuthenticated, selectedDate, soundEnabled]);
+    return () => unsubscribe();
+  }, [isAuthenticated, selectedDate, activeBranchId, playChime]);
+
+  /* Reset seen IDs on date/branch change */
+  useEffect(() => {
+    seenOrderIdsRef.current.clear();
+    setShowAllOrders(false);
+  }, [selectedDate, activeBranchId]);
 
   /* ============================================================ */
   /* Derived                                                      */
   /* ============================================================ */
+
   const categoryNames = useMemo(() => {
-    const set = new Set<string>();
-    menuItems.forEach((item) => {
-      const cat = (item.category || "").trim();
-      if (cat && cat !== "Food" && cat !== "General") {
-        set.add(cat);
-      }
-    });
     const ordered: string[] = [];
     const seen = new Set<string>();
     menuItems.forEach((item) => {
       const cat = (item.category || "").trim();
-      if (cat && !seen.has(cat) && set.has(cat)) {
-        ordered.push(cat);
-        seen.add(cat);
-      }
-    });
-    Array.from(set).forEach((cat) => {
-      if (!seen.has(cat)) {
-        ordered.push(cat);
-        seen.add(cat);
-      }
+      if (!cat || cat === "Food" || cat === "General") return;
+      if (seen.has(cat)) return;
+      seen.add(cat);
+      ordered.push(cat);
     });
     return ordered;
   }, [menuItems]);
@@ -475,29 +975,25 @@ export default function CounterPOSPage() {
   }, [menuItems, firestoreCategories, selectedCategory]);
 
   const filteredMenuItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return menuItems.filter((item) => {
       if (selectedCategory !== "all") {
         if ((item.category || "").trim() !== selectedCategory) return false;
       }
       if (selectedSubcategory !== "all") {
-        if ((item.subcategory || "").trim() !== selectedSubcategory) return false;
+        if ((item.subcategory || "").trim() !== selectedSubcategory)
+          return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        return (
-          item.name.toLowerCase().includes(q) ||
-          (item.description && item.description.toLowerCase().includes(q)) ||
-          item.price.toString().includes(q)
-        );
-      }
-      return true;
+      if (!q) return true;
+      if (item.name.toLowerCase().includes(q)) return true;
+      if (item.description?.toLowerCase().includes(q)) return true;
+      if (String(item.price).includes(q)) return true;
+      return false;
     });
   }, [menuItems, selectedCategory, selectedSubcategory, searchQuery]);
 
   const groupedMenu = useMemo(() => {
-    const groups: { title: string; items: MenuItem[] }[] = [];
     const map = new Map<string, MenuItem[]>();
-
     filteredMenuItems.forEach((item) => {
       const key =
         selectedCategory === "all"
@@ -505,16 +1001,13 @@ export default function CounterPOSPage() {
           : item.subcategory && item.subcategory !== "General"
           ? item.subcategory
           : item.category || "Other";
-
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(item);
     });
-
-    map.forEach((items, title) => {
-      groups.push({ title, items });
-    });
-
-    return groups;
+    return Array.from(map.entries()).map(([title, items]) => ({
+      title,
+      items,
+    }));
   }, [filteredMenuItems, selectedCategory]);
 
   const categoryCounts = useMemo(() => {
@@ -528,13 +1021,15 @@ export default function CounterPOSPage() {
 
   const frequentItems = useMemo(() => {
     const counts: Record<string, { item: MenuItem; count: number }> = {};
-    orders.slice(0, 100).forEach((o) => {
-      o.items?.forEach((it: any) => {
-        if (!counts[it.id]) {
-          const found = menuItems.find((m) => m.id === it.id);
-          if (found) counts[it.id] = { item: found, count: 0 };
+    orders.slice(0, RECENT_ORDERS_SCAN).forEach((o) => {
+      o.items?.forEach((it) => {
+        const id = String(it.id || "");
+        if (!id) return;
+        if (!counts[id]) {
+          const found = menuItems.find((m) => m.id === id);
+          if (found) counts[id] = { item: found, count: 0 };
         }
-        if (counts[it.id]) counts[it.id].count += it.quantity || 1;
+        if (counts[id]) counts[id].count += it.quantity || 1;
       });
     });
     return Object.values(counts)
@@ -548,19 +1043,27 @@ export default function CounterPOSPage() {
     [cartItems]
   );
 
-  /* Discount computed — handles both % and flat */
   const computedDiscount = useMemo(() => {
-    const v = Number(discountValue) || 0;
+    const v = Math.max(0, safeNumber(discountValue));
     if (discountMode === "percent") {
-      const pct = Math.max(0, Math.min(100, v));
+      const pct = Math.min(100, v);
       return Math.round((subtotal * pct) / 100);
     }
-    return Math.min(Math.max(0, v), subtotal);
+    return Math.min(v, subtotal);
   }, [discountMode, discountValue, subtotal]);
 
-  const finalTotal = Math.max(0, subtotal - computedDiscount);
-  const cartCount = cartItems.reduce((s, ci) => s + ci.quantity, 0);
-  const grandTotal = finalTotal + (orderType === "delivery" ? DELIVERY_FEE : 0);
+  const finalTotal = useMemo(
+    () => Math.max(0, subtotal - computedDiscount),
+    [subtotal, computedDiscount]
+  );
+  const cartCount = useMemo(
+    () => cartItems.reduce((s, ci) => s + ci.quantity, 0),
+    [cartItems]
+  );
+  const grandTotal = useMemo(
+    () => finalTotal + (orderType === "delivery" ? DELIVERY_FEE : 0),
+    [finalTotal, orderType]
+  );
 
   const activeOrders = useMemo(
     () =>
@@ -583,29 +1086,31 @@ export default function CounterPOSPage() {
 
   const filteredActiveOrders = useMemo(() => {
     let list = [...activeOrders];
-    if (ordersSearch.trim()) {
-      const q = ordersSearch.toLowerCase().trim();
+    const q = ordersSearch.trim().toLowerCase();
+    if (q) {
       list = list.filter(
         (o) =>
-          o.orderNumber?.toLowerCase().includes(q) ||
-          o.customerName?.toLowerCase().includes(q) ||
-          (o.phone || o.customerPhone || "").includes(q)
+          (o.orderNumber || "").toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q) ||
+          String(o.phone || o.customerPhone || "").includes(q)
       );
     }
-    if (!showAllOrders) {
-      list = list.slice(0, 15);
-    }
-    return list.sort((a, b) => {
-      const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-      const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+    list.sort((a, b) => {
+      const ta = toDate(a.createdAt).getTime();
+      const tb = toDate(b.createdAt).getTime();
       return ta - tb;
     });
+    if (!showAllOrders) {
+      list = list.slice(0, ACTIVE_ORDERS_PREVIEW);
+    }
+    return list;
   }, [activeOrders, ordersSearch, showAllOrders]);
 
   /* ============================================================ */
   /* Cart actions                                                 */
   /* ============================================================ */
-  const addToCart = (item: MenuItem) => {
+
+  const addToCart = useCallback((item: MenuItem) => {
     if (item.available === false) return;
     setCartItems((prev) => {
       const existing = prev.find((ci) => ci.item.id === item.id);
@@ -616,27 +1121,25 @@ export default function CounterPOSPage() {
       }
       return [...prev, { item, quantity: 1 }];
     });
-  };
+  }, []);
 
-  const updateQuantity = (itemId: string, delta: number) => {
+  const updateQuantity = useCallback((itemId: string, delta: number) => {
     setCartItems((prev) =>
       prev
         .map((ci) => {
-          if (ci.item.id === itemId) {
-            const next = ci.quantity + delta;
-            return next > 0 ? { ...ci, quantity: next } : null;
-          }
-          return ci;
+          if (ci.item.id !== itemId) return ci;
+          const next = ci.quantity + delta;
+          return next > 0 ? { ...ci, quantity: next } : null;
         })
-        .filter(Boolean) as any
+        .filter((x): x is CartItem => x !== null)
     );
-  };
+  }, []);
 
-  const removeFromCart = (itemId: string) => {
+  const removeFromCart = useCallback((itemId: string) => {
     setCartItems((prev) => prev.filter((ci) => ci.item.id !== itemId));
-  };
+  }, []);
 
-  const saveItemNote = () => {
+  const saveItemNote = useCallback(() => {
     if (!noteEditingItem) return;
     setCartItems((prev) =>
       prev.map((ci) =>
@@ -647,262 +1150,527 @@ export default function CounterPOSPage() {
     );
     setNoteEditingItem(null);
     setNoteText("");
-  };
+  }, [noteEditingItem, noteText]);
 
-  const confirmClearCart = () => {
+  const confirmClearCart = useCallback(() => {
     if (cartItems.length === 0) return;
-    if (!confirm(`Clear ${cartCount} items from cart?`)) return;
-    cartSnapshotRef.current = [...cartItems];
-    setCartItems([]);
-    setDiscountMode("flat");
-    setDiscountValue(0);
-    showToast("Cart cleared", "info", () => {
-      if (cartSnapshotRef.current) {
-        setCartItems(cartSnapshotRef.current);
-        showToast("Cart restored", "success");
-      }
+    setConfirm({
+      title: "Clear cart?",
+      message: `Remove ${cartCount} item${
+        cartCount === 1 ? "" : "s"
+      } from the current bill?`,
+      confirmLabel: "Clear cart",
+      destructive: true,
+      onConfirm: () => {
+        cartSnapshotRef.current = [...cartItems];
+        const prevMode = discountMode;
+        const prevValue = discountValue;
+        setCartItems([]);
+        setDiscountMode("flat");
+        setDiscountValue(0);
+        showToast("Cart cleared", "info", () => {
+          if (cartSnapshotRef.current) {
+            setCartItems(cartSnapshotRef.current);
+            setDiscountMode(prevMode);
+            setDiscountValue(prevValue);
+            showToast("Cart restored", "success");
+          }
+        });
+      },
     });
-  };
+  }, [cartItems, cartCount, discountMode, discountValue, showToast]);
 
-  const clearAllFields = () => {
+  const clearAllFields = useCallback(() => {
     setCartItems([]);
     setDiscountMode("flat");
     setDiscountValue(0);
     setCustomerName("");
     setCustomerPhone("");
-    setCounterPaymentStatus("pending");
+    setPaymentMethod("cash");
+    setCounterPaymentStatus("paid");
+    setOrderType("counter");
     setLinkedCustomer(null);
     setEditingOrderId(null);
-  };
+    setEditingOrderNumber(null);
+    setNoteEditingItem(null);
+    setNoteText("");
+  }, []);
 
-  const recallOrder = (order: Order) => {
-    if (cartItems.length > 0) {
-      if (!confirm("Current cart will be replaced with this order. Continue?")) return;
-    }
-    const mapped = (order.items || [])
-      .map((it: any) => {
-        const menu = menuItems.find((m) => m.id === it.id);
-        if (!menu) return null;
-        return { item: menu, quantity: it.quantity, notes: it.notes };
-      })
-      .filter(Boolean) as any[];
-    setCartItems(mapped);
-    setOrderType((order.type as any) || "counter");
-    setCustomerName(order.customerName || "");
-    setCustomerPhone(order.phone || order.customerPhone || "");
-    setPaymentMethod((order.paymentMethod as any) || "cash");
-    setCounterPaymentStatus((order.paymentStatus as any) || "pending");
+  const recallOrder = useCallback(
+    (order: Order) => {
+      const doRecall = () => {
+        const mapped: CartItem[] = (order.items || [])
+          .map((it) => {
+            const menu = menuItems.find((m) => m.id === it.id);
+            if (!menu) return null;
+            return {
+              item: menu,
+              quantity: it.quantity,
+              notes: it.notes,
+            } as CartItem;
+          })
+          .filter((x): x is CartItem => x !== null);
 
-    // Discount recall — support both new & legacy
-    const anyOrder = order as any;
-    if (anyOrder.discountMode === "percent" || anyOrder.discountMode === "flat") {
-      setDiscountMode(anyOrder.discountMode);
-      setDiscountValue(Number(anyOrder.discountValue) || 0);
-    } else if (typeof order.discount === "number" && order.discount > 0) {
-      setDiscountMode("flat");
-      setDiscountValue(order.discount);
-    } else {
-      setDiscountMode("flat");
-      setDiscountValue(0);
-    }
+        if (mapped.length === 0) {
+          showToast("Order items no longer available", "error");
+          return;
+        }
 
-    setEditingOrderId(order.id);
-    setIsMobileOrdersOpen(false);
-    showToast(`Editing ${order.orderNumber}`, "info");
-  };
+        setCartItems(mapped);
+        setOrderType(normaliseOrderType(order.type || order.orderType));
+        setCustomerName(order.customerName || "");
+        setCustomerPhone(
+          normalisePhone(order.phone || order.customerPhone || "")
+        );
+        setPaymentMethod(order.paymentMethod === "online" ? "online" : "cash");
+        setCounterPaymentStatus(
+          order.paymentStatus === "pending" ? "pending" : "paid"
+        );
 
-  const duplicateOrder = (order: Order) => {
-    const mapped = (order.items || [])
-      .map((it: any) => {
-        const menu = menuItems.find((m) => m.id === it.id);
-        if (!menu) return null;
-        return { item: menu, quantity: it.quantity };
-      })
-      .filter(Boolean) as any[];
-    if (mapped.length === 0) {
-      showToast("Original items unavailable", "error");
-      return;
-    }
-    setCartItems(mapped);
-    setOrderType((order.type as any) || "counter");
-    setCustomerName(order.customerName || "");
-    setCustomerPhone(order.phone || order.customerPhone || "");
-    setEditingOrderId(null);
-    setIsMobileCartOpen(false);
-    showToast("Duplicated into cart", "success");
-  };
+        const rawOrder = order as unknown as {
+          discountMode?: string;
+          discountValue?: number;
+          discount?: number;
+        };
+        if (
+          rawOrder.discountMode === "percent" ||
+          rawOrder.discountMode === "flat"
+        ) {
+          setDiscountMode(rawOrder.discountMode);
+          setDiscountValue(Math.max(0, safeNumber(rawOrder.discountValue)));
+        } else if (safeNumber(order.discount) > 0) {
+          setDiscountMode("flat");
+          setDiscountValue(safeNumber(order.discount));
+        } else {
+          setDiscountMode("flat");
+          setDiscountValue(0);
+        }
 
-  const applyDiscountPreset = (preset: typeof DISCOUNT_PRESETS[number]) => {
-    setDiscountMode(preset.mode);
-    setDiscountValue(preset.value);
-    showToast(`${preset.label} discount applied`, "info");
-  };
+        setEditingOrderId(order.id);
+        setEditingOrderNumber(order.orderNumber);
+        setIsMobileOrdersOpen(false);
+        showToast(`Editing ${order.orderNumber}`, "info");
+      };
 
-  const handleSearchCustomer = async () => {
-    const phone = customerPhone.trim();
+      if (cartItems.length > 0 && editingOrderId !== order.id) {
+        setConfirm({
+          title: "Replace current cart?",
+          message:
+            "The current cart will be replaced with this order. Continue?",
+          confirmLabel: "Replace",
+          destructive: true,
+          onConfirm: doRecall,
+        });
+      } else {
+        doRecall();
+      }
+    },
+    [cartItems.length, editingOrderId, menuItems, showToast]
+  );
+
+  const duplicateOrder = useCallback(
+    (order: Order) => {
+      const mapped: CartItem[] = (order.items || [])
+        .map((it) => {
+          const menu = menuItems.find((m) => m.id === it.id);
+          if (!menu) return null;
+          return { item: menu, quantity: it.quantity } as CartItem;
+        })
+        .filter((x): x is CartItem => x !== null);
+
+      if (mapped.length === 0) {
+        showToast("Original items unavailable", "error");
+        return;
+      }
+      setCartItems(mapped);
+      setOrderType(normaliseOrderType(order.type || order.orderType));
+      setCustomerName(order.customerName || "");
+      setCustomerPhone(
+        normalisePhone(order.phone || order.customerPhone || "")
+      );
+      setEditingOrderId(null);
+      setEditingOrderNumber(null);
+      setIsMobileCartOpen(false);
+      showToast("Duplicated into cart", "success");
+    },
+    [menuItems, showToast]
+  );
+
+  const applyDiscountPreset = useCallback(
+    (preset: (typeof DISCOUNT_PRESETS)[number]) => {
+      setDiscountMode(preset.mode);
+      setDiscountValue(preset.value);
+      showToast(`${preset.label} discount applied`, "info");
+    },
+    [showToast]
+  );
+
+  const handleSearchCustomer = useCallback(async () => {
+    const phone = normalisePhone(customerPhone);
     if (!phone) return;
     try {
-      const q = query(collection(db, "customers"), where("phone", "==", phone));
+      const q = query(
+        collection(db, "customers"),
+        where("phone", "==", phone)
+      );
       const snap = await getDocs(q);
       if (!snap.empty) {
-        const d = snap.docs[0].data();
-        setLinkedCustomer({ uid: snap.docs[0].id, name: d.name || "Customer", phone });
-        if (!customerName) setCustomerName(d.name || "");
-        showToast(`Linked: ${d.name}`, "success");
+        const data = snap.docs[0].data();
+        setLinkedCustomer({
+          uid: snap.docs[0].id,
+          name: String(data.name || "Customer"),
+          phone,
+        });
+        if (!customerName) setCustomerName(String(data.name || ""));
+        showToast(`Linked: ${data.name || "Customer"}`, "success");
       } else {
         setLinkedCustomer(null);
         showToast("New customer", "info");
       }
-    } catch {
+    } catch (err) {
+      console.error("Customer search failed:", err);
       showToast("Search failed", "error");
     }
-  };
+  }, [customerPhone, customerName, showToast]);
+
+  /* ============================================================ */
+  /* Print                                                        */
+  /* ============================================================ */
+
+  const handlePrintReceipt = useCallback(
+    async (order: Order) => {
+      setPrintStatus("printing");
+      const branchName =
+        branches.find((b) => b.id === activeBranchId)?.name ||
+        "EL PRESTO";
+      try {
+        const res = await printThermalReceipt(order, {
+          paperWidth: "58mm",
+          branchName,
+          counterNumber: activeCounter?.counterNumber || "C-01",
+          counterName: activeCounter?.name || "Counter",
+        });
+        setPrintStatus(res.success ? "success" : "error");
+      } catch (err) {
+        console.error("Print failed:", err);
+        setPrintStatus("error");
+      } finally {
+        if (printStatusTimerRef.current != null) {
+          window.clearTimeout(printStatusTimerRef.current);
+        }
+        printStatusTimerRef.current = window.setTimeout(() => {
+          setPrintStatus("idle");
+          printStatusTimerRef.current = null;
+        }, 3000);
+      }
+    },
+    [branches, activeBranchId, activeCounter]
+  );
+
+  const handlePrintKOT = useCallback(
+    async (order: Order) => {
+      const branchName =
+        branches.find((b) => b.id === activeBranchId)?.name ||
+        "EL PRESTO";
+      try {
+        await printKOT(order, {
+          branchName,
+          counterNumber: activeCounter?.counterNumber || "C-01",
+        });
+        showToast("KOT sent to kitchen", "success");
+      } catch (err) {
+        console.error("KOT print failed:", err);
+        showToast("KOT print failed", "error");
+      }
+    },
+    [branches, activeBranchId, activeCounter, showToast]
+  );
 
   /* ============================================================ */
   /* Place order                                                  */
   /* ============================================================ */
-  const handlePlaceOrder = async (printAfter: boolean = true) => {
-    if (cartItems.length === 0) {
-      showToast("Cart is empty", "error");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const orderPrefix = orderType === "delivery" ? "D" : "C";
-      const newOrderNumber = `#ELP-${orderPrefix}${Math.floor(100 + Math.random() * 900)}`;
 
-      const orderPayload: any = {
-        orderNumber: newOrderNumber,
-        customerName:
-          customerName.trim() ||
-          (orderType === "delivery" ? "Delivery Customer" : "Walk-in Customer"),
-        customerPhone: customerPhone.trim() || "Counter",
-        phone: customerPhone.trim() || "Counter",
-        type: orderType,
-        orderType: orderType,
-        kitchenNotes: editingOrderId
-          ? "Updated at Counter POS"
-          : `Created at Counter POS (${orderType.toUpperCase()})`,
-        items: cartItems.map((ci) => ({
+  const handlePlaceOrder = useCallback(
+    async (printAfter: boolean = true) => {
+      if (isSubmittingRef.current) return;
+
+      const items = cartItemsRef.current;
+      if (items.length === 0) {
+        showToast("Cart is empty", "error");
+        return;
+      }
+      if (!activeBranchIdRef.current) {
+        showToast("No branch selected. Please re-login.", "error");
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        const oType = orderTypeRef.current;
+        const sub = items.reduce(
+          (sum, ci) => sum + ci.item.price * ci.quantity,
+          0
+        );
+        const discountVal = Math.max(0, safeNumber(discountValueRef.current));
+        const computed =
+          discountModeRef.current === "percent"
+            ? Math.round((sub * Math.min(100, discountVal)) / 100)
+            : Math.min(discountVal, sub);
+        const deliveryFee = oType === "delivery" ? DELIVERY_FEE : 0;
+        const total = Math.max(0, sub - computed + deliveryFee);
+
+        const editingId = editingOrderIdRef.current;
+        const orderNumber =
+          editingId && editingOrderNumber
+            ? editingOrderNumber
+            : generateOrderNumber(oType);
+
+        const rider = getStaffIdentity(staffSessionRef.current);
+        const counter = activeCounterRef.current;
+        const branchId = activeBranchIdRef.current;
+
+        const itemsPayload = items.map((ci) => ({
           id: ci.item.id,
           name: ci.item.name,
           quantity: ci.quantity,
           price: ci.item.price,
           ...(ci.notes ? { notes: ci.notes } : {}),
-        })),
-        subtotal: subtotal,
-        discount: computedDiscount,
-        discountMode: discountMode,
-        discountValue: discountValue,
-        deliveryFee: orderType === "delivery" ? DELIVERY_FEE : 0,
-        total: grandTotal,
-        paymentMethod: paymentMethod,
-        paymentStatus: counterPaymentStatus,
-        source: "counter",
-        orderSource: "counter",
-        branchId: DEFAULT_MAIN_BRANCH_ID,
-        counterId: "counter-1",
-        updatedAt: Timestamp.now(),
-        ...(linkedCustomer ? { customerId: linkedCustomer.uid } : {}),
-      };
+        }));
 
-      if (orderType === "delivery") {
-        orderPayload.deliveryAddress = {
-          fullAddress: "Campus Delivery",
+        const payload: Record<string, unknown> = {
+          orderNumber,
+          customerName:
+            customerNameRef.current.trim() ||
+            (oType === "delivery"
+              ? "Delivery Customer"
+              : "Walk-in Customer"),
+          customerPhone: customerPhoneRef.current.trim() || "Counter",
+          phone: customerPhoneRef.current.trim() || "Counter",
+          type: oType,
+          orderType: oType,
+          kitchenNotes: editingId
+            ? "Updated at Counter POS"
+            : `Created at Counter POS (${oType.toUpperCase()})`,
+          items: itemsPayload,
+          subtotal: sub,
+          discount: computed,
+          discountMode: discountModeRef.current,
+          discountValue: discountVal,
+          deliveryFee,
+          total,
+          paymentMethod: paymentMethodRef.current,
+          paymentStatus: counterPaymentStatusRef.current,
+          source: "counter",
+          orderSource: "counter",
+          branchId,
+          counterId: counter?.id || "counter-1",
+          counterName: counter?.name || "Counter",
+          updatedAt: Timestamp.now(),
+          updatedBy: rider.id,
+          ...(linkedCustomerRef.current
+            ? { customerId: linkedCustomerRef.current.uid }
+            : {}),
         };
-        orderPayload.location = "Campus Delivery";
-      } else {
-        orderPayload.location = "Counter";
+
+        if (oType === "delivery") {
+          payload.deliveryAddress = { fullAddress: "Campus Delivery" };
+          payload.location = "Campus Delivery";
+        } else {
+          payload.location = "Counter";
+        }
+
+        if (editingId) {
+          await updateDoc(doc(db, "orders", editingId), payload);
+          const updated = { id: editingId, ...payload } as unknown as Order;
+          setLastPlacedOrder(updated);
+          showToast(`Order ${orderNumber} updated`, "success");
+          if (printAfter) void handlePrintReceipt(updated);
+        } else {
+          payload.status = "pending";
+          payload.createdAt = Timestamp.now();
+          payload.createdBy = rider.id;
+          if (oType === "delivery") payload.deliveryStatus = "pending";
+          const ref = await addDoc(collection(db, "orders"), payload);
+          const placed = { id: ref.id, ...payload } as unknown as Order;
+          setLastPlacedOrder(placed);
+          showToast(`Order ${orderNumber} placed`, "success");
+          if (printAfter) void handlePrintReceipt(placed);
+        }
+
+        clearAllFields();
+        setIsMobileCartOpen(false);
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error ? err.message : "Unknown error occurred";
+        console.error("Place order failed:", err);
+        showToast("Error: " + msg, "error");
+      } finally {
+        setIsSubmitting(false);
       }
+    },
+    [editingOrderNumber, handlePrintReceipt, showToast, clearAllFields]
+  );
 
-      if (editingOrderId) {
-        await updateDoc(doc(db, "orders", editingOrderId), orderPayload);
-        const updated: Order = { id: editingOrderId, ...orderPayload };
-        setLastPlacedOrder(updated);
-        showToast(`Order ${newOrderNumber} updated`, "success");
-        if (printAfter) handlePrintReceipt(updated);
-      } else {
-        orderPayload.status = "pending";
-        orderPayload.createdAt = Timestamp.now();
-        if (orderType === "delivery") orderPayload.deliveryStatus = "pending";
-        const docRef = await addDoc(collection(db, "orders"), orderPayload);
-        const placed: Order = { id: docRef.id, ...orderPayload };
-        setLastPlacedOrder(placed);
-        showToast(`Order ${newOrderNumber} placed`, "success");
-        if (printAfter) handlePrintReceipt(placed);
-      }
+  /* ============================================================ */
+  /* Status / payment updates                                     */
+  /* ============================================================ */
 
-      clearAllFields();
-      setIsMobileCartOpen(false);
-    } catch (err: any) {
-      showToast("Error: " + err.message, "error");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handlePrintReceipt = async (order: Order) => {
-    setPrintStatus("printing");
-    try {
-      const res = await printThermalReceipt(order, {
-        paperWidth: "58mm",
-        branchName: "EL PRESTO - UCER Naini Hub",
-        counterNumber: "C-01",
-        counterName: "Register 1",
-      });
-      setPrintStatus(res.success ? "success" : "error");
-      setTimeout(() => setPrintStatus("idle"), 3000);
-    } catch {
-      setPrintStatus("error");
-      setTimeout(() => setPrintStatus("idle"), 3000);
-    }
-  };
-
-  const handlePrintKOT = async (order: Order) => {
-    try {
-      await printKOT(order, {
-        branchName: "EL PRESTO - UCER Naini Hub",
-        counterNumber: "C-01",
-      });
-      showToast("KOT sent to kitchen", "success");
-    } catch {
-      showToast("KOT print failed", "error");
-    }
-  };
-
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
-    try {
-      await updateDoc(doc(db, "orders", orderId), {
+  const handleUpdateOrderStatus = useCallback(
+    async (order: Order, newStatus: string) => {
+      const rider = getStaffIdentity(staffSessionRef.current);
+      const patch: Record<string, unknown> = {
         status: newStatus,
         updatedAt: Timestamp.now(),
-        ...(newStatus === "completed"
-          ? { completedAt: new Date().toISOString() }
-          : {}),
-      });
-      showToast(`Order marked ${newStatus}`, "success");
-    } catch (err: any) {
-      showToast("Error: " + err.message, "error");
-    }
-  };
+        updatedBy: rider.id,
+      };
 
-  const handleUpdatePaymentStatus = async (
-    orderId: string,
-    newStatus: "paid" | "pending"
-  ) => {
-    try {
-      await updateDoc(doc(db, "orders", orderId), {
-        paymentStatus: newStatus,
-        updatedAt: Timestamp.now(),
-      });
-      showToast(`Payment ${newStatus}`, "success");
-    } catch (err: any) {
-      showToast("Error updating payment", "error");
-    }
-  };
+      if (newStatus === "completed") {
+        patch.completedAt = Timestamp.now();
+      }
+
+      if (
+        newStatus === "ready" &&
+        (order.type === "delivery" || order.orderType === "delivery")
+      ) {
+        patch.deliveryStatus = "ready";
+      }
+
+      try {
+        await updateDoc(doc(db, "orders", order.id), patch);
+        showToast(`Order marked ${newStatus}`, "success");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        showToast("Error: " + msg, "error");
+      }
+    },
+    [showToast]
+  );
+
+  const handleUpdatePaymentStatus = useCallback(
+    async (orderId: string, newStatus: PaymentStatus) => {
+      const rider = getStaffIdentity(staffSessionRef.current);
+      try {
+        await updateDoc(doc(db, "orders", orderId), {
+          paymentStatus: newStatus,
+          updatedAt: Timestamp.now(),
+          updatedBy: rider.id,
+        });
+        showToast(`Payment ${newStatus}`, "success");
+      } catch (err) {
+        console.error("Payment update failed:", err);
+        showToast("Error updating payment", "error");
+      }
+    },
+    [showToast]
+  );
 
   /* ============================================================ */
-  /* LOGIN                                                        */
+  /* Keyboard shortcuts                                           */
   /* ============================================================ */
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F1") {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+        return;
+      }
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === "F4") {
+        e.preventDefault();
+        if (
+          cartItemsRef.current.length > 0 &&
+          !isSubmittingRef.current &&
+          !editingOrderIdRef.current
+        ) {
+          void handlePlaceOrder(true);
+        } else if (
+          cartItemsRef.current.length > 0 &&
+          !isSubmittingRef.current &&
+          editingOrderIdRef.current
+        ) {
+          void handlePlaceOrder(true);
+        }
+        return;
+      }
+      if (e.key === "F6") {
+        e.preventDefault();
+        if (cartItemsRef.current.length > 0 && !isSubmittingRef.current) {
+          void handlePlaceOrder(false);
+        }
+        return;
+      }
+      if (e.key === "F8") {
+        e.preventDefault();
+        if (cartItemsRef.current.length > 0) confirmClearCart();
+        return;
+      }
+      if (e.key === "Escape") {
+        setShowShortcuts(false);
+        setIsMobileCartOpen(false);
+        setIsMobileOrdersOpen(false);
+        setNoteEditingItem(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handlePlaceOrder, confirmClearCart]);
+
+  /* ============================================================ */
+  /* Branch switcher (elevated only)                              */
+  /* ============================================================ */
+
+  const handleBranchSwitch = useCallback(
+    async (newBranchId: string) => {
+      if (!isElevatedUser) return;
+      const oldBranchId = activeBranchId;
+      setActiveBranchId(newBranchId);
+      try {
+        const { logAuditEvent } = await import("@/lib/rbac");
+        const rider = getStaffIdentity(staffSessionRef.current);
+        await logAuditEvent({
+          actorId: rider.id,
+          actorName: rider.name,
+          actorRole: String(staffSessionRef.current?.role || "DEVELOPER"),
+          branchId: newBranchId,
+          action: "CROSS_BRANCH_VIEW",
+          targetType: "counter",
+          targetId: newBranchId,
+          metadata: { fromBranchId: oldBranchId, toBranchId: newBranchId },
+        });
+      } catch (err) {
+        console.warn("Audit log failed:", err);
+      }
+    },
+    [isElevatedUser, activeBranchId]
+  );
+
+  /* ============================================================ */
+  /* Fullscreen                                                   */
+  /* ============================================================ */
+
+  const toggleFullscreen = useCallback(() => {
+    if (typeof document === "undefined") return;
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {
+        /* ignore */
+      });
+    } else {
+      document.exitFullscreen().catch(() => {
+        /* ignore */
+      });
+    }
+  }, []);
+
+  /* ============================================================ */
+  /* Login gate                                                   */
+  /* ============================================================ */
+
   if (isVerifyingAuth) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -917,19 +1685,20 @@ export default function CounterPOSPage() {
         panel="counter"
         panelDisplayName="Counter POS & Billing Station"
         panelIcon={<Store size={28} />}
-        onSuccess={(session) => {
-          setStaffSession(session);
+        onSuccess={(session: unknown) => {
+          const s = (session as StaffSession) || null;
+          setStaffSession(s);
           setIsAuthenticated(true);
-          if (session.branchId) {
-            setActiveBranchId(session.branchId);
-          }
+          if (s?.branchId) setActiveBranchId(s.branchId);
         }}
       />
     );
   }
+
   /* ============================================================ */
-  /* LEFT — Orders List                                           */
+  /* Left panel — Orders                                          */
   /* ============================================================ */
+
   const OrdersListPanel = (
     <div className="flex h-full flex-col bg-white">
       <div className="border-b border-slate-100 px-4 py-3.5">
@@ -945,7 +1714,11 @@ export default function CounterPOSPage() {
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
             size={13}
           />
+          <label htmlFor="orders-search" className="sr-only">
+            Search orders
+          </label>
           <input
+            id="orders-search"
             type="text"
             placeholder="Search orders..."
             value={ordersSearch}
@@ -954,7 +1727,9 @@ export default function CounterPOSPage() {
           />
           {ordersSearch && (
             <button
+              type="button"
               onClick={() => setOrdersSearch("")}
+              aria-label="Clear search"
               className="absolute right-2.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-full text-slate-400 hover:bg-slate-100"
             >
               <X size={11} />
@@ -965,13 +1740,25 @@ export default function CounterPOSPage() {
 
       <div className="flex-1 overflow-y-auto px-3 py-3">
         <button
+          type="button"
           onClick={() => {
             if (cartItems.length > 0 && !editingOrderId) {
-              if (!confirm("Current cart will be lost. Start a new order?")) return;
+              setConfirm({
+                title: "Start new order?",
+                message: "Current cart will be lost. Continue?",
+                confirmLabel: "Start new",
+                destructive: true,
+                onConfirm: () => {
+                  clearAllFields();
+                  setIsMobileOrdersOpen(false);
+                  setActiveTab("pos");
+                },
+              });
+            } else {
+              clearAllFields();
+              setIsMobileOrdersOpen(false);
+              setActiveTab("pos");
             }
-            clearAllFields();
-            setIsMobileOrdersOpen(false);
-            setActiveTab("pos");
           }}
           className={`mb-3 flex w-full items-start gap-3 rounded-2xl border-2 border-dashed px-4 py-3 text-left transition active:scale-[0.99] ${
             editingOrderId
@@ -991,7 +1778,9 @@ export default function CounterPOSPage() {
               {editingOrderId ? "Cancel Edit" : "New Order"}
             </p>
             <p className="text-[11px] font-medium text-slate-500">
-              {editingOrderId ? "Discard changes and reset" : "Start a new prepaid order"}
+              {editingOrderId
+                ? `Editing ${editingOrderNumber || "order"}`
+                : "Start a new order"}
             </p>
           </div>
         </button>
@@ -1015,6 +1804,8 @@ export default function CounterPOSPage() {
               const isPreparing = order.status === "preparing";
               const isPending = order.status === "pending";
               const paid = order.paymentStatus === "paid";
+              const isDelivery =
+                order.type === "delivery" || order.orderType === "delivery";
 
               const urgencyBar =
                 urgency === "critical"
@@ -1036,10 +1827,15 @@ export default function CounterPOSPage() {
                   <div className="pl-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="font-mono text-sm font-black text-slate-900">
                             {order.orderNumber}
                           </span>
+                          {isDelivery && (
+                            <span className="flex items-center gap-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-orange-700">
+                              <Bike size={8} /> Dlv
+                            </span>
+                          )}
                           {isReady && (
                             <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-700">
                               Ready
@@ -1082,15 +1878,17 @@ export default function CounterPOSPage() {
                       <p className="mt-1 truncate text-[11px] text-slate-400">
                         {order.items
                           .slice(0, 2)
-                          .map((it: any) => `${it.quantity}× ${it.name}`)
+                          .map((it) => `${it.quantity}× ${it.name}`)
                           .join(", ")}
-                        {order.items.length > 2 && ` +${order.items.length - 2}`}
+                        {order.items.length > 2 &&
+                          ` +${order.items.length - 2}`}
                       </p>
                     )}
 
                     <div className="mt-2 flex items-center gap-1.5">
                       {!paid && (
                         <button
+                          type="button"
                           onClick={() =>
                             handleUpdatePaymentStatus(order.id, "paid")
                           }
@@ -1101,8 +1899,9 @@ export default function CounterPOSPage() {
                       )}
                       {isPending && (
                         <button
+                          type="button"
                           onClick={() =>
-                            handleUpdateOrderStatus(order.id, "preparing")
+                            handleUpdateOrderStatus(order, "preparing")
                           }
                           className="flex-1 rounded-lg border border-orange-200 bg-orange-50 py-1.5 text-[10px] font-bold uppercase tracking-wide text-orange-700 transition hover:bg-orange-100"
                         >
@@ -1111,16 +1910,20 @@ export default function CounterPOSPage() {
                       )}
                       {isPreparing && (
                         <button
-                          onClick={() => handleUpdateOrderStatus(order.id, "ready")}
+                          type="button"
+                          onClick={() =>
+                            handleUpdateOrderStatus(order, "ready")
+                          }
                           className="flex-1 rounded-lg border border-blue-200 bg-blue-50 py-1.5 text-[10px] font-bold uppercase tracking-wide text-blue-700 transition hover:bg-blue-100"
                         >
                           Ready
                         </button>
                       )}
-                      {isReady && order.type !== "delivery" && (
+                      {isReady && !isDelivery && (
                         <button
+                          type="button"
                           onClick={() =>
-                            handleUpdateOrderStatus(order.id, "completed")
+                            handleUpdateOrderStatus(order, "completed")
                           }
                           className="flex-1 rounded-lg bg-[#D92312] py-1.5 text-[10px] font-bold uppercase tracking-wide text-white transition hover:bg-[#B8190B]"
                         >
@@ -1128,16 +1931,20 @@ export default function CounterPOSPage() {
                         </button>
                       )}
                       <button
+                        type="button"
                         onClick={() => recallOrder(order)}
                         className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
                         title="Edit / Recall"
+                        aria-label={`Edit order ${order.orderNumber}`}
                       >
                         <Pencil size={11} />
                       </button>
                       <button
-                        onClick={() => handlePrintReceipt(order)}
+                        type="button"
+                        onClick={() => void handlePrintReceipt(order)}
                         className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
                         title="Print bill"
+                        aria-label={`Print bill for ${order.orderNumber}`}
                       >
                         <Printer size={11} />
                       </button>
@@ -1148,13 +1955,14 @@ export default function CounterPOSPage() {
             })
           )}
 
-          {!showAllOrders && activeOrders.length > 15 && (
+          {!showAllOrders && activeOrders.length > ACTIVE_ORDERS_PREVIEW && (
             <button
+              type="button"
               onClick={() => setShowAllOrders(true)}
               className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-slate-200 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 transition hover:bg-slate-50"
             >
               <ChevronRight size={11} />
-              Show {activeOrders.length - 15} more
+              Show {activeOrders.length - ACTIVE_ORDERS_PREVIEW} more
             </button>
           )}
         </div>
@@ -1163,13 +1971,20 @@ export default function CounterPOSPage() {
       <div className="border-t border-slate-100 px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <button
+            type="button"
             onClick={toggleSound}
+            aria-label={
+              soundEnabled
+                ? "Mute new order alerts"
+                : "Enable new order alerts"
+            }
+            aria-pressed={soundEnabled}
             className={`grid h-8 w-8 place-items-center rounded-lg border transition ${
               soundEnabled
                 ? "border-red-200 bg-red-50 text-[#D92312]"
                 : "border-slate-200 bg-white text-slate-400"
             }`}
-            title={soundEnabled ? "Sound on (F1 for help)" : "Sound off"}
+            title={soundEnabled ? "Sound on" : "Sound off"}
           >
             {soundEnabled ? <Bell size={13} /> : <BellOff size={13} />}
           </button>
@@ -1181,6 +1996,7 @@ export default function CounterPOSPage() {
               <Wifi size={11} /> Live
             </span>
             <button
+              type="button"
               onClick={handleLogout}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-2 text-[11px] font-bold text-slate-500 transition hover:bg-slate-50 hover:text-red-500"
             >
@@ -1193,8 +2009,9 @@ export default function CounterPOSPage() {
   );
 
   /* ============================================================ */
-  /* RIGHT — Cart                                                  */
+  /* Right panel — Cart                                           */
   /* ============================================================ */
+
   const OrderPanel = (
     <div className="flex h-full flex-col bg-white">
       <div className="border-b border-slate-100 px-5 py-4">
@@ -1205,12 +2022,13 @@ export default function CounterPOSPage() {
             </h2>
             {editingOrderId && (
               <p className="mt-0.5 text-[11px] font-bold uppercase tracking-wider text-orange-600">
-                Update mode · saving will overwrite
+                {editingOrderNumber || "Order"} · saving overwrites
               </p>
             )}
           </div>
           {cartItems.length > 0 && (
             <button
+              type="button"
               onClick={confirmClearCart}
               className="text-xs font-bold text-slate-400 hover:text-red-500"
             >
@@ -1220,17 +2038,20 @@ export default function CounterPOSPage() {
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
-          {[
-            { id: "counter", label: "Counter / Takeaway", icon: Store },
-            { id: "delivery", label: "Delivery", icon: Bike },
-          ].map((t) => {
+          {(
+            [
+              { id: "counter" as const, label: "Counter / Takeaway", icon: Store },
+              { id: "delivery" as const, label: "Delivery", icon: Bike },
+            ] as const
+          ).map((t) => {
             const Icon = t.icon;
-            const active = orderType === (t.id as any);
+            const active = orderType === t.id;
             return (
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setOrderType(t.id as any)}
+                onClick={() => setOrderType(t.id)}
+                aria-pressed={active}
                 className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-bold transition ${
                   active
                     ? "bg-white text-slate-900 shadow-sm"
@@ -1252,8 +2073,12 @@ export default function CounterPOSPage() {
             <div className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-100">
               <ShoppingCart size={22} className="text-slate-400" />
             </div>
-            <p className="mt-3 text-sm font-bold text-slate-500">No items added</p>
-            <p className="mt-1 text-xs text-slate-400">Select items from the menu</p>
+            <p className="mt-3 text-sm font-bold text-slate-500">
+              No items added
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Select items from the menu
+            </p>
             <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-300">
               Press F2 to search · F1 for shortcuts
             </p>
@@ -1279,7 +2104,9 @@ export default function CounterPOSPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
+                      type="button"
                       onClick={() => updateQuantity(ci.item.id, -1)}
+                      aria-label={`Decrease quantity of ${ci.item.name}`}
                       className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 active:scale-90"
                     >
                       <Minus size={12} />
@@ -1288,13 +2115,17 @@ export default function CounterPOSPage() {
                       {ci.quantity}
                     </span>
                     <button
+                      type="button"
                       onClick={() => updateQuantity(ci.item.id, 1)}
+                      aria-label={`Increase quantity of ${ci.item.name}`}
                       className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 active:scale-90"
                     >
                       <Plus size={12} />
                     </button>
                     <button
+                      type="button"
                       onClick={() => removeFromCart(ci.item.id)}
+                      aria-label={`Remove ${ci.item.name}`}
                       className="ml-1 grid h-7 w-7 place-items-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500 active:scale-90"
                     >
                       <Trash2 size={12} />
@@ -1305,19 +2136,30 @@ export default function CounterPOSPage() {
                 <div className="mt-2 flex items-center gap-2">
                   {noteEditingItem === ci.item.id ? (
                     <div className="flex flex-1 gap-1.5">
+                      <label
+                        htmlFor={`note-input-${ci.item.id}`}
+                        className="sr-only"
+                      >
+                        Note for {ci.item.name}
+                      </label>
                       <input
+                        id={`note-input-${ci.item.id}`}
                         type="text"
                         autoFocus
                         value={noteText}
                         onChange={(e) => setNoteText(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveItemNote();
-                          if (e.key === "Escape") setNoteEditingItem(null);
+                          if (e.key === "Escape") {
+                            setNoteEditingItem(null);
+                            setNoteText("");
+                          }
                         }}
                         placeholder="Special instructions..."
                         className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 placeholder-slate-400 focus:border-[#D92312] focus:outline-none"
                       />
                       <button
+                        type="button"
                         onClick={saveItemNote}
                         className="rounded-lg bg-[#D92312] px-2 py-1 text-[10px] font-bold text-white"
                       >
@@ -1326,6 +2168,7 @@ export default function CounterPOSPage() {
                     </div>
                   ) : ci.notes ? (
                     <button
+                      type="button"
                       onClick={() => {
                         setNoteEditingItem(ci.item.id);
                         setNoteText(ci.notes || "");
@@ -1337,6 +2180,7 @@ export default function CounterPOSPage() {
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => {
                         setNoteEditingItem(ci.item.id);
                         setNoteText("");
@@ -1354,29 +2198,42 @@ export default function CounterPOSPage() {
       </div>
 
       <div className="border-t border-slate-100 px-5 py-4">
-        {/* Only Customer Name + Phone — no other detail inputs */}
         <div className="mb-3 grid grid-cols-2 gap-2">
-          <input
-            type="text"
-            placeholder="Customer name"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-[#D92312] focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
-          />
-          <div className="relative">
+          <div>
+            <label htmlFor="customer-name" className="sr-only">
+              Customer name
+            </label>
             <input
+              id="customer-name"
+              type="text"
+              placeholder="Customer name"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-[#D92312] focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
+            />
+          </div>
+          <div className="relative">
+            <label htmlFor="customer-phone" className="sr-only">
+              Customer phone
+            </label>
+            <input
+              id="customer-phone"
               type="tel"
+              inputMode="numeric"
               placeholder="Phone"
               value={customerPhone}
               onChange={(e) =>
-                setCustomerPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                setCustomerPhone(normalisePhone(e.target.value))
               }
-              onKeyDown={(e) => e.key === "Enter" && handleSearchCustomer()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSearchCustomer();
+              }}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 pr-12 text-sm text-slate-900 placeholder-slate-400 focus:border-[#D92312] focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100"
             />
             {customerPhone.length === 10 && !linkedCustomer && (
               <button
-                onClick={handleSearchCustomer}
+                type="button"
+                onClick={() => void handleSearchCustomer()}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-bold text-white"
               >
                 Find
@@ -1398,13 +2255,13 @@ export default function CounterPOSPage() {
             </span>
           </div>
 
-          {/* Discount: % or ₹ toggle + value + presets */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5">
               <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
                 <button
                   type="button"
                   onClick={() => setDiscountMode("flat")}
+                  aria-pressed={discountMode === "flat"}
                   className={`rounded-md px-2 py-1 text-[10px] font-black transition ${
                     discountMode === "flat"
                       ? "bg-slate-900 text-white"
@@ -1417,6 +2274,7 @@ export default function CounterPOSPage() {
                 <button
                   type="button"
                   onClick={() => setDiscountMode("percent")}
+                  aria-pressed={discountMode === "percent"}
                   className={`rounded-md px-2 py-1 text-[10px] font-black transition ${
                     discountMode === "percent"
                       ? "bg-slate-900 text-white"
@@ -1427,18 +2285,20 @@ export default function CounterPOSPage() {
                   %
                 </button>
               </div>
+              <label htmlFor="discount-value" className="sr-only">
+                Discount value
+              </label>
               <input
+                id="discount-value"
                 type="number"
                 min="0"
                 max={discountMode === "percent" ? 100 : undefined}
                 value={discountValue || ""}
                 onChange={(e) => {
-                  const v = Number(e.target.value) || 0;
-                  if (discountMode === "percent") {
-                    setDiscountValue(Math.max(0, Math.min(100, v)));
-                  } else {
-                    setDiscountValue(Math.max(0, v));
-                  }
+                  const v = Math.max(0, Number(e.target.value) || 0);
+                  setDiscountValue(
+                    discountMode === "percent" ? Math.min(100, v) : v
+                  );
                 }}
                 placeholder={discountMode === "percent" ? "%" : "₹"}
                 className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-right font-mono text-xs font-bold text-slate-900 focus:border-[#D92312] focus:bg-white focus:outline-none"
@@ -1451,6 +2311,9 @@ export default function CounterPOSPage() {
                   key={p.label}
                   type="button"
                   onClick={() => applyDiscountPreset(p)}
+                  aria-pressed={
+                    discountMode === p.mode && discountValue === p.value
+                  }
                   className={`flex-1 rounded-lg border py-1 text-[10px] font-black transition ${
                     discountMode === p.mode && discountValue === p.value
                       ? "border-[#D92312] bg-red-50 text-[#D92312]"
@@ -1485,7 +2348,9 @@ export default function CounterPOSPage() {
           )}
 
           <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-            <span className="text-base font-black text-slate-900">Grand Total</span>
+            <span className="text-base font-black text-slate-900">
+              Grand Total
+            </span>
             <span className="text-xl font-black text-[#D92312]">
               ₹{grandTotal.toFixed(2)}
             </span>
@@ -1496,24 +2361,26 @@ export default function CounterPOSPage() {
           <button
             type="button"
             onClick={() => setPaymentMethod("cash")}
+            aria-pressed={paymentMethod === "cash"}
             className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-bold transition ${
               paymentMethod === "cash"
                 ? "border-[#D92312] bg-red-50 text-[#D92312]"
                 : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
             }`}
           >
-            <DollarSign size={13} /> Cash
+            Cash
           </button>
           <button
             type="button"
             onClick={() => setPaymentMethod("online")}
+            aria-pressed={paymentMethod === "online"}
             className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-bold transition ${
               paymentMethod === "online"
                 ? "border-[#D92312] bg-red-50 text-[#D92312]"
                 : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
             }`}
           >
-            <CreditCard size={13} /> UPI
+            Online / UPI
           </button>
         </div>
 
@@ -1521,6 +2388,7 @@ export default function CounterPOSPage() {
           <button
             type="button"
             onClick={() => setCounterPaymentStatus("paid")}
+            aria-pressed={counterPaymentStatus === "paid"}
             className={`rounded-xl border py-2 text-xs font-bold transition ${
               counterPaymentStatus === "paid"
                 ? "border-emerald-500 bg-emerald-50 text-emerald-700"
@@ -1532,6 +2400,7 @@ export default function CounterPOSPage() {
           <button
             type="button"
             onClick={() => setCounterPaymentStatus("pending")}
+            aria-pressed={counterPaymentStatus === "pending"}
             className={`rounded-xl border py-2 text-xs font-bold transition ${
               counterPaymentStatus === "pending"
                 ? "border-amber-500 bg-amber-50 text-amber-700"
@@ -1554,7 +2423,7 @@ export default function CounterPOSPage() {
           <button
             type="button"
             disabled={cartItems.length === 0 || isSubmitting}
-            onClick={() => handlePlaceOrder(true)}
+            onClick={() => void handlePlaceOrder(true)}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#D92312] py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#B8190B] active:scale-[0.98] disabled:opacity-40"
           >
             {isSubmitting ? (
@@ -1564,8 +2433,8 @@ export default function CounterPOSPage() {
               </>
             ) : (
               <>
-                <Receipt size={13} />{" "}
-                {editingOrderId ? "Update Order" : "Generate Bill"}
+                <Printer size={13} />{" "}
+                {editingOrderId ? "Update & Print" : "Generate Bill"}
               </>
             )}
           </button>
@@ -1579,18 +2448,24 @@ export default function CounterPOSPage() {
   );
 
   /* ============================================================ */
-  /* MAIN LAYOUT                                                  */
+  /* Main render                                                  */
   /* ============================================================ */
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900">
+      <Toast state={toast} onDismiss={dismissToast} />
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+
       {/* Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
+            type="button"
             onClick={() => setIsMobileOrdersOpen(true)}
+            aria-label="Open orders panel"
             className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 lg:hidden"
           >
-            <MenuIcon size={16} />
+            <ChevronRight size={16} />
           </button>
           <div className="flex items-center gap-2.5">
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#D92312] text-white">
@@ -1601,13 +2476,34 @@ export default function CounterPOSPage() {
                 EL PRESTO · Counter
               </h1>
               <p className="hidden truncate text-[11px] text-slate-500 sm:block">
-                {activeOrders.length} active · {cartCount} in cart
+                {activeCounter?.name || "Counter"} · {activeOrders.length}{" "}
+                active · {cartCount} in cart
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {isElevatedUser && branches.length > 1 && (
+            <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 sm:flex">
+              <label htmlFor="branch-select" className="sr-only">
+                Switch branch
+              </label>
+              <select
+                id="branch-select"
+                value={activeBranchId}
+                onChange={(e) => void handleBranchSwitch(e.target.value)}
+                className="max-w-[140px] cursor-pointer bg-transparent text-[11px] font-bold text-slate-700 focus:outline-none"
+              >
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {printStatus !== "idle" && (
             <span
               className={`hidden items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase sm:flex ${
@@ -1633,7 +2529,8 @@ export default function CounterPOSPage() {
 
           {lastPlacedOrder && (
             <button
-              onClick={() => handlePrintReceipt(lastPlacedOrder)}
+              type="button"
+              onClick={() => void handlePrintReceipt(lastPlacedOrder)}
               className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 sm:flex"
               title="Reprint last receipt"
             >
@@ -1642,7 +2539,9 @@ export default function CounterPOSPage() {
           )}
 
           <button
+            type="button"
             onClick={() => setShowShortcuts(true)}
+            aria-label="Show keyboard shortcuts"
             className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 md:flex"
             title="Keyboard shortcuts (F1)"
           >
@@ -1650,7 +2549,10 @@ export default function CounterPOSPage() {
           </button>
 
           <button
+            type="button"
             onClick={toggleFullscreen}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            aria-pressed={isFullscreen}
             className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 md:flex"
             title="Toggle fullscreen"
           >
@@ -1658,6 +2560,7 @@ export default function CounterPOSPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab(activeTab === "pos" ? "history" : "pos")}
             className="hidden rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 sm:block"
           >
@@ -1665,7 +2568,9 @@ export default function CounterPOSPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setIsMobileCartOpen(true)}
+            aria-label="Open cart"
             className="relative grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 lg:hidden"
           >
             <ShoppingCart size={16} />
@@ -1699,12 +2604,22 @@ export default function CounterPOSPage() {
                     Select items to add to current order
                   </p>
                 </div>
-                <button
-                  onClick={() => searchInputRef.current?.focus()}
-                  className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-50 sm:flex"
-                >
-                  <Keyboard size={11} /> F2
-                </button>
+                <div className="flex items-center gap-2">
+                  <DateNavigator
+                    selectedDate={selectedDate}
+                    onChangeDate={setSelectedDate}
+                    variant="light"
+                    orderCount={orders.length}
+                    isLoading={ordersLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => searchInputRef.current?.focus()}
+                    className="hidden items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-50 sm:flex"
+                  >
+                    <Keyboard size={11} /> F2
+                  </button>
+                </div>
               </div>
 
               <div className="relative mt-3">
@@ -1712,7 +2627,11 @@ export default function CounterPOSPage() {
                   className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
                   size={16}
                 />
+                <label htmlFor="menu-search" className="sr-only">
+                  Search menu
+                </label>
                 <input
+                  id="menu-search"
                   ref={searchInputRef}
                   type="text"
                   placeholder="Search menu items..."
@@ -1722,7 +2641,9 @@ export default function CounterPOSPage() {
                 />
                 {searchQuery && (
                   <button
+                    type="button"
                     onClick={() => setSearchQuery("")}
+                    aria-label="Clear menu search"
                     className="absolute right-3 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-slate-400 hover:bg-slate-100"
                   >
                     <X size={13} />
@@ -1732,10 +2653,12 @@ export default function CounterPOSPage() {
 
               <div className="scrollbar-none mt-3 flex items-center gap-2 overflow-x-auto pb-0.5">
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedCategory("all");
                     setSelectedSubcategory("all");
                   }}
+                  aria-pressed={selectedCategory === "all"}
                   className={`shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-bold transition ${
                     selectedCategory === "all"
                       ? "bg-[#D92312] text-white"
@@ -1759,10 +2682,12 @@ export default function CounterPOSPage() {
                   return (
                     <button
                       key={catName}
+                      type="button"
                       onClick={() => {
                         setSelectedCategory(catName);
                         setSelectedSubcategory("all");
                       }}
+                      aria-pressed={active}
                       className={`shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-bold transition ${
                         active
                           ? "bg-[#D92312] text-white"
@@ -1787,7 +2712,9 @@ export default function CounterPOSPage() {
               {currentSubcategories.length > 0 && (
                 <div className="scrollbar-none mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
                   <button
+                    type="button"
                     onClick={() => setSelectedSubcategory("all")}
+                    aria-pressed={selectedSubcategory === "all"}
                     className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold transition ${
                       selectedSubcategory === "all"
                         ? "bg-slate-900 text-white"
@@ -1799,7 +2726,9 @@ export default function CounterPOSPage() {
                   {currentSubcategories.map((subName) => (
                     <button
                       key={subName}
+                      type="button"
                       onClick={() => setSelectedSubcategory(subName)}
+                      aria-pressed={selectedSubcategory === subName}
                       className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold transition ${
                         selectedSubcategory === subName
                           ? "bg-slate-900 text-white"
@@ -1825,10 +2754,13 @@ export default function CounterPOSPage() {
                   </div>
                   <div className="scrollbar-none flex gap-2 overflow-x-auto pb-0.5">
                     {frequentItems.map((item) => {
-                      const inCart = cartItems.find((ci) => ci.item.id === item.id);
+                      const inCart = cartItems.find(
+                        (ci) => ci.item.id === item.id
+                      );
                       return (
                         <button
                           key={item.id}
+                          type="button"
                           onClick={() => addToCart(item)}
                           className="group flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left transition hover:border-[#D92312] hover:bg-white active:scale-95"
                         >
@@ -1891,7 +2823,9 @@ export default function CounterPOSPage() {
                             <div
                               key={item.id}
                               className={`flex items-center justify-between gap-3 rounded-xl px-3 py-3 transition ${
-                                unavailable ? "opacity-40" : "hover:bg-slate-50"
+                                unavailable
+                                  ? "opacity-40"
+                                  : "hover:bg-slate-50"
                               }`}
                             >
                               <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -1913,7 +2847,11 @@ export default function CounterPOSPage() {
                                   {inCart ? (
                                     <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-1 py-0.5">
                                       <button
-                                        onClick={() => updateQuantity(item.id, -1)}
+                                        type="button"
+                                        onClick={() =>
+                                          updateQuantity(item.id, -1)
+                                        }
+                                        aria-label={`Decrease ${item.name}`}
                                         className="grid h-6 w-6 place-items-center rounded text-slate-600 hover:bg-slate-100 active:scale-90"
                                       >
                                         <Minus size={12} />
@@ -1922,7 +2860,11 @@ export default function CounterPOSPage() {
                                         {inCart.quantity}
                                       </span>
                                       <button
-                                        onClick={() => updateQuantity(item.id, 1)}
+                                        type="button"
+                                        onClick={() =>
+                                          updateQuantity(item.id, 1)
+                                        }
+                                        aria-label={`Increase ${item.name}`}
                                         className="grid h-6 w-6 place-items-center rounded text-slate-600 hover:bg-slate-100 active:scale-90"
                                       >
                                         <Plus size={12} />
@@ -1930,7 +2872,9 @@ export default function CounterPOSPage() {
                                     </div>
                                   ) : (
                                     <button
+                                      type="button"
                                       onClick={() => addToCart(item)}
+                                      aria-label={`Add ${item.name}`}
                                       className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-[#D92312] hover:bg-red-50 hover:text-[#D92312] active:scale-95"
                                     >
                                       <Plus size={14} />
@@ -1965,7 +2909,9 @@ export default function CounterPOSPage() {
           <div className="mx-auto max-w-5xl">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Order History</h2>
+                <h2 className="text-lg font-black text-slate-900">
+                  Order History
+                </h2>
                 <span className="text-xs text-slate-500">
                   {completedOrders.length} orders on this day
                 </span>
@@ -1981,12 +2927,12 @@ export default function CounterPOSPage() {
 
             {ordersLoading ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-16 text-center">
-                <Loader2 size={32} className="mx-auto animate-spin text-[#D92312]" />
+                <Loader2
+                  size={32}
+                  className="mx-auto animate-spin text-[#D92312]"
+                />
                 <p className="mt-3 text-sm font-bold text-slate-700">
                   Loading orders...
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Fetching order history for {selectedDate}
                 </p>
               </div>
             ) : ordersError ? (
@@ -2006,7 +2952,7 @@ export default function CounterPOSPage() {
               </div>
             ) : completedOrders.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-16 text-center">
-                <Receipt size={36} className="mx-auto text-slate-300" />
+                <Printer size={36} className="mx-auto text-slate-300" />
                 <p className="mt-3 text-sm font-bold text-slate-700">
                   No orders found for this date.
                 </p>
@@ -2041,10 +2987,10 @@ export default function CounterPOSPage() {
                             {o.customerName}
                           </td>
                           <td className="px-4 py-3 capitalize text-slate-500">
-                            {o.type}
+                            {o.type || o.orderType || "counter"}
                           </td>
                           <td className="px-4 py-3 font-mono font-bold text-slate-900">
-                            ₹{o.total}
+                            ₹{Math.round(o.total || 0)}
                           </td>
                           <td className="px-4 py-3">
                             <span
@@ -2058,8 +3004,8 @@ export default function CounterPOSPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-slate-500">
-                            {o.createdAt?.toDate
-                              ? o.createdAt.toDate().toLocaleTimeString([], {
+                            {o.createdAt
+                              ? toDate(o.createdAt).toLocaleTimeString([], {
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })
@@ -2068,14 +3014,18 @@ export default function CounterPOSPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-1">
                               <button
-                                onClick={() => handlePrintReceipt(o)}
+                                type="button"
+                                onClick={() => void handlePrintReceipt(o)}
+                                aria-label={`Print ${o.orderNumber}`}
                                 className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:bg-slate-50"
                                 title="Print receipt"
                               >
                                 <Printer size={12} />
                               </button>
                               <button
+                                type="button"
                                 onClick={() => duplicateOrder(o)}
+                                aria-label={`Duplicate ${o.orderNumber}`}
                                 className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 transition hover:bg-slate-50"
                                 title="Duplicate order"
                               >
@@ -2096,7 +3046,12 @@ export default function CounterPOSPage() {
 
       {/* Mobile drawers */}
       {isMobileOrdersOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Orders panel"
+          className="fixed inset-0 z-50 lg:hidden"
+        >
           <div
             onClick={() => setIsMobileOrdersOpen(false)}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -2108,7 +3063,12 @@ export default function CounterPOSPage() {
       )}
 
       {isMobileCartOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Cart"
+          className="fixed inset-0 z-50 lg:hidden"
+        >
           <div
             onClick={() => setIsMobileCartOpen(false)}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -2121,7 +3081,13 @@ export default function CounterPOSPage() {
 
       {/* Shortcuts modal */}
       {showShortcuts && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
+          onClick={() => setShowShortcuts(false)}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        >
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
@@ -2136,7 +3102,9 @@ export default function CounterPOSPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowShortcuts(false)}
+                aria-label="Close shortcuts"
                 className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"
               >
                 <X size={14} />
@@ -2168,61 +3136,6 @@ export default function CounterPOSPage() {
           </div>
         </div>
       )}
-
-      {/* Toast */}
-      {toast && (
-        <div
-          className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2"
-          style={{ animation: "slideUp 0.2s ease-out" }}
-        >
-          <style>{`
-            @keyframes slideUp {
-              from { opacity: 0; transform: translate(-50%, 8px); }
-              to { opacity: 1; transform: translate(-50%, 0); }
-            }
-          `}</style>
-          <div
-            className={`flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 shadow-xl ${
-              toast.type === "success"
-                ? "border-emerald-200"
-                : toast.type === "error"
-                ? "border-red-200"
-                : "border-slate-200"
-            }`}
-          >
-            <div
-              className={`grid h-8 w-8 place-items-center rounded-lg text-white ${
-                toast.type === "success"
-                  ? "bg-emerald-500"
-                  : toast.type === "error"
-                  ? "bg-red-500"
-                  : "bg-slate-700"
-              }`}
-            >
-              {toast.type === "success" ? (
-                <CheckCircle size={15} />
-              ) : toast.type === "error" ? (
-                <AlertCircle size={15} />
-              ) : (
-                <Info size={15} />
-              )}
-            </div>
-            <p className="text-sm font-bold text-slate-800">{toast.message}</p>
-            {toast.undo && (
-              <button
-                onClick={() => {
-                  toast.undo?.();
-                  setToast(null);
-                }}
-                className="flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-white"
-              >
-                <Undo2 size={10} /> Undo
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-

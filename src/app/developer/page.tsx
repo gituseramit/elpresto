@@ -1,6 +1,13 @@
 ﻿"use client";
 
-import React, { useState, useEffect } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   LayoutDashboard,
   Building2,
@@ -10,22 +17,15 @@ import {
   CreditCard,
   Server,
   Activity,
-  Compass,
   KeyRound,
   ShieldAlert,
   ArrowRight,
-  TrendingUp,
   ShoppingBag,
   IndianRupee,
-  RefreshCw,
-  ExternalLink,
-  Plus,
   Bike,
   Printer,
   FileText,
-  AlertCircle,
   CheckCircle2,
-  Lock,
   Sun,
   Moon,
   Monitor,
@@ -34,6 +34,9 @@ import {
   Sparkles,
   Radio,
   ChevronRight,
+  LogOut,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
@@ -71,8 +74,102 @@ import {
   limit,
 } from "firebase/firestore";
 
-/* ============== THEME HELPERS ============== */
+/* ============================================================
+   TYPES
+   ============================================================ */
+
 type ThemeMode = "light" | "dark" | "system";
+
+type StaffSessionLike = {
+  email?: string;
+  name?: string;
+  role?: string;
+  [key: string]: unknown;
+} | null;
+
+type SectionId =
+  | "dashboard"
+  | "branches"
+  | "operations"
+  | "users"
+  | "menu"
+  | "fleet"
+  | "payments"
+  | "infrastructure"
+  | "audit";
+
+const DEFAULT_DEVELOPER_EMAIL = "developer@elpresto.co.in";
+const THEME_STORAGE_KEY = "elpestro_dev_theme";
+const ORDERS_LIMIT = 100;
+
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+function safeNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function isPaid(order: Order): boolean {
+  return String(order.paymentStatus || "").toLowerCase() === "paid";
+}
+
+function isBranchActive(branch: Branch): boolean {
+  // Treat undefined as active for legacy records; only explicit false disables.
+  return branch.active !== false;
+}
+
+function isRiderActive(partner: DeliveryPartner): boolean {
+  return String(partner.availability || "").toUpperCase() !== "OFFLINE";
+}
+
+/**
+ * Best-effort expiry check for a delegation session, tolerant of multiple
+ * possible field shapes without changing the upstream type.
+ */
+function isDelegationSessionActive(session: DelegationSession | null): boolean {
+  if (!session) return false;
+  const raw = session as unknown as Record<string, unknown>;
+  const candidate =
+    raw.expiresAt ?? raw.expiry ?? raw.endTime ?? raw.endsAt ?? null;
+  if (candidate == null) return true;
+
+  let ts: number | null = null;
+  if (typeof candidate === "number") ts = candidate;
+  else if (typeof candidate === "string") {
+    const parsed = Date.parse(candidate);
+    ts = Number.isNaN(parsed) ? null : parsed;
+  } else if (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof (candidate as { toMillis?: () => number }).toMillis === "function"
+  ) {
+    ts = (candidate as { toMillis: () => number }).toMillis();
+  } else if (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    typeof (candidate as { seconds?: number }).seconds === "number"
+  ) {
+    ts = (candidate as { seconds: number }).seconds * 1000;
+  }
+
+  if (ts == null) return true;
+  // Normalize seconds-based epoch to ms.
+  if (ts > 0 && ts < 1e12) ts *= 1000;
+  return ts > Date.now();
+}
+
+/* ============================================================
+   THEME TOGGLE
+   ============================================================ */
 
 function ThemeToggle({
   themeMode,
@@ -81,13 +178,24 @@ function ThemeToggle({
   themeMode: ThemeMode;
   setThemeMode: (t: ThemeMode) => void;
 }) {
+  // Avoid hydration mismatch: only show theme-specific icon after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const cycle: Record<ThemeMode, ThemeMode> = {
     light: "dark",
     dark: "system",
     system: "light",
   };
-  const Icon =
-    themeMode === "light" ? Sun : themeMode === "dark" ? Moon : Monitor;
+
+  const Icon = !mounted
+    ? Monitor
+    : themeMode === "light"
+    ? Sun
+    : themeMode === "dark"
+    ? Moon
+    : Monitor;
+
   const label =
     themeMode === "light"
       ? "Light theme"
@@ -97,8 +205,10 @@ function ThemeToggle({
 
   return (
     <button
+      type="button"
       onClick={() => setThemeMode(cycle[themeMode])}
       title={`${label} (click to cycle)`}
+      aria-label={`${label}. Click to cycle theme.`}
       className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 hover:shadow-md dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
     >
       <Icon size={15} />
@@ -106,7 +216,10 @@ function ThemeToggle({
   );
 }
 
-/* ============== STATUS STYLES ============== */
+/* ============================================================
+   STATUS STYLES
+   ============================================================ */
+
 const statusStyles = (status: string) => {
   const s = (status || "").toLowerCase();
   if (s === "completed" || s === "delivered")
@@ -120,21 +233,14 @@ const statusStyles = (status: string) => {
   return "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:ring-amber-500/25";
 };
 
-/* ============== MAIN PAGE ============== */
-export default function DeveloperDashboardPage() {
-  const [activeSection, setActiveSection] = useState<
-    | "dashboard"
-    | "branches"
-    | "operations"
-    | "users"
-    | "menu"
-    | "fleet"
-    | "payments"
-    | "infrastructure"
-    | "audit"
-  >("dashboard");
+/* ============================================================
+   MAIN PAGE
+   ============================================================ */
 
-  // Global state
+export default function DeveloperDashboardPage() {
+  const [activeSection, setActiveSection] = useState<SectionId>("dashboard");
+
+  /* ---- Data ---- */
   const [branches, setBranches] = useState<Branch[]>([]);
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
   const [counters, setCounters] = useState<Counter[]>([]);
@@ -142,192 +248,492 @@ export default function DeveloperDashboardPage() {
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>("ALL");
+
+  /* ---- Loading / errors ---- */
+  const [isBooting, setIsBooting] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+
+  /* ---- Delegation ---- */
   const [isDelegationOpen, setIsDelegationOpen] = useState(false);
   const [activeSession, setActiveSession] = useState<DelegationSession | null>(
     null
   );
-  const [developerPin, setDeveloperPin] = useState("");
+  const [isStoppingDelegation, setIsStoppingDelegation] = useState(false);
+
+  /* ---- Auth ---- */
+  const [staffSession, setStaffSession] = useState<StaffSessionLike>(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [staffSession, setStaffSession] = useState<any>(null);
 
-  // Layout
+  /* ---- Layout ---- */
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(73);
 
-  // Theme
-  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
-
-  /* ---- Init session ---- */
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
-        const session = getStaffSession("developer");
-        if (session && isSessionValid(session)) {
-          setStaffSession(session);
-          setIsUnlocked(true);
-        }
-      });
+  /* ---- Theme (lazy init from storage to reduce flash) ---- */
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    if (typeof window === "undefined") return "light";
+    try {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === "light" || saved === "dark" || saved === "system") {
+        return saved;
+      }
+    } catch {
+      /* ignore */
     }
-  }, []);
+    return "light";
+  });
 
-  /* ---- Theme persistence ---- */
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem("elpestro_dev_theme") as ThemeMode | null;
-    if (saved === "light" || saved === "dark" || saved === "system") {
-      setThemeMode(saved);
-    }
-  }, []);
+  /* ============================================================
+     DERIVED
+     ============================================================ */
 
-  useEffect(() => {
+  const developerEmail = useMemo(() => {
+    const e = staffSession?.email;
+    if (typeof e === "string" && e.includes("@")) return e;
+    return DEFAULT_DEVELOPER_EMAIL;
+  }, [staffSession]);
+
+  const branchMap = useMemo(() => {
+    const m = new Map<string, Branch>();
+    for (const b of branches) m.set(b.id, b);
+    return m;
+  }, [branches]);
+
+  const filteredOrders = useMemo(() => {
+    if (selectedBranchId === "ALL") return orders;
+    return orders.filter(
+      (o) => (o.branchId || DEFAULT_MAIN_BRANCH_ID) === selectedBranchId
+    );
+  }, [orders, selectedBranchId]);
+
+  const totalRevenue = useMemo(
+    () =>
+      filteredOrders.reduce((sum, o) => {
+        if (!isPaid(o)) return sum;
+        return sum + safeNumber(o.total);
+      }, 0),
+    [filteredOrders]
+  );
+
+  const paidOrdersCount = useMemo(
+    () => filteredOrders.filter(isPaid).length,
+    [filteredOrders]
+  );
+
+  const activeOutletsCount = useMemo(
+    () => branches.filter(isBranchActive).length,
+    [branches]
+  );
+
+  const activeRidersCount = useMemo(
+    () => deliveryPartners.filter(isRiderActive).length,
+    [deliveryPartners]
+  );
+
+  const activeBranchObj = useMemo(
+    () =>
+      selectedBranchId === "ALL" ? undefined : branchMap.get(selectedBranchId),
+    [branchMap, selectedBranchId]
+  );
+
+  /* ============================================================
+     THEME APPLICATION
+     ============================================================ */
+
+  useIsoLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const root = document.documentElement;
-
-    const apply = () => {
-      let resolved: "light" | "dark";
-      if (themeMode === "system") {
-        resolved = window.matchMedia("(prefers-color-scheme: dark)").matches
+    const resolved: "light" | "dark" =
+      themeMode === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
           ? "dark"
-          : "light";
-      } else {
-        resolved = themeMode;
-      }
-      setResolvedTheme(resolved);
-      if (resolved === "dark") root.classList.add("dark");
-      else root.classList.remove("dark");
-    };
+          : "light"
+        : themeMode;
 
-    apply();
-    localStorage.setItem("elpestro_dev_theme", themeMode);
+    if (resolved === "dark") root.classList.add("dark");
+    else root.classList.remove("dark");
 
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+    } catch {
+      /* ignore */
+    }
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (themeMode !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
-      if (themeMode === "system") apply();
+      const root = document.documentElement;
+      if (mq.matches) root.classList.add("dark");
+      else root.classList.remove("dark");
     };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [themeMode]);
 
-  /* ---- Realtime data ---- */
-  const refreshData = async () => {
-    await initDefaultBranchIfMissing();
-    const allB = await getAllBranches();
-    setBranches(allB);
-  };
+  /* ============================================================
+     SESSION BOOTSTRAP
+     ============================================================ */
 
   useEffect(() => {
-    refreshData();
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+
+    import("@/lib/staffAuth")
+      .then(({ getStaffSession, isSessionValid }) => {
+        if (cancelled) return;
+        const session = getStaffSession("developer") as StaffSessionLike;
+        if (session && isSessionValid(session as never)) {
+          setStaffSession(session);
+          setIsUnlocked(true);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load staff session:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    if (typeof window !== "undefined") {
+      import("@/lib/staffAuth")
+        .then((mod: Record<string, unknown>) => {
+          const clear =
+            (mod.clearStaffSession as ((p: string) => void) | undefined) ||
+            (mod.logoutStaff as ((p: string) => void) | undefined) ||
+            (mod.signOutStaff as ((p: string) => void) | undefined) ||
+            (mod.clearSession as ((p: string) => void) | undefined);
+          try {
+            if (typeof clear === "function") clear("developer");
+          } catch (err) {
+            console.warn("Failed to clear staff session:", err);
+          }
+        })
+        .catch(() => {
+          /* ignore */
+        });
+    }
+    setStaffSession(null);
+    setIsUnlocked(false);
+    setActiveSection("dashboard");
+  }, []);
+
+  /* Session expiry watchdog */
+  useEffect(() => {
+    if (!staffSession) return;
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+    const check = () => {
+      import("@/lib/staffAuth")
+        .then(({ isSessionValid }) => {
+          if (cancelled) return;
+          if (!isSessionValid(staffSession as never)) {
+            handleLogout();
+          }
+        })
+        .catch(() => {
+          /* ignore check failures */
+        });
+    };
+
+    const id = window.setInterval(check, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [staffSession, handleLogout]);
+
+  /* ============================================================
+     HEADER HEIGHT MEASUREMENT (robust sidebar offset)
+     ============================================================ */
+
+  useIsoLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => setHeaderHeight(el.offsetHeight || 73);
+    update();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  /* ============================================================
+     REALTIME DATA
+     ============================================================ */
+
+  const refreshData = useCallback(async () => {
+    try {
+      await initDefaultBranchIfMissing();
+      const allB = await getAllBranches();
+      setBranches(allB);
+      setDataError(null);
+    } catch (err) {
+      console.error("Failed to refresh data:", err);
+      setDataError("Failed to refresh branch data.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
     setActiveSession(getActiveDelegationSession());
 
-    const unsubBranches = onSnapshot(collection(db, "branches"), (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Branch[];
-      if (list.length > 0) setBranches(list);
-    });
+    // Only seed default branch; do not overwrite realtime data afterwards.
+    initDefaultBranchIfMissing().catch((err) =>
+      console.warn("initDefaultBranchIfMissing failed:", err)
+    );
 
-    const unsubKitchens = onSnapshot(collection(db, "kitchens"), (snap) => {
-      setKitchens(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Kitchen[]);
-    });
+    let fallbackOrdersUnsub: (() => void) | null = null;
 
-    const unsubCounters = onSnapshot(collection(db, "counters"), (snap) => {
-      setCounters(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Counter[]);
-    });
+    const onSnapshotError =
+      (label: string) =>
+      (err: unknown): void => {
+        console.error(`[Firestore] ${label} subscription error:`, err);
+        setDataError((prev) => prev ?? `Live ${label} sync unavailable.`);
+      };
 
-    const unsubPartners = onSnapshot(collection(db, "deliveryPartners"), (snap) => {
-      setDeliveryPartners(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() })) as DeliveryPartner[]
-      );
-    });
+    const unsubBranches = onSnapshot(
+      collection(db, "branches"),
+      (snap) => {
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as Branch[];
+        setBranches(list);
+        setIsBooting(false);
+      },
+      onSnapshotError("branches")
+    );
 
-    const unsubStaff = onSnapshot(collection(db, "staffProfiles"), (snap) => {
-      setStaffProfiles(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() })) as StaffProfile[]
-      );
-    });
+    const unsubKitchens = onSnapshot(
+      collection(db, "kitchens"),
+      (snap) => {
+        setKitchens(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Kitchen[]
+        );
+      },
+      onSnapshotError("kitchens")
+    );
+
+    const unsubCounters = onSnapshot(
+      collection(db, "counters"),
+      (snap) => {
+        setCounters(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Counter[]
+        );
+      },
+      onSnapshotError("counters")
+    );
+
+    const unsubPartners = onSnapshot(
+      collection(db, "deliveryPartners"),
+      (snap) => {
+        setDeliveryPartners(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          })) as DeliveryPartner[]
+        );
+      },
+      onSnapshotError("delivery partners")
+    );
+
+    const unsubStaff = onSnapshot(
+      collection(db, "staffProfiles"),
+      (snap) => {
+        setStaffProfiles(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+          })) as StaffProfile[]
+        );
+      },
+      onSnapshotError("staff")
+    );
 
     const qOrders = query(
       collection(db, "orders"),
       orderBy("createdAt", "desc"),
-      limit(100)
+      limit(ORDERS_LIMIT)
     );
+
     const unsubOrders = onSnapshot(
       qOrders,
       (snap) => {
-        setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Order[]);
+        setOrders(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Order[]
+        );
+        setIsBooting(false);
       },
-      () => {
-        onSnapshot(collection(db, "orders"), (snap) => {
-          setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Order[]);
-        });
+      (err) => {
+        console.warn(
+          "[Firestore] Ordered orders query failed, falling back:",
+          err
+        );
+        // Avoid double-subscription if the error callback fires twice.
+        if (fallbackOrdersUnsub) return;
+        fallbackOrdersUnsub = onSnapshot(
+          query(collection(db, "orders"), limit(ORDERS_LIMIT)),
+          (snap) => {
+            setOrders(
+              snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Order[]
+            );
+            setIsBooting(false);
+          },
+          (fallbackErr) => {
+            console.error(
+              "[Firestore] Fallback orders subscription error:",
+              fallbackErr
+            );
+            setOrders([]);
+            setIsBooting(false);
+            setDataError("Unable to load orders.");
+          }
+        );
       }
     );
 
+    // Safety: don't spin forever if nothing resolves.
+    const bootTimer = window.setTimeout(() => setIsBooting(false), 4000);
+
     return () => {
+      window.clearTimeout(bootTimer);
       unsubBranches();
       unsubKitchens();
       unsubCounters();
       unsubPartners();
       unsubStaff();
       unsubOrders();
+      if (fallbackOrdersUnsub) fallbackOrdersUnsub();
     };
   }, []);
 
-  const filteredOrders =
-    selectedBranchId === "ALL"
-      ? orders
-      : orders.filter(
-          (o) => (o.branchId || DEFAULT_MAIN_BRANCH_ID) === selectedBranchId
-        );
+  /* ============================================================
+     RESET INVALID SELECTED BRANCH
+     ============================================================ */
 
-  const totalRevenue = filteredOrders.reduce(
-    (sum, o) => sum + (o.paymentStatus === "paid" ? o.total || 0 : 0),
-    0
-  );
-
-  const activeBranchObj = branches.find((b) => b.id === selectedBranchId);
-
-  const handleUnlock = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (developerPin === "admin9090" || developerPin === "dev2026") {
-      setIsUnlocked(true);
-    } else {
-      alert("Invalid Developer Master PIN.");
+  useEffect(() => {
+    if (selectedBranchId === "ALL") return;
+    if (branches.length === 0) return;
+    if (!branches.some((b) => b.id === selectedBranchId)) {
+      setSelectedBranchId("ALL");
     }
-  };
+  }, [branches, selectedBranchId]);
 
-  /* ---- Auth gate ---- */
+  /* ============================================================
+     DELEGATION EXPIRY WATCHDOG
+     ============================================================ */
+
+  useEffect(() => {
+    if (!activeSession) return;
+    if (typeof window === "undefined") return;
+
+    const validate = () => {
+      if (!isDelegationSessionActive(activeSession)) {
+        stopDelegationSession()
+          .catch(() => {
+            /* ignore */
+          })
+          .finally(() => setActiveSession(null));
+      }
+    };
+
+    validate();
+    const id = window.setInterval(validate, 30_000);
+    return () => window.clearInterval(id);
+  }, [activeSession]);
+
+  /* ============================================================
+     MOBILE DRAWER: escape + scroll lock
+     ============================================================ */
+
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+    if (typeof window === "undefined") return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsSidebarOpen(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [isSidebarOpen]);
+
+  /* ============================================================
+     HANDLERS
+     ============================================================ */
+
+  const handleStopDelegation = useCallback(async () => {
+    if (isStoppingDelegation) return;
+    setIsStoppingDelegation(true);
+    try {
+      await stopDelegationSession();
+      setActiveSession(null);
+    } catch (err) {
+      console.error("Failed to stop delegation:", err);
+      setDataError("Failed to end delegation session. Please retry.");
+    } finally {
+      setIsStoppingDelegation(false);
+    }
+  }, [isStoppingDelegation]);
+
+  const handleLoginSuccess = useCallback((session: unknown) => {
+    setStaffSession((session as StaffSessionLike) ?? null);
+    setIsUnlocked(true);
+  }, []);
+
+  /* ============================================================
+     AUTH GATE
+     ============================================================ */
+
   if (!isUnlocked) {
     return (
       <StaffLoginForm
         panel="developer"
         panelDisplayName="Developer Operations Hub"
         panelIcon={<Server size={28} />}
-        onSuccess={(session) => {
-          setStaffSession(session);
-          setIsUnlocked(true);
-        }}
+        onSuccess={handleLoginSuccess}
       />
     );
   }
 
-  /* ---- Nav config ---- */
+  /* ============================================================
+     NAV CONFIG
+     ============================================================ */
+
   const navGroups = [
     {
       label: "Core Modules",
       items: [
-        { id: "dashboard", label: "Overview", icon: LayoutDashboard, accent: "indigo" },
-        { id: "branches", label: "Outlets & Branches", icon: Building2, accent: "indigo" },
-        { id: "operations", label: "Kitchens & Ops", icon: ChefHat, accent: "orange" },
-        { id: "users", label: "Staff & RBAC", icon: Users, accent: "violet" },
-        { id: "menu", label: "Menu & Availability", icon: Utensils, accent: "emerald" },
-        { id: "fleet", label: "Fleet Telemetry", icon: Bike, accent: "cyan" },
+        { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+        { id: "branches", label: "Outlets & Branches", icon: Building2 },
+        { id: "operations", label: "Kitchens & Ops", icon: ChefHat },
+        { id: "users", label: "Staff & RBAC", icon: Users },
+        { id: "menu", label: "Menu & Availability", icon: Utensils },
+        { id: "fleet", label: "Fleet Telemetry", icon: Bike },
       ],
     },
     {
       label: "System",
       items: [
-        { id: "payments", label: "Payments & Revenue", icon: CreditCard, accent: "emerald" },
-        { id: "infrastructure", label: "Printers & Hardware", icon: Printer, accent: "indigo" },
-        { id: "audit", label: "Security & Audit Logs", icon: FileText, accent: "rose" },
+        { id: "payments", label: "Payments & Revenue", icon: CreditCard },
+        { id: "infrastructure", label: "Printers & Hardware", icon: Printer },
+        { id: "audit", label: "Security & Audit Logs", icon: FileText },
       ],
     },
   ] as const;
@@ -345,10 +751,12 @@ export default function DeveloperDashboardPage() {
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => {
-                  setActiveSection(item.id as any);
+                  setActiveSection(item.id as SectionId);
                   setIsSidebarOpen(false);
                 }}
+                aria-current={active ? "page" : undefined}
                 className={`group flex w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-xs font-bold transition-all ${
                   active
                     ? "bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30"
@@ -357,7 +765,11 @@ export default function DeveloperDashboardPage() {
               >
                 <Icon
                   size={16}
-                  className={active ? "text-white" : "text-slate-400 group-hover:text-indigo-500 dark:text-slate-500"}
+                  className={
+                    active
+                      ? "text-white"
+                      : "text-slate-400 group-hover:text-indigo-500 dark:text-slate-500"
+                  }
                 />
                 <span className="flex-1 text-left">{item.label}</span>
                 {active && <ChevronRight size={13} className="text-white/70" />}
@@ -369,9 +781,10 @@ export default function DeveloperDashboardPage() {
     </>
   );
 
-  /* ============================================ */
-  /* MAIN DASHBOARD                                */
-  /* ============================================ */
+  /* ============================================================
+     RENDER
+     ============================================================ */
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-indigo-200/60 dark:bg-slate-950 dark:text-white dark:selection:bg-indigo-500/30">
       {/* ---- Delegation Banner ---- */}
@@ -388,24 +801,42 @@ export default function DeveloperDashboardPage() {
             </span>
           </div>
           <button
-            onClick={async () => {
-              await stopDelegationSession();
-              setActiveSession(null);
-            }}
-            className="shrink-0 rounded-lg bg-black/25 px-3 py-1 text-[11px] font-black backdrop-blur transition hover:bg-black/40"
+            type="button"
+            onClick={handleStopDelegation}
+            disabled={isStoppingDelegation}
+            className="shrink-0 rounded-lg bg-black/25 px-3 py-1 text-[11px] font-black backdrop-blur transition hover:bg-black/40 disabled:opacity-60"
           >
-            End Delegation
+            {isStoppingDelegation ? "Ending…" : "End Delegation"}
+          </button>
+        </div>
+      )}
+
+      {/* ---- Data error banner ---- */}
+      {dataError && (
+        <div className="relative z-40 flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-[11px] font-bold text-red-700 sm:px-6 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-300">
+          <AlertCircle size={14} className="shrink-0" />
+          <span className="flex-1">{dataError}</span>
+          <button
+            type="button"
+            onClick={() => setDataError(null)}
+            className="rounded-md px-2 py-0.5 text-[11px] font-black hover:bg-red-100 dark:hover:bg-red-500/20"
+          >
+            Dismiss
           </button>
         </div>
       )}
 
       {/* ---- Header ---- */}
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/80">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/80"
+      >
         <div className="flex flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-          {/* Left: brand + mobile menu */}
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open navigation"
               className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 md:hidden dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             >
               <Menu size={16} />
@@ -417,7 +848,11 @@ export default function DeveloperDashboardPage() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  El Presto <span className="text-indigo-500 dark:text-indigo-400">//</span> Dev Platform
+                  El Presto{" "}
+                  <span className="text-indigo-500 dark:text-indigo-400">
+                    //
+                  </span>{" "}
+                  Dev Platform
                 </h1>
                 <span className="hidden items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[9px] font-mono font-bold text-emerald-700 sm:inline-flex dark:border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-400">
                   <Sparkles size={9} /> v2.0 Multi-Outlet
@@ -433,12 +868,18 @@ export default function DeveloperDashboardPage() {
             </div>
           </div>
 
-          {/* Right: controls */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Branch filter */}
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 shadow-sm dark:border-white/10 dark:bg-slate-950/80 dark:shadow-none">
-              <Building2 size={13} className="text-indigo-500 dark:text-indigo-400" />
+              <Building2
+                size={13}
+                className="text-indigo-500 dark:text-indigo-400"
+              />
+              <label htmlFor="branch-filter" className="sr-only">
+                Filter by branch
+              </label>
               <select
+                id="branch-filter"
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
                 className="max-w-[180px] cursor-pointer bg-transparent text-xs font-bold text-slate-900 focus:outline-none dark:text-white"
@@ -454,6 +895,7 @@ export default function DeveloperDashboardPage() {
 
             {/* Delegation */}
             <button
+              type="button"
               onClick={() => setIsDelegationOpen(true)}
               className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-100 px-3 py-2 text-xs font-black text-amber-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-amber-200 hover:shadow-md dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 dark:shadow-none dark:hover:bg-amber-500/20"
             >
@@ -463,6 +905,17 @@ export default function DeveloperDashboardPage() {
 
             {/* Theme */}
             <ThemeToggle themeMode={themeMode} setThemeMode={setThemeMode} />
+
+            {/* Logout */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              aria-label="Sign out"
+              title="Sign out"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-red-50 hover:text-red-600 hover:shadow-md dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+            >
+              <LogOut size={15} />
+            </button>
 
             {/* Portal links */}
             <div className="hidden items-center gap-1 border-l border-slate-200 pl-2 xl:flex dark:border-white/10">
@@ -488,7 +941,13 @@ export default function DeveloperDashboardPage() {
       {/* ---- Body ---- */}
       <div className="flex">
         {/* Desktop Sidebar */}
-        <aside className="sticky top-[73px] hidden h-[calc(100vh-73px)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white/70 p-3 backdrop-blur-xl md:block dark:border-white/10 dark:bg-slate-900/40">
+        <aside
+          className="sticky hidden w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white/70 p-3 backdrop-blur-xl md:block dark:border-white/10 dark:bg-slate-900/40"
+          style={{
+            top: headerHeight,
+            height: `calc(100vh - ${headerHeight}px)`,
+          }}
+        >
           {renderNav()}
 
           <div className="mt-6 rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50 to-violet-50 p-3 dark:border-white/5 dark:from-indigo-500/10 dark:to-violet-500/10">
@@ -498,10 +957,10 @@ export default function DeveloperDashboardPage() {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-[11px] font-black text-slate-900 dark:text-white">
-                  System Healthy
+                  {branches.length} outlets tracked
                 </p>
                 <p className="truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                  {branches.length} outlets online
+                  {activeOutletsCount} active
                 </p>
               </div>
             </div>
@@ -510,7 +969,12 @@ export default function DeveloperDashboardPage() {
 
         {/* Mobile Sidebar Drawer */}
         {isSidebarOpen && (
-          <div className="fixed inset-0 z-[60] md:hidden">
+          <div
+            className="fixed inset-0 z-[60] md:hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+          >
             <div
               className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm dark:bg-black/70"
               onClick={() => setIsSidebarOpen(false)}
@@ -521,7 +985,9 @@ export default function DeveloperDashboardPage() {
                   Navigation
                 </span>
                 <button
+                  type="button"
                   onClick={() => setIsSidebarOpen(false)}
+                  aria-label="Close navigation"
                   className="grid h-8 w-8 place-items-center rounded-lg bg-slate-100 text-slate-500 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
                 >
                   <X size={15} />
@@ -545,17 +1011,18 @@ export default function DeveloperDashboardPage() {
                     <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Live Revenue
+                        Paid Revenue
                       </span>
                       <div className="grid h-8 w-8 place-items-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
                         <IndianRupee size={15} />
                       </div>
                     </div>
                     <p className="relative mt-3 font-mono text-xl font-black text-slate-900 sm:text-2xl dark:text-white">
-                      ₹{Math.round(totalRevenue).toLocaleString()}
+                      ₹{Math.round(totalRevenue).toLocaleString("en-IN")}
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 size={10} /> Verified paid orders
+                      <CheckCircle2 size={10} /> From latest {orders.length}{" "}
+                      orders
                     </span>
                   </div>
 
@@ -571,7 +1038,7 @@ export default function DeveloperDashboardPage() {
                       </div>
                     </div>
                     <p className="relative mt-3 font-mono text-xl font-black text-slate-900 sm:text-2xl dark:text-white">
-                      {branches.filter((b) => b.active).length}
+                      {activeOutletsCount}
                       <span className="text-sm font-normal text-slate-400">
                         {" "}
                         / {branches.length}
@@ -589,14 +1056,21 @@ export default function DeveloperDashboardPage() {
                     <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Total Orders
+                        Recent Orders
                       </span>
                       <div className="grid h-8 w-8 place-items-center rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
                         <ShoppingBag size={15} />
                       </div>
                     </div>
                     <p className="relative mt-3 font-mono text-xl font-black text-slate-900 sm:text-2xl dark:text-white">
-                      {filteredOrders.length}
+                      {isBooting && orders.length === 0 ? (
+                        <Loader2
+                          size={18}
+                          className="animate-spin text-slate-400"
+                        />
+                      ) : (
+                        filteredOrders.length
+                      )}
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-orange-600 dark:text-orange-400">
                       Across selected scope
@@ -615,7 +1089,7 @@ export default function DeveloperDashboardPage() {
                       </div>
                     </div>
                     <p className="relative mt-3 font-mono text-xl font-black text-slate-900 sm:text-2xl dark:text-white">
-                      {deliveryPartners.filter((p) => p.availability !== "OFFLINE").length}
+                      {activeRidersCount}
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-cyan-600 dark:text-cyan-400">
                       On duty right now
@@ -631,40 +1105,45 @@ export default function DeveloperDashboardPage() {
                       icon: Building2,
                       title: "Manage Outlets",
                       desc: "Add or edit restaurant locations",
-                      color: "indigo",
+                      tone: {
+                        outer:
+                          "hover:border-indigo-300 dark:hover:border-indigo-500/30",
+                        icon: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400",
+                      },
                     },
                     {
                       id: "operations" as const,
                       icon: ChefHat,
                       title: "Kitchen & Counters",
                       desc: "KOT stations & POS registers",
-                      color: "orange",
+                      tone: {
+                        outer:
+                          "hover:border-orange-300 dark:hover:border-orange-500/30",
+                        icon: "bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400",
+                      },
                     },
                     {
                       id: "menu" as const,
                       icon: Utensils,
                       title: "Menu Availability",
                       desc: "Outlet-specific item toggles",
-                      color: "emerald",
+                      tone: {
+                        outer:
+                          "hover:border-emerald-300 dark:hover:border-emerald-500/30",
+                        icon: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
+                      },
                     },
                   ].map((card) => {
                     const Icon = card.icon;
-                    const colorMap: Record<string, string> = {
-                      indigo:
-                        "bg-indigo-100 text-indigo-600 group-hover:border-indigo-300 dark:bg-indigo-500/10 dark:text-indigo-400 dark:group-hover:border-indigo-500/30",
-                      orange:
-                        "bg-orange-100 text-orange-600 group-hover:border-orange-300 dark:bg-orange-500/10 dark:text-orange-400 dark:group-hover:border-orange-500/30",
-                      emerald:
-                        "bg-emerald-100 text-emerald-600 group-hover:border-emerald-300 dark:bg-emerald-500/10 dark:text-emerald-400 dark:group-hover:border-emerald-500/30",
-                    };
                     return (
                       <button
                         key={card.id}
+                        type="button"
                         onClick={() => setActiveSection(card.id)}
-                        className={`group flex items-center gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-5 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none ${colorMap[card.color]}`}
+                        className={`group flex items-center gap-3 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-5 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none ${card.tone.outer}`}
                       >
                         <div
-                          className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${colorMap[card.color]}`}
+                          className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${card.tone.icon}`}
                         >
                           <Icon size={20} />
                         </div>
@@ -697,11 +1176,12 @@ export default function DeveloperDashboardPage() {
                           Live Platform Stream
                         </h3>
                         <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                          Latest orders placed across branches
+                          Latest {ORDERS_LIMIT} orders placed across branches
                         </p>
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => setActiveSection("operations")}
                       className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-black text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:shadow-none dark:hover:bg-slate-700"
                     >
@@ -710,7 +1190,14 @@ export default function DeveloperDashboardPage() {
                   </div>
 
                   <div className="overflow-x-auto">
-                    {filteredOrders.length === 0 ? (
+                    {isBooting && filteredOrders.length === 0 ? (
+                      <div className="flex items-center justify-center gap-2 py-14 text-slate-400">
+                        <Loader2 size={18} className="animate-spin" />
+                        <span className="text-xs font-black">
+                          Loading orders…
+                        </span>
+                      </div>
+                    ) : filteredOrders.length === 0 ? (
                       <div className="flex flex-col items-center gap-2 py-14">
                         <div className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800">
                           <ShoppingBag
@@ -750,12 +1237,13 @@ export default function DeveloperDashboardPage() {
                               </td>
                               <td className="px-5 py-3.5">
                                 <span className="rounded-lg bg-indigo-100 px-2 py-0.5 font-mono text-[10px] font-black text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400">
-                                  {branches.find((b) => b.id === o.branchId)?.code ||
-                                    "BR-01"}
+                                  {o.branchId
+                                    ? branchMap.get(o.branchId)?.code || "—"
+                                    : "—"}
                                 </span>
                               </td>
                               <td className="px-5 py-3.5 font-mono font-black text-emerald-600 dark:text-emerald-400">
-                                ₹{Math.round(o.total || 0)}
+                                ₹{Math.round(safeNumber(o.total))}
                               </td>
                               <td className="px-5 py-3.5">
                                 <span
@@ -781,7 +1269,7 @@ export default function DeveloperDashboardPage() {
               <BranchManager
                 branches={branches}
                 onRefresh={refreshData}
-                developerEmail="developer@elpresto.co.in"
+                developerEmail={developerEmail}
               />
             )}
 
@@ -795,7 +1283,7 @@ export default function DeveloperDashboardPage() {
                 orders={orders}
                 selectedBranchId={selectedBranchId}
                 onRefresh={refreshData}
-                developerEmail="developer@elpresto.co.in"
+                developerEmail={developerEmail}
               />
             )}
 
@@ -805,7 +1293,7 @@ export default function DeveloperDashboardPage() {
                 staffProfiles={staffProfiles}
                 branches={branches}
                 onRefresh={refreshData}
-                developerEmail="developer@elpresto.co.in"
+                developerEmail={developerEmail}
               />
             )}
 
@@ -813,7 +1301,7 @@ export default function DeveloperDashboardPage() {
             {activeSection === "menu" && (
               <MenuAvailabilityManager
                 branches={branches}
-                developerEmail="developer@elpresto.co.in"
+                developerEmail={developerEmail}
               />
             )}
 
@@ -835,7 +1323,7 @@ export default function DeveloperDashboardPage() {
                         Payment Gateway & Settlements
                       </h3>
                       <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                        Razorpay live transaction reconciliation & branch volume
+                        Razorpay transaction reconciliation & branch volume
                         breakdown
                       </p>
                     </div>
@@ -844,15 +1332,18 @@ export default function DeveloperDashboardPage() {
                   <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-3">
                     {[
                       {
-                        label: "Gateway Mode",
-                        value: "Razorpay Live Active",
-                        ok: true,
+                        label: "Paid Orders (recent)",
+                        value: String(paidOrdersCount),
                       },
-                      { label: "Settlement Currency", value: "INR (₹)", ok: true },
                       {
-                        label: "Webhook Status",
-                        value: "/api/razorpay-webhook",
-                        ok: true,
+                        label: "Settlement Currency",
+                        value: "INR (₹)",
+                      },
+                      {
+                        label: "Paid Revenue (recent)",
+                        value: `₹${Math.round(totalRevenue).toLocaleString(
+                          "en-IN"
+                        )}`,
                       },
                     ].map((s) => (
                       <div
@@ -862,14 +1353,8 @@ export default function DeveloperDashboardPage() {
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                           {s.label}
                         </span>
-                        <p
-                          className={`mt-1.5 flex items-center gap-1.5 text-sm font-black ${
-                            s.ok
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-slate-900 dark:text-white"
-                          }`}
-                        >
-                          {s.ok && <CheckCircle2 size={14} />} {s.value}
+                        <p className="mt-1.5 flex items-center gap-1.5 text-sm font-black text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 size={14} /> {s.value}
                         </p>
                       </div>
                     ))}
@@ -898,30 +1383,48 @@ export default function DeveloperDashboardPage() {
                   </div>
 
                   <div className="space-y-2.5 p-5">
-                    {branches.map((b) => (
-                      <div
-                        key={b.id}
-                        className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-indigo-300 dark:border-white/5 dark:bg-slate-950 dark:hover:border-indigo-500/30"
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-indigo-500 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-white/5">
-                            <Building2 size={16} />
+                    {branches.map((b) => {
+                      const pc = b.printerConfig;
+                      const configured = Boolean(pc);
+                      return (
+                        <div
+                          key={b.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-indigo-300 dark:border-white/5 dark:bg-slate-950 dark:hover:border-indigo-500/30"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-indigo-500 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-white/5">
+                              <Building2 size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="truncate text-xs font-black text-slate-900 dark:text-white">
+                                {b.name}
+                              </h4>
+                              <p className="truncate font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                                {pc?.cafeName || b.name} •{" "}
+                                {pc?.paperWidth || "58mm"}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <h4 className="truncate text-xs font-black text-slate-900 dark:text-white">
-                              {b.name}
-                            </h4>
-                            <p className="truncate font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                              {b.printerConfig?.cafeName || b.name} •{" "}
-                              {b.printerConfig?.paperWidth || "58mm"}
-                            </p>
-                          </div>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                              configured
+                                ? "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-400"
+                                : "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/15 dark:text-amber-400"
+                            }`}
+                          >
+                            {configured ? (
+                              <>
+                                <CheckCircle2 size={10} /> Configured
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle size={10} /> Not configured
+                              </>
+                            )}
+                          </span>
                         </div>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-400">
-                          <CheckCircle2 size={10} /> Configured
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {branches.length === 0 && (
                       <div className="flex flex-col items-center gap-2 py-10">
                         <Printer
@@ -939,7 +1442,9 @@ export default function DeveloperDashboardPage() {
             )}
 
             {/* ===================== 9. AUDIT ===================== */}
-            {activeSection === "audit" && <AuditLogViewer branches={branches} />}
+            {activeSection === "audit" && (
+              <AuditLogViewer branches={branches} />
+            )}
           </div>
         </main>
       </div>
@@ -952,7 +1457,7 @@ export default function DeveloperDashboardPage() {
           setIsDelegationOpen(false);
           setActiveSession(getActiveDelegationSession());
         }}
-        developerEmail="developer@elpresto.co.in"
+        developerEmail={developerEmail}
       />
     </div>
   );

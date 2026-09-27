@@ -1,6 +1,15 @@
 ﻿"use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -32,7 +41,6 @@ import {
   ToggleRight,
   CircleOff,
   TrendingUp,
-  Percent,
   AlertTriangle,
   Check,
   Printer,
@@ -50,28 +58,11 @@ import {
   Loader2,
   Zap,
   Award,
-  Star,
-  Shield,
   Coffee,
   Crown,
-  Activity,
-  BarChart4,
-  CircleDollarSign,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
 import { DUMMY_MENU } from "@/data/menu";
 import {
   DEFAULT_CATEGORIES,
@@ -82,41 +73,266 @@ import Modern3DBarChart from "@/components/Admin/Charts/Modern3DBarChart";
 import Modern3DDonutChart from "@/components/Admin/Charts/Modern3DDonutChart";
 import Modern3DCategoryChart from "@/components/Admin/Charts/Modern3DCategoryChart";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
-import { Category, Subcategory, PromoCode } from "@/lib/types";
+import type { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
 
 import { db } from "@/lib/firebase";
 import {
   savePanelAccessSettings,
-  PanelAccessData,
   DEFAULT_PANEL_CONFIGS,
-  verifyPanelAccess,
   subscribePanelStatus,
+  type PanelAccessData,
+  type PanelKey,
+  hashPin,
 } from "@/lib/panelAuth";
 import {
   saveTrendingSettings,
-  TrendingSettings,
   DEFAULT_TRENDING_SETTINGS,
+  type TrendingSettings,
 } from "@/lib/trendingService";
 
 import {
-  collection,
-  onSnapshot,
-  doc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  orderBy,
-  Timestamp,
   addDoc,
-  writeBatch,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 
-const docToData = (docSnap: any) => ({ id: docSnap.id, ...docSnap.data() });
+/* ============================================================= */
+/* Types                                                         */
+/* ============================================================= */
+
+interface StaffSession {
+  email?: string;
+  name?: string;
+  role?: string;
+  staffId?: string;
+  [key: string]: unknown;
+}
+
+interface MenuItemRecord {
+  id: string;
+  name?: string;
+  price?: number;
+  category?: string;
+  subcategory?: string;
+  description?: string;
+  imageUrl?: string;
+  available?: boolean;
+  isVeg?: boolean;
+  order?: number;
+}
+
+interface OrderItemRecord {
+  id?: string;
+  name?: string;
+  quantity?: number;
+  price?: number;
+  notes?: string;
+}
+
+interface DeliveryAddressRecord {
+  houseFlat?: string;
+  streetArea?: string;
+  landmark?: string;
+  city?: string;
+  pincode?: string;
+  fullAddress?: string;
+}
+
+interface OrderRecord {
+  id: string;
+  orderNumber?: string;
+  customerName?: string;
+  phone?: string;
+  customerPhone?: string;
+  type?: string;
+  orderType?: string;
+  status?: string;
+  deliveryStatus?: string;
+  deliveryPersonName?: string;
+  deliveryAddress?: DeliveryAddressRecord | string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
+  deliveryDistance?: number;
+  deliveryFee?: number;
+  location?: { address?: string } | string;
+  items?: OrderItemRecord[];
+  subtotal?: number;
+  discount?: number;
+  total?: number;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  instructions?: string;
+  source?: string;
+  kitchenNotes?: string;
+  cancelReason?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  [key: string]: unknown;
+}
+
+interface PromoUsageRecord {
+  id: string;
+  code?: string;
+  orderNumber?: string;
+  userId?: string;
+  discountApplied?: number;
+  usedAt?: unknown;
+  [key: string]: unknown;
+}
+
+interface EnrichedMenuItem extends MenuItemRecord {
+  resolvedCategory: string;
+  resolvedSubcategory: string;
+}
+
+interface GeneralSettings {
+  cafeName: string;
+  phone: string;
+  address: string;
+  openTime: string;
+  closeTime: string;
+  orderingEnabled: boolean;
+  soundEnabled: boolean;
+  cafeLat: number;
+  cafeLng: number;
+  deliveryRadiusKm: number;
+  baseDeliveryFee: number;
+  freeDeliveryThreshold: number;
+  deliveryEnabled: boolean;
+  [key: string]: unknown;
+}
+
+type ToastKind = "success" | "error" | "info";
+
+interface ToastState {
+  id: number;
+  kind: ToastKind;
+  message: string;
+}
+
+interface ConfirmState {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
+
+type PromoForm = Partial<PromoCode> & {
+  code?: string;
+  discountType?: "percentage" | "flat";
+  discountValue?: number;
+  minOrderValue?: number;
+  maxDiscountCap?: number;
+  usageLimitTotal?: number;
+  usageLimitPerUser?: number;
+  active?: boolean;
+  expiryDate?: string;
+  description?: string;
+};
 
 /* ============================================================= */
-/* Shared UI primitives                                          */
+/* Helpers                                                       */
+/* ============================================================= */
+
+function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  const v = value as { toDate?: () => Date };
+  if (typeof v?.toDate === "function") {
+    try {
+      return v.toDate();
+    } catch {
+      return null;
+    }
+  }
+  if (value instanceof Date) return value;
+  const d = new Date(value as string | number);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function escapeHtml(value: unknown): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeCsvField(value: unknown): string {
+  const s = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function formatISTDate(value: unknown): string {
+  const d = toDate(value);
+  if (!d) return "—";
+  try {
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return d.toLocaleString();
+  }
+}
+
+function formatISTDateShort(value: unknown): string {
+  const d = toDate(value);
+  if (!d) return "—";
+  try {
+    return d.toLocaleDateString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return d.toLocaleDateString();
+  }
+}
+
+function getStatusKey(order: OrderRecord): string {
+  const delivery = String(order.deliveryStatus || "").toLowerCase();
+  const status = String(order.status || "").toLowerCase();
+  if (status === "cancelled") return "cancelled";
+  if (delivery === "delivered") return "delivered";
+  if (delivery === "out_for_delivery" || status === "out_for_delivery")
+    return "out_for_delivery";
+  if (delivery === "assigned") return "assigned";
+  if (status === "ready" || delivery === "ready") return "ready";
+  if (status === "preparing") return "preparing";
+  if (status === "completed") return "completed";
+  return status || "pending";
+}
+
+/* ============================================================= */
+/* UI primitives                                                 */
 /* ============================================================= */
 
 const inputCls =
@@ -131,21 +347,28 @@ function SectionHeader({
   subtitle,
   action,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   subtitle?: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <div className="mb-5 flex items-start justify-between gap-3 border-b border-white/5 pb-4">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25 ring-1 ring-white/10">
+        <div
+          aria-hidden="true"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25 ring-1 ring-white/10"
+        >
           {icon}
         </div>
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-black text-white sm:text-base">{title}</h3>
+          <h3 className="truncate text-sm font-black text-white sm:text-base">
+            {title}
+          </h3>
           {subtitle && (
-            <p className="truncate text-[11px] font-semibold text-slate-500">{subtitle}</p>
+            <p className="truncate text-[11px] font-semibold text-slate-500">
+              {subtitle}
+            </p>
           )}
         </div>
       </div>
@@ -155,22 +378,563 @@ function SectionHeader({
 }
 
 /* ============================================================= */
-/* Page                                                          */
+/* Toast                                                         */
 /* ============================================================= */
+
+function ToastStack({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastState[];
+  onDismiss: (id: number) => void;
+}) {
+  if (toasts.length === 0) return null;
+  return (
+    <div
+      role="region"
+      aria-label="Notifications"
+      className="pointer-events-none fixed right-3 top-3 z-[200] flex w-[min(380px,calc(100vw-1.5rem))] flex-col gap-2"
+    >
+      {toasts.map((t) => {
+        const tone =
+          t.kind === "success"
+            ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-100"
+            : t.kind === "error"
+            ? "border-red-500/40 bg-red-500/15 text-red-100"
+            : "border-white/10 bg-slate-800/90 text-slate-100";
+        return (
+          <div
+            key={t.id}
+            role="status"
+            aria-live="polite"
+            className={`pointer-events-auto flex items-start gap-2 rounded-2xl border px-3.5 py-2.5 text-xs font-black shadow-lg backdrop-blur ${tone}`}
+          >
+            <span className="mt-0.5 shrink-0" aria-hidden="true">
+              {t.kind === "success" ? (
+                <CheckCircle size={14} />
+              ) : t.kind === "error" ? (
+                <AlertTriangle size={14} />
+              ) : (
+                <Info size={14} />
+              )}
+            </span>
+            <span className="min-w-0 flex-1 break-words">{t.message}</span>
+            <button
+              type="button"
+              onClick={() => onDismiss(t.id)}
+              aria-label="Dismiss notification"
+              className="shrink-0 rounded-md p-0.5 opacity-70 transition hover:opacity-100"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================= */
+/* Confirm Dialog                                                */
+/* ============================================================= */
+
+function ConfirmDialog({
+  state,
+  onClose,
+}: {
+  state: ConfirmState | null;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!state) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    confirmBtnRef.current?.focus();
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [state, busy, onClose]);
+
+  if (!state) return null;
+
+  const handleConfirm = async () => {
+    setBusy(true);
+    try {
+      await state.onConfirm();
+    } finally {
+      setBusy(false);
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={state.title}
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl"
+      >
+        <div className="p-5">
+          <h3 className="text-sm font-black text-white">{state.title}</h3>
+          <p className="mt-1.5 text-xs font-semibold text-slate-400">
+            {state.message}
+          </p>
+        </div>
+        <div className="flex gap-2 border-t border-white/5 bg-slate-950/60 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-black text-slate-300 transition hover:bg-slate-700 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmBtnRef}
+            type="button"
+            onClick={handleConfirm}
+            disabled={busy}
+            className={`flex-1 rounded-xl py-2.5 text-xs font-black text-white shadow-md transition hover:-translate-y-0.5 disabled:opacity-60 ${
+              state.destructive
+                ? "bg-red-600 shadow-red-500/25 hover:bg-red-500"
+                : "bg-gradient-to-r from-orange-500 to-amber-500 shadow-orange-500/25"
+            }`}
+          >
+            {busy ? "Working…" : state.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================= */
+/* Modal                                                         */
+/* ============================================================= */
+
+function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 backdrop-blur-md sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-slate-900/95 shadow-2xl backdrop-blur-2xl sm:rounded-3xl"
+      >
+        <div className="flex justify-center pt-3 sm:hidden">
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-12 rounded-full bg-slate-700"
+          />
+        </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/5 p-4">
+          <h3 className="truncate text-sm font-black text-white">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close dialog"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================= */
+/* Small components                                              */
+/* ============================================================= */
+
+function MetricCard({
+  label,
+  value,
+  sub,
+  icon,
+  gradient,
+  border,
+  iconGradient,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  icon: ReactNode;
+  gradient: string;
+  border: string;
+  iconGradient: string;
+}) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-3xl border ${border} bg-gradient-to-br ${gradient} bg-slate-900/60 p-5 backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-lg`}
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-white/5 blur-2xl"
+      />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            {label}
+          </p>
+          <p className="mt-1.5 font-mono text-2xl font-black leading-none text-white lg:text-3xl">
+            {value}
+          </p>
+          {sub && (
+            <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-500">
+              {sub}
+            </p>
+          )}
+        </div>
+        <div
+          aria-hidden="true"
+          className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${iconGradient} text-white shadow-lg ring-1 ring-white/10`}
+        >
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+  color,
+  icon,
+}: {
+  label: string;
+  value: number;
+  color: "amber" | "orange" | "blue" | "emerald";
+  icon: ReactNode;
+}) {
+  const tones: Record<string, string> = {
+    amber: "bg-amber-500/10 border-amber-500/25 text-amber-400",
+    orange: "bg-orange-500/10 border-orange-500/25 text-orange-400",
+    blue: "bg-blue-500/10 border-blue-500/25 text-blue-400",
+    emerald: "bg-emerald-500/10 border-emerald-500/25 text-emerald-400",
+  };
+  return (
+    <div
+      className={`flex items-center justify-between rounded-2xl border p-3.5 ${tones[color]}`}
+    >
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-widest opacity-90">
+          {label}
+        </p>
+        <p className="mt-1 font-mono text-2xl font-black text-white">{value}</p>
+      </div>
+      <div aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-black/20">
+        {icon}
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  icon: ReactNode;
+  color: "emerald" | "orange" | "blue";
+}) {
+  const tones: Record<string, string> = {
+    emerald: "from-emerald-500 to-teal-500",
+    orange: "from-orange-500 to-amber-500",
+    blue: "from-blue-500 to-indigo-500",
+  };
+  return (
+    <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
+      <div className="flex items-center gap-2.5">
+        <div
+          aria-hidden="true"
+          className={`grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br ${tones[color]} text-white shadow-md`}
+        >
+          {icon}
+        </div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+          {label}
+        </p>
+      </div>
+      <p className="mt-3 font-mono text-2xl font-black text-white lg:text-3xl">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function QuickLink({
+  href,
+  emoji,
+  label,
+  accent,
+}: {
+  href: string;
+  emoji: string;
+  label: string;
+  accent: "orange" | "blue" | "emerald" | "amber";
+}) {
+  const tones: Record<string, string> = {
+    orange: "hover:border-orange-500/30 hover:bg-orange-500/5",
+    blue: "hover:border-blue-500/30 hover:bg-blue-500/5",
+    emerald: "hover:border-emerald-500/30 hover:bg-emerald-500/5",
+    amber: "hover:border-amber-500/30 hover:bg-amber-500/5",
+  };
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={`flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 px-4 py-3 text-xs font-black text-slate-200 transition ${tones[accent]}`}
+    >
+      <span className="flex items-center gap-2.5">
+        <span aria-hidden="true" className="text-base">
+          {emoji}
+        </span>
+        {label}
+      </span>
+      <ExternalLink size={13} className="text-slate-500" aria-hidden="true" />
+    </Link>
+  );
+}
+
+function CategoryPill({
+  active,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-black transition ${
+        active
+          ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
+          : "border border-white/5 bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+      }`}
+    >
+      <span>{label}</span>
+      <span
+        className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-black ${
+          active ? "bg-white/25 text-white" : "bg-white/5 text-slate-400"
+        }`}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function SubPill({
+  active,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-black transition ${
+        active
+          ? "border border-amber-500/40 bg-amber-500/15 text-amber-300"
+          : "border border-white/5 bg-slate-800/60 text-slate-400 hover:text-slate-200"
+      }`}
+    >
+      <span>{label}</span>
+      {count !== undefined && (
+        <span className="font-mono text-[10px] opacity-80">({count})</span>
+      )}
+    </button>
+  );
+}
+
+function IconAction({
+  children,
+  onClick,
+  title,
+  variant,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  title: string;
+  variant?: "success" | "danger";
+}) {
+  let cls =
+    "border-white/5 bg-slate-800/60 text-slate-400 hover:bg-slate-700 hover:text-white";
+  if (variant === "success")
+    cls =
+      "border-emerald-500/30 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25";
+  if (variant === "danger")
+    cls =
+      "border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20";
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={title}
+      aria-label={title}
+      className={`grid h-7 w-7 place-items-center rounded-lg border transition active:scale-90 ${cls}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StatusChip({ status }: { status: string }) {
+  let cls = "bg-amber-500/15 text-amber-300 ring-amber-500/30";
+  let label = status;
+  if (status === "preparing") {
+    cls = "bg-orange-500/15 text-orange-300 ring-orange-500/30";
+    label = "Preparing";
+  } else if (status === "ready") {
+    cls = "bg-blue-500/15 text-blue-300 ring-blue-500/30";
+    label = "Ready";
+  } else if (status === "completed") {
+    cls = "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30";
+    label = "Completed";
+  } else if (status === "cancelled") {
+    cls = "bg-red-500/15 text-red-300 ring-red-500/30";
+    label = "Cancelled";
+  } else if (status === "pending") {
+    label = "New";
+  }
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function RuleTile({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent: "orange" | "emerald" | "slate";
+}) {
+  const tones: Record<string, string> = {
+    orange: "text-orange-400",
+    emerald: "text-emerald-400",
+    slate: "text-slate-200",
+  };
+  return (
+    <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+        {label}
+      </p>
+      <p
+        className={`mt-0.5 truncate font-mono text-xs font-black ${tones[accent]}`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/* ============================================================= */
+/* Main Component                                                */
+/* ============================================================= */
+
 export default function AdminPage() {
   /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [staffSession, setStaffSession] = useState<any>(null);
+  const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
 
   /* ---- Panel access ---- */
-  const [panelAccess, setPanelAccess] = useState<PanelAccessData>(DEFAULT_PANEL_CONFIGS);
-  const [panelPinInputs, setPanelPinInputs] = useState<Record<string, string>>({
-    admin: "",
-    kitchen: "",
-    counter: "",
-    delivery: "",
-  });
+  const [panelAccess, setPanelAccess] =
+    useState<PanelAccessData>(DEFAULT_PANEL_CONFIGS);
+  const [panelPinInputs, setPanelPinInputs] = useState<Record<string, string>>(
+    {}
+  );
   const [showPinMap, setShowPinMap] = useState<Record<string, boolean>>({});
   const [panelSaveMsg, setPanelSaveMsg] = useState<string | null>(null);
 
@@ -182,15 +946,21 @@ export default function AdminPage() {
 
   /* ---- Data ---- */
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [menuItems, setMenuItems] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [loading, setLoading] = useState({ menu: true, categories: true, orders: true });
+  const [menuItems, setMenuItems] = useState<MenuItemRecord[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [loading, setLoading] = useState({
+    menu: true,
+    categories: true,
+    orders: true,
+  });
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
-  const [promoUsageLogs, setPromoUsageLogs] = useState<any[]>([]);
+  const [promoUsageLogs, setPromoUsageLogs] = useState<PromoUsageRecord[]>([]);
   const [showAddPromoModal, setShowAddPromoModal] = useState(false);
-  const [showEditPromoModal, setShowEditPromoModal] = useState<PromoCode | null>(null);
-  const [promoForm, setPromoForm] = useState<Partial<PromoCode>>({
+  const [showEditPromoModal, setShowEditPromoModal] = useState<PromoCode | null>(
+    null
+  );
+  const [promoForm, setPromoForm] = useState<PromoForm>({
     code: "",
     discountType: "percentage",
     discountValue: 10,
@@ -214,25 +984,31 @@ export default function AdminPage() {
   /* ---- UI ---- */
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
-  const [showEditCategoryModal, setShowEditCategoryModal] = useState<any>(null);
+  const [showEditCategoryModal, setShowEditCategoryModal] =
+    useState<Category | null>(null);
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
-  const [showEditMenuItemModal, setShowEditMenuItemModal] = useState<any>(null);
-  const [showOrderDetailsModal, setShowOrderDetailsModal] = useState<any>(null);
+  const [showEditMenuItemModal, setShowEditMenuItemModal] =
+    useState<EnrichedMenuItem | null>(null);
+  const [showOrderDetailsModal, setShowOrderDetailsModal] =
+    useState<OrderRecord | null>(null);
   const [searchOrders, setSearchOrders] = useState("");
   const [orderFilter, setOrderFilter] = useState("all");
   const [searchMenu, setSearchMenu] = useState("");
   const [adminSelectedCategory, setAdminSelectedCategory] = useState("all");
-  const [adminSelectedSubcategory, setAdminSelectedSubcategory] = useState("all");
+  const [adminSelectedSubcategory, setAdminSelectedSubcategory] =
+    useState("all");
   const [modalCategory, setModalCategory] = useState<string>("Food");
-  const [modalSubcategory, setModalSubcategory] = useState<string>("Healthy Mania");
-  const [isCustomSubcategory, setIsCustomSubcategory] = useState<boolean>(false);
-  const [customSubcategoryText, setCustomSubcategoryText] = useState<string>("");
-  const [showAddSubModal, setShowAddSubModal] = useState<any>(null);
-  const [newSubNameInput, setNewSubNameInput] = useState<string>("");
+  const [modalSubcategory, setModalSubcategory] =
+    useState<string>("Healthy Mania");
+  const [isCustomSubcategory, setIsCustomSubcategory] = useState(false);
+  const [customSubcategoryText, setCustomSubcategoryText] = useState("");
+  const [showAddSubModal, setShowAddSubModal] = useState<Category | null>(null);
+  const [newSubNameInput, setNewSubNameInput] = useState("");
   const [historySearch, setHistorySearch] = useState("");
   const [historyDateFilter, setHistoryDateFilter] = useState("");
-  const [reportPeriod, setReportPeriod] = useState("daily");
-  const [newOrderNotification, setNewOrderNotification] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<"daily" | "weekly" | "monthly">(
+    "daily"
+  );
 
   /* ---- Kitchen filters ---- */
   const [kitchenStatusFilter, setKitchenStatusFilter] = useState("all");
@@ -240,7 +1016,7 @@ export default function AdminPage() {
   const [kitchenSearchQuery, setKitchenSearchQuery] = useState("");
 
   /* ---- Settings ---- */
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<GeneralSettings>({
     cafeName: "EL PRESTO PIZZA",
     phone: "+91 6392512314",
     address: "United College of Engineering and Research, Naini, Prayagraj",
@@ -256,41 +1032,129 @@ export default function AdminPage() {
     deliveryEnabled: true,
   });
 
-  const audioContextRef = useRef<any>(null);
-  const soundEnabledRef = useRef(settings.soundEnabled);
+  /* ---- Feedback ---- */
+  const [toasts, setToasts] = useState<ToastState[]>([]);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const toastIdRef = useRef(0);
+  const toastTimersRef = useRef<Map<number, number>>(new Map());
 
-  /* =============================================== */
-  /* Effects                                         */
-  /* =============================================== */
-  useEffect(() => {
-    // Check for existing valid v2 staff session
-    if (typeof window !== "undefined") {
-      import("@/lib/staffAuth").then(({ getStaffSession, isSessionValid }) => {
-        const session = getStaffSession("admin");
-        if (session && isSessionValid(session)) {
-          setStaffSession(session);
-          setIsAuthenticated(true);
-        }
-        setIsVerifyingAuth(false);
-      });
-    }
-    // Keep legacy panel disable listener for backwards compat
-    const unsub = subscribePanelStatus("admin", () => {
-      setIsAuthenticated(false);
-      import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("admin"));
-    });
-    return () => unsub();
+  /* ---- Refs ---- */
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const soundEnabledRef = useRef(settings.soundEnabled);
+  const seenOrderIdsRef = useRef<Set<string>>(new Set());
+  const notificationTimeoutRef = useRef<number | null>(null);
+  const trendingDebounceRef = useRef<number | null>(null);
+  const assignRiderInputRef = useRef<HTMLInputElement>(null);
+  const staffSessionRef = useRef<StaffSession | null>(null);
+
+  /* ============================================================= */
+  /* Toasts                                                        */
+  /* ============================================================= */
+
+  const pushToast = useCallback((kind: ToastKind, message: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, kind, message }]);
+    const timer = window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      toastTimersRef.current.delete(id);
+    }, 4500);
+    toastTimersRef.current.set(id, timer);
   }, []);
 
-  const handleLogout = () => {
+  const dismissToast = useCallback((id: number) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer != null) {
+      window.clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  /* ---- Session bootstrap ---- */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    import("@/lib/staffAuth")
+      .then(({ getStaffSession, isSessionValid }) => {
+        if (cancelled) return;
+        try {
+          const session = getStaffSession("admin") as StaffSession | null;
+          if (session && isSessionValid(session as never)) {
+            setStaffSession(session);
+            setIsAuthenticated(true);
+          }
+        } finally {
+          setIsVerifyingAuth(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load staff session:", err);
+        if (!cancelled) setIsVerifyingAuth(false);
+      });
+
+    const unsub = subscribePanelStatus("admin", () => {
+      setIsAuthenticated(false);
+      setStaffSession(null);
+      import("@/lib/staffAuth")
+        .then(({ clearStaffSession }) => clearStaffSession("admin"))
+        .catch(() => {
+          /* ignore */
+        });
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, []);
+
+  useEffect(() => {
+    staffSessionRef.current = staffSession;
+  }, [staffSession]);
+
+  useEffect(() => {
+    soundEnabledRef.current = settings.soundEnabled;
+  }, [settings.soundEnabled]);
+
+  /* Cleanup timers + audio on unmount */
+  useEffect(() => {
+    return () => {
+      toastTimersRef.current.forEach((t) => window.clearTimeout(t));
+      toastTimersRef.current.clear();
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {
+          /* ignore */
+        });
+        audioContextRef.current = null;
+      }
+      if (notificationTimeoutRef.current != null) {
+        window.clearTimeout(notificationTimeoutRef.current);
+      }
+      if (trendingDebounceRef.current != null) {
+        window.clearTimeout(trendingDebounceRef.current);
+      }
+    };
+  }, []);
+
+  const handleLogout = useCallback(() => {
     setIsAuthenticated(false);
     setStaffSession(null);
-    import("@/lib/staffAuth").then(({ clearStaffSession }) => clearStaffSession("admin"));
-    // Also clear old-style session key for full cleanup
-    sessionStorage.removeItem("elpestro_admin_auth");
-  };
+    setOrders([]);
+    setMenuItems([]);
+    setCategories([]);
+    setPromoCodes([]);
+    setPromoUsageLogs([]);
+    seenOrderIdsRef.current.clear();
+    import("@/lib/staffAuth")
+      .then(({ clearStaffSession }) => clearStaffSession("admin"))
+      .catch(() => {
+        /* ignore */
+      });
+  }, []);
 
-  /* ---- Realtime ---- */
+  /* ============================================================= */
+  /* Realtime subscriptions                                       */
+  /* ============================================================= */
+
   useEffect(() => {
     if (!isAuthenticated) return;
     const q = query(collection(db, "categories"), orderBy("order", "asc"));
@@ -305,12 +1169,16 @@ export default function AdminPage() {
             setCategories(DEFAULT_CATEGORIES);
           }
         } else {
-          setCategories(snap.docs.map(docToData));
+          setCategories(
+            snap.docs.map(
+              (d) => ({ id: d.id, ...d.data() } as Category)
+            )
+          );
         }
         setLoading((prev) => ({ ...prev, categories: false }));
       },
       (err) => {
-        console.warn("Using default categories fallback:", err);
+        console.warn("Categories fallback:", err);
         setCategories(DEFAULT_CATEGORIES);
         setLoading((prev) => ({ ...prev, categories: false }));
       }
@@ -324,10 +1192,15 @@ export default function AdminPage() {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setMenuItems(snap.docs.map(docToData));
+        setMenuItems(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItemRecord))
+        );
         setLoading((prev) => ({ ...prev, menu: false }));
       },
-      () => setLoading((prev) => ({ ...prev, menu: false }))
+      (err) => {
+        console.warn("Menu items error:", err);
+        setLoading((prev) => ({ ...prev, menu: false }));
+      }
     );
     return unsub;
   }, [isAuthenticated]);
@@ -338,60 +1211,103 @@ export default function AdminPage() {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const data = snap.docs.map(docToData);
+        const data = snap.docs.map(
+          (d) => ({ id: d.id, ...d.data() } as OrderRecord)
+        );
         setOrders(data);
         setLoading((prev) => ({ ...prev, orders: false }));
-        const newPreparing = data.filter((o: any) => o.status === "preparing" && !o._seen);
+
+        const newPreparing = data.filter(
+          (o) =>
+            o.status === "preparing" &&
+            !seenOrderIdsRef.current.has(o.id)
+        );
+        data.forEach((o) => seenOrderIdsRef.current.add(o.id));
+        if (seenOrderIdsRef.current.size > 2000) {
+          const trimmed = Array.from(seenOrderIdsRef.current).slice(-2000);
+          seenOrderIdsRef.current = new Set(trimmed);
+        }
         if (newPreparing.length > 0 && soundEnabledRef.current) {
           playNotificationSound();
-          setNewOrderNotification(true);
-          setTimeout(() => setNewOrderNotification(false), 3000);
+          if (notificationTimeoutRef.current != null) {
+            window.clearTimeout(notificationTimeoutRef.current);
+          }
+          notificationTimeoutRef.current = window.setTimeout(() => {
+            notificationTimeoutRef.current = null;
+          }, 3000);
         }
       },
-      () => setLoading((prev) => ({ ...prev, orders: false }))
+      (err) => {
+        console.warn("Orders error:", err);
+        setLoading((prev) => ({ ...prev, orders: false }));
+      }
+    );
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const unsub = onSnapshot(
+      doc(db, "settings", "panelAccess"),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<PanelAccessData>;
+          setPanelAccess((prev) => ({
+            admin: { ...DEFAULT_PANEL_CONFIGS.admin, ...prev.admin, ...(data.admin || {}) },
+            kitchen: {
+              ...DEFAULT_PANEL_CONFIGS.kitchen,
+              ...prev.kitchen,
+              ...(data.kitchen || {}),
+            },
+            counter: {
+              ...DEFAULT_PANEL_CONFIGS.counter,
+              ...prev.counter,
+              ...(data.counter || {}),
+            },
+            delivery: {
+              ...DEFAULT_PANEL_CONFIGS.delivery,
+              ...prev.delivery,
+              ...(data.delivery || {}),
+            },
+          }));
+        }
+      },
+      (err) => console.warn("panelAccess error:", err)
     );
     return unsub;
   }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const unsub = onSnapshot(doc(db, "settings", "panelAccess"), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as PanelAccessData;
-        setPanelAccess((prev) => ({
-          admin: { ...DEFAULT_PANEL_CONFIGS.admin, ...data.admin },
-          kitchen: { ...DEFAULT_PANEL_CONFIGS.kitchen, ...data.kitchen },
-          counter: { ...DEFAULT_PANEL_CONFIGS.counter, ...data.counter },
-          delivery: { ...DEFAULT_PANEL_CONFIGS.delivery, ...data.delivery },
-        }));
-      }
-    });
+    const unsub = onSnapshot(
+      doc(db, "settings", "trending"),
+      (snap) => {
+        if (snap.exists()) {
+          setTrendingSettings((prev) => ({
+            ...DEFAULT_TRENDING_SETTINGS,
+            ...prev,
+            ...(snap.data() as Partial<TrendingSettings>),
+          }));
+        }
+      },
+      (err) => console.warn("trending error:", err)
+    );
     return unsub;
   }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const unsub = onSnapshot(doc(db, "settings", "trending"), (snap) => {
-      if (snap.exists()) {
-        setTrendingSettings((prev) => ({
-          ...DEFAULT_TRENDING_SETTINGS,
-          ...(snap.data() as Partial<TrendingSettings>),
-        }));
-      }
-    });
-    return unsub;
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const unsub = onSnapshot(doc(db, "settings", "general"), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as any;
-        setSettings((prev) => ({ ...prev, ...data }));
-        soundEnabledRef.current =
-          data.soundEnabled !== undefined ? data.soundEnabled : true;
-      }
-    });
+    const unsub = onSnapshot(
+      doc(db, "settings", "general"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as Partial<GeneralSettings>;
+          setSettings((prev) => ({ ...prev, ...data }));
+        }
+      },
+      (err) => console.warn("settings error:", err)
+    );
     return unsub;
   }, [isAuthenticated]);
 
@@ -399,8 +1315,11 @@ export default function AdminPage() {
     if (!isAuthenticated) return;
     const unsub = onSnapshot(
       query(collection(db, "promoCodes"), orderBy("createdAt", "desc")),
-      (snap) => setPromoCodes(snap.docs.map(docToData)),
-      () => {}
+      (snap) =>
+        setPromoCodes(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() } as PromoCode))
+        ),
+      (err) => console.warn("promoCodes error:", err)
     );
     return unsub;
   }, [isAuthenticated]);
@@ -409,19 +1328,35 @@ export default function AdminPage() {
     if (!isAuthenticated) return;
     const unsub = onSnapshot(
       query(collection(db, "promoUsage"), orderBy("usedAt", "desc")),
-      (snap) => setPromoUsageLogs(snap.docs.map(docToData)),
-      () => {}
+      (snap) =>
+        setPromoUsageLogs(
+          snap.docs.map(
+            (d) => ({ id: d.id, ...d.data() } as PromoUsageRecord)
+          )
+        ),
+      (err) => console.warn("promoUsage error:", err)
     );
     return unsub;
   }, [isAuthenticated]);
 
-  const playNotificationSound = () => {
+  /* ---- Sound ---- */
+  const playNotificationSound = useCallback(() => {
+    if (typeof window === "undefined") return;
     try {
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctor) return;
+        audioContextRef.current = new Ctor();
       }
       const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {
+          /* ignore */
+        });
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -432,400 +1367,595 @@ export default function AdminPage() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
       osc.start();
       osc.stop(ctx.currentTime + 0.2);
-      setTimeout(() => {
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
+      window.setTimeout(() => {
+        if (!audioContextRef.current) return;
+        const ctx2 = audioContextRef.current;
+        const osc2 = ctx2.createOscillator();
+        const gain2 = ctx2.createGain();
         osc2.connect(gain2);
-        gain2.connect(ctx.destination);
+        gain2.connect(ctx2.destination);
         osc2.frequency.value = 1100;
         osc2.type = "sine";
-        gain2.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        gain2.gain.setValueAtTime(0.25, ctx2.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + 0.15);
         osc2.start();
-        osc2.stop(ctx.currentTime + 0.15);
+        osc2.stop(ctx2.currentTime + 0.15);
       }, 150);
-    } catch (e) {}
-  };
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
-  /* =============================================== */
-  /* CRUD                                            */
-  /* =============================================== */
-  const savePromoCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!promoForm.code?.trim()) return alert("Please enter a promo code");
-    const payload = {
-      code: promoForm.code.trim().toUpperCase(),
-      description: promoForm.description || "",
-      discountType: promoForm.discountType || "percentage",
-      discountValue: Number(promoForm.discountValue) || 0,
-      minOrderValue: Number(promoForm.minOrderValue) || 0,
-      maxDiscountCap: Number(promoForm.maxDiscountCap) || 0,
-      usageLimitTotal: Number(promoForm.usageLimitTotal) || 0,
-      usageLimitPerUser: Number(promoForm.usageLimitPerUser) || 1,
-      active: promoForm.active !== undefined ? promoForm.active : true,
-      expiryDate: promoForm.expiryDate || "",
-      updatedAt: Timestamp.now(),
+  /* ============================================================= */
+  /* Audit helpers                                                */
+  /* ============================================================= */
+
+  const currentActor = useCallback(() => {
+    const s = staffSessionRef.current;
+    return {
+      id: String(s?.staffId || s?.email || "admin"),
+      name: String(s?.name || s?.email || "Admin"),
     };
-    try {
-      if (showEditPromoModal) {
-        await updateDoc(doc(db, "promoCodes", showEditPromoModal.id), payload);
-      } else {
-        await addDoc(collection(db, "promoCodes"), {
-          ...payload,
-          usageCount: 0,
-          createdAt: Timestamp.now(),
-        });
-      }
-      setShowAddPromoModal(false);
-      setShowEditPromoModal(null);
-      setPromoForm({
-        code: "",
-        discountType: "percentage",
-        discountValue: 10,
-        minOrderValue: 199,
-        maxDiscountCap: 100,
-        usageLimitTotal: 100,
-        usageLimitPerUser: 1,
-        active: true,
-        expiryDate: "",
-        description: "",
-      });
-    } catch (err: any) {
-      alert("Error saving promo code: " + err.message);
-    }
-  };
+  }, []);
 
-  const deletePromoCode = async (id: string, codeName: string) => {
-    if (!window.confirm(`Delete promo code "${codeName}"?`)) return;
-    try {
-      await deleteDoc(doc(db, "promoCodes", id));
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const togglePromoActive = async (id: string, current: boolean) => {
-    try {
-      await updateDoc(doc(db, "promoCodes", id), {
-        active: !current,
+  const writeWithAudit = useCallback(
+    async <T extends Record<string, unknown>>(
+      ref: Parameters<typeof updateDoc>[0],
+      data: T
+    ) => {
+      const actor = currentActor();
+      await updateDoc(ref, {
+        ...data,
         updatedAt: Timestamp.now(),
+        updatedBy: actor.id,
       });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
+    },
+    [currentActor]
+  );
 
-  const handleExecuteDatabaseReset = async () => {
-    if (resetConfirmText !== "CONFIRM-RESET-TRANSACTIONS-ZERO") {
-      alert("Please type the exact confirmation phrase: CONFIRM-RESET-TRANSACTIONS-ZERO");
-      return;
-    }
-    setIsResettingDb(true);
-    setResetMessage(null);
-    try {
-      const res = await executeTransactionalReset(resetConfirmText, "Admin Terminal");
-      if (res.success) {
-        setResetMessage({ type: "success", text: res.message });
-        setResetConfirmText("");
-      } else {
-        setResetMessage({ type: "error", text: res.message });
+  /* ============================================================= */
+  /* Promo CRUD                                                   */
+  /* ============================================================= */
+
+  const savePromoCode = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      const code = promoForm.code?.trim().toUpperCase();
+      if (!code) {
+        pushToast("error", "Please enter a promo code.");
+        return;
       }
-    } catch (err: any) {
-      setResetMessage({ type: "error", text: err.message || "Reset failed" });
-    } finally {
-      setIsResettingDb(false);
-    }
-  };
+      const discountValue = safeNumber(promoForm.discountValue);
+      if (promoForm.discountType === "percentage" && discountValue > 100) {
+        pushToast("error", "Percentage discount cannot exceed 100%.");
+        return;
+      }
+      if (discountValue <= 0) {
+        pushToast("error", "Discount value must be greater than 0.");
+        return;
+      }
+      const expiry = promoForm.expiryDate ? new Date(promoForm.expiryDate) : null;
+      if (expiry && expiry.getTime() < Date.now()) {
+        pushToast("error", "Expiry date must be in the future.");
+        return;
+      }
 
-  const addCategory = async (name: string) => {
-    try {
-      await addDoc(collection(db, "categories"), {
-        name,
-        order: categories.length + 1,
-        enabled: true,
-        createdAt: Timestamp.now(),
-      });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const editCategory = async (id: string, name: string) => {
-    try {
-      await updateDoc(doc(db, "categories", id), { name });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const deleteCategory = async (id: string) => {
-    if (menuItems.some((item) => item.category === id)) {
-      alert("Cannot delete category with menu items. Move items first.");
-      return;
-    }
-    try {
-      await deleteDoc(doc(db, "categories", id));
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const toggleCategoryEnabled = async (id: string) => {
-    const cat = categories.find((c) => c.id === id);
-    if (!cat) return;
-    try {
-      await updateDoc(doc(db, "categories", id), { enabled: !cat.enabled });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const addSubcategoryToCategory = async (categoryId: string, subName: string) => {
-    if (!subName.trim()) return;
-    const cat = categories.find((c) => c.id === categoryId);
-    if (!cat) return;
-    const existingSubs: Subcategory[] = cat.subcategories || [];
-    const newSub: Subcategory = {
-      id:
-        "sub_" +
-        subName.toLowerCase().replace(/[^a-z0-9]/g, "_") +
-        "_" +
-        Date.now().toString().slice(-4),
-      name: subName.trim(),
-      order: existingSubs.length + 1,
-      enabled: true,
-    };
-    try {
-      await updateDoc(doc(db, "categories", categoryId), {
-        subcategories: [...existingSubs, newSub],
-      });
-      alert(`Subcategory "${subName}" added to ${cat.name}!`);
-    } catch (err: any) {
-      alert("Error adding subcategory: " + err.message);
-    }
-  };
-
-  const deleteSubcategoryFromCategory = async (categoryId: string, subId: string) => {
-    const cat = categories.find((c) => c.id === categoryId);
-    if (!cat) return;
-    if (!window.confirm(`Remove this subcategory from ${cat.name}?`)) return;
-    const updatedSubs = (cat.subcategories || []).filter((s: any) => s.id !== subId);
-    try {
-      await updateDoc(doc(db, "categories", categoryId), {
-        subcategories: updatedSubs,
-      });
-    } catch (err: any) {
-      alert("Error removing subcategory: " + err.message);
-    }
-  };
-
-  const addMenuItem = async (item: any) => {
-    try {
-      await addDoc(collection(db, "menuItems"), {
-        ...item,
-        order: menuItems.length + 1,
-        available: true,
-        createdAt: Timestamp.now(),
-      });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const editMenuItem = async (id: string, updated: any) => {
-    try {
-      await updateDoc(doc(db, "menuItems", id), updated);
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const deleteMenuItem = async (id: string) => {
-    if (orders.some((o) => o.items?.some((i: any) => i.id === id))) {
-      if (!window.confirm("This item is linked to past orders. Delete anyway?")) return;
-    }
-    try {
-      await deleteDoc(doc(db, "menuItems", id));
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const toggleMenuItemAvailable = async (id: string) => {
-    const item = menuItems.find((i) => i.id === id);
-    if (!item) return;
-    try {
-      await updateDoc(doc(db, "menuItems", id), { available: !item.available });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const updateOrderStatus = async (id: string, newStatus: string) => {
-    try {
-      await updateDoc(doc(db, "orders", id), {
-        status: newStatus,
-        updatedAt: Timestamp.now(),
-      });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
-
-  const cancelOrder = async (id: string, reason: string) => {
-    if (window.confirm(`Cancel order ${orders.find((o) => o.id === id)?.orderNumber}?`)) {
+      const payload = {
+        code,
+        description: promoForm.description || "",
+        discountType: promoForm.discountType || "percentage",
+        discountValue,
+        minOrderValue: Math.max(0, safeNumber(promoForm.minOrderValue)),
+        maxDiscountCap: Math.max(0, safeNumber(promoForm.maxDiscountCap)),
+        usageLimitTotal: Math.max(0, safeNumber(promoForm.usageLimitTotal)),
+        usageLimitPerUser: Math.max(1, safeNumber(promoForm.usageLimitPerUser, 1)),
+        active: promoForm.active !== false,
+        expiryDate: promoForm.expiryDate || "",
+      };
       try {
-        await updateDoc(doc(db, "orders", id), {
-          status: "cancelled",
-          updatedAt: Timestamp.now(),
-          cancelReason: reason,
-        });
-      } catch (err: any) {
-        alert("Error: " + err.message);
+        if (showEditPromoModal) {
+          await writeWithAudit(doc(db, "promoCodes", showEditPromoModal.id), payload);
+          pushToast("success", `Promo "${code}" updated.`);
+        } else {
+          await addDoc(collection(db, "promoCodes"), {
+            ...payload,
+            usageCount: 0,
+            createdAt: Timestamp.now(),
+            createdBy: currentActor().id,
+          });
+          pushToast("success", `Promo "${code}" created.`);
+        }
+        setShowAddPromoModal(false);
+        setShowEditPromoModal(null);
+        setPromoForm({});
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        pushToast("error", `Failed to save promo: ${msg}`);
       }
-    }
-  };
+    },
+    [promoForm, showEditPromoModal, pushToast, writeWithAudit, currentActor]
+  );
 
-  const assignDeliveryPartner = async (id: string, partnerName: string) => {
-    try {
-      await updateDoc(doc(db, "orders", id), {
-        deliveryPersonName: partnerName || "El Presto Delivery Partner",
-        deliveryStatus: "assigned",
-        updatedAt: Timestamp.now(),
+  const deletePromoCode = useCallback(
+    (id: string, codeName: string) => {
+      setConfirm({
+        title: "Delete promo code?",
+        message: `Remove promo "${codeName}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await deleteDoc(doc(db, "promoCodes", id));
+            pushToast("success", "Promo deleted.");
+          } catch (err) {
+            pushToast("error", "Failed to delete promo.");
+          }
+        },
       });
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
+    },
+    [pushToast]
+  );
 
-  const updateDeliveryStatus = async (id: string, deliveryStatus: string) => {
+  const togglePromoActive = useCallback(
+    async (id: string, current: boolean) => {
+      try {
+        await writeWithAudit(doc(db, "promoCodes", id), { active: !current });
+      } catch (err) {
+        pushToast("error", "Failed to toggle promo.");
+      }
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  /* ============================================================= */
+  /* DB reset                                                     */
+  /* ============================================================= */
+
+  const handleExecuteDatabaseReset = useCallback(() => {
+    if (resetConfirmText !== "CONFIRM-RESET-TRANSACTIONS-ZERO") {
+      pushToast("error", "Enter the exact confirmation phrase.");
+      return;
+    }
+    setConfirm({
+      title: "Permanently reset transaction data?",
+      message:
+        "This will wipe all orders and promo redemptions. A pre-wipe backup is taken automatically. This cannot be undone.",
+      confirmLabel: "Execute reset",
+      destructive: true,
+      onConfirm: async () => {
+        setIsResettingDb(true);
+        setResetMessage(null);
+        try {
+          const res = await executeTransactionalReset(
+            resetConfirmText,
+            currentActor().name
+          );
+          setResetMessage({
+            type: res.success ? "success" : "error",
+            text: res.message,
+          });
+          if (res.success) setResetConfirmText("");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Reset failed";
+          setResetMessage({ type: "error", text: msg });
+        } finally {
+          setIsResettingDb(false);
+        }
+      },
+    });
+  }, [resetConfirmText, currentActor, pushToast]);
+
+  /* ============================================================= */
+  /* Category CRUD                                                */
+  /* ============================================================= */
+
+  const addCategory = useCallback(
+    async (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      if (
+        categories.some(
+          (c) => c.name.toLowerCase() === trimmed.toLowerCase()
+        )
+      ) {
+        pushToast("error", "Category already exists.");
+        return;
+      }
+      try {
+        const maxOrder = categories.reduce(
+          (m, c) => Math.max(m, c.order || 0),
+          0
+        );
+        await addDoc(collection(db, "categories"), {
+          name: trimmed,
+          order: maxOrder + 1,
+          enabled: true,
+          createdAt: Timestamp.now(),
+          createdBy: currentActor().id,
+        });
+        pushToast("success", `Category "${trimmed}" added.`);
+      } catch (err) {
+        pushToast("error", "Failed to add category.");
+      }
+    },
+    [categories, pushToast, currentActor]
+  );
+
+  const editCategory = useCallback(
+    (id: string, currentName: string) => {
+      setConfirm({
+        title: "Rename category?",
+        message:
+          "Renaming a category may orphan menu items that reference it by name.",
+        confirmLabel: "Rename",
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await writeWithAudit(doc(db, "categories", id), {
+              name: currentName,
+            });
+            pushToast("success", "Category renamed.");
+          } catch (err) {
+            pushToast("error", "Failed to rename category.");
+          }
+        },
+      });
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  const deleteCategory = useCallback(
+    (id: string, name: string) => {
+      const inUse = menuItems.some(
+        (item) =>
+          item.category === id ||
+          item.category === name ||
+          item.category === name
+      );
+      if (inUse) {
+        pushToast(
+          "error",
+          "Cannot delete category with menu items. Move items first."
+        );
+        return;
+      }
+      setConfirm({
+        title: "Delete category?",
+        message: `Remove "${name}"?`,
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await deleteDoc(doc(db, "categories", id));
+            pushToast("success", "Category deleted.");
+          } catch (err) {
+            pushToast("error", "Failed to delete category.");
+          }
+        },
+      });
+    },
+    [menuItems, pushToast]
+  );
+
+  const toggleCategoryEnabled = useCallback(
+    async (id: string) => {
+      const cat = categories.find((c) => c.id === id);
+      if (!cat) return;
+      try {
+        await writeWithAudit(doc(db, "categories", id), {
+          enabled: !cat.enabled,
+        });
+      } catch (err) {
+        pushToast("error", "Failed to toggle category.");
+      }
+    },
+    [categories, writeWithAudit, pushToast]
+  );
+
+  const addSubcategoryToCategory = useCallback(
+    async (categoryId: string, subName: string) => {
+      const trimmed = subName.trim();
+      if (!trimmed) return;
+      const cat = categories.find((c) => c.id === categoryId);
+      if (!cat) return;
+      const existingSubs: Subcategory[] = cat.subcategories || [];
+      if (
+        existingSubs.some(
+          (s) => s.name.toLowerCase() === trimmed.toLowerCase()
+        )
+      ) {
+        pushToast("error", "Subcategory already exists.");
+        return;
+      }
+      const newSub: Subcategory = {
+        id:
+          "sub_" +
+          trimmed.toLowerCase().replace(/[^a-z0-9]/g, "_") +
+          "_" +
+          Math.random().toString(36).slice(2, 6),
+        name: trimmed,
+        order: existingSubs.length + 1,
+        enabled: true,
+      };
+      try {
+        await writeWithAudit(doc(db, "categories", categoryId), {
+          subcategories: [...existingSubs, newSub],
+        });
+        pushToast("success", `Subcategory "${trimmed}" added.`);
+      } catch (err) {
+        pushToast("error", "Failed to add subcategory.");
+      }
+    },
+    [categories, writeWithAudit, pushToast]
+  );
+
+  const deleteSubcategoryFromCategory = useCallback(
+    (categoryId: string, subId: string, subName: string) => {
+      const cat = categories.find((c) => c.id === categoryId);
+      if (!cat) return;
+      setConfirm({
+        title: "Remove subcategory?",
+        message: `Remove "${subName}" from ${cat.name}?`,
+        confirmLabel: "Remove",
+        destructive: true,
+        onConfirm: async () => {
+          const updatedSubs = (cat.subcategories || []).filter(
+            (s) => s.id !== subId
+          );
+          try {
+            await writeWithAudit(doc(db, "categories", categoryId), {
+              subcategories: updatedSubs,
+            });
+            pushToast("success", "Subcategory removed.");
+          } catch (err) {
+            pushToast("error", "Failed to remove subcategory.");
+          }
+        },
+      });
+    },
+    [categories, writeWithAudit, pushToast]
+  );
+
+  /* ============================================================= */
+  /* Menu item CRUD                                               */
+  /* ============================================================= */
+
+  const addMenuItem = useCallback(
+    async (item: Partial<MenuItemRecord>) => {
+      try {
+        const maxOrder = menuItems.reduce((m, i) => Math.max(m, i.order || 0), 0);
+        await addDoc(collection(db, "menuItems"), {
+          ...item,
+          order: maxOrder + 1,
+          available: true,
+          createdAt: Timestamp.now(),
+          createdBy: currentActor().id,
+        });
+        pushToast("success", `"${item.name}" added.`);
+      } catch (err) {
+        pushToast("error", "Failed to add menu item.");
+      }
+    },
+    [menuItems, pushToast, currentActor]
+  );
+
+  const editMenuItem = useCallback(
+    async (id: string, updated: Partial<MenuItemRecord>) => {
+      try {
+        await writeWithAudit(doc(db, "menuItems", id), updated);
+        pushToast("success", "Product updated.");
+      } catch (err) {
+        pushToast("error", "Failed to update product.");
+      }
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  const deleteMenuItem = useCallback(
+    (id: string, name: string) => {
+      const linked = orders.some((o) =>
+        (o.items || []).some((i) => i.id === id)
+      );
+      setConfirm({
+        title: "Delete product?",
+        message: linked
+          ? `"${name}" is linked to past orders. Deleting may break history. Continue?`
+          : `Remove "${name}" from the menu?`,
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await deleteDoc(doc(db, "menuItems", id));
+            pushToast("success", "Product deleted.");
+          } catch (err) {
+            pushToast("error", "Failed to delete product.");
+          }
+        },
+      });
+    },
+    [orders, pushToast]
+  );
+
+  const toggleMenuItemAvailable = useCallback(
+    async (id: string) => {
+      const item = menuItems.find((i) => i.id === id);
+      if (!item) return;
+      try {
+        await writeWithAudit(doc(db, "menuItems", id), {
+          available: !item.available,
+        });
+      } catch (err) {
+        pushToast("error", "Failed to toggle availability.");
+      }
+    },
+    [menuItems, writeWithAudit, pushToast]
+  );
+
+  /* ============================================================= */
+  /* Order operations                                             */
+  /* ============================================================= */
+
+  const updateOrderStatus = useCallback(
+    async (id: string, newStatus: string) => {
+      try {
+        await writeWithAudit(doc(db, "orders", id), { status: newStatus });
+      } catch (err) {
+        pushToast("error", "Failed to update order.");
+      }
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  const cancelOrder = useCallback(
+    (id: string, orderNumber: string) => {
+      setConfirm({
+        title: "Cancel order?",
+        message: `Cancel order ${orderNumber}?`,
+        confirmLabel: "Cancel order",
+        destructive: true,
+        onConfirm: async () => {
+          try {
+            await writeWithAudit(doc(db, "orders", id), {
+              status: "cancelled",
+              cancelReason: "Cancelled by admin",
+            });
+            pushToast("success", "Order cancelled.");
+          } catch (err) {
+            pushToast("error", "Failed to cancel order.");
+          }
+        },
+      });
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  const assignDeliveryPartner = useCallback(
+    async (id: string, partnerName: string) => {
+      try {
+        await writeWithAudit(doc(db, "orders", id), {
+          deliveryPersonName: partnerName || "El Presto Delivery Partner",
+          deliveryStatus: "assigned",
+        });
+        pushToast("success", "Delivery partner assigned.");
+      } catch (err) {
+        pushToast("error", "Failed to assign partner.");
+      }
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  const updateDeliveryStatus = useCallback(
+    async (id: string, deliveryStatus: string) => {
+      const patch: Record<string, unknown> = { deliveryStatus };
+      // Do NOT regress status if the order is further along.
+      if (deliveryStatus === "delivered") {
+        patch.status = "completed";
+      }
+      try {
+        await writeWithAudit(doc(db, "orders", id), patch);
+      } catch (err) {
+        pushToast("error", "Failed to update delivery status.");
+      }
+    },
+    [writeWithAudit, pushToast]
+  );
+
+  /* ============================================================= */
+  /* Settings                                                     */
+  /* ============================================================= */
+
+  const updateSettings = useCallback(async () => {
     try {
-      const updates: any = { deliveryStatus, updatedAt: Timestamp.now() };
-      if (deliveryStatus === "delivered") updates.status = "completed";
-      else if (deliveryStatus === "out_for_delivery") updates.status = "ready";
-      await updateDoc(doc(db, "orders", id), updates);
-    } catch (err: any) {
-      alert("Error: " + err.message);
+      await setDoc(doc(db, "settings", "general"), settings, { merge: true });
+      pushToast("success", "Settings saved.");
+    } catch (err) {
+      pushToast("error", "Failed to save settings.");
     }
-  };
+  }, [settings, pushToast]);
 
-  const updateSettings = async (newSettings: any) => {
-    try {
-      await setDoc(doc(db, "settings", "general"), newSettings, { merge: true });
-      alert("Settings saved successfully!");
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    }
-  };
+  /* ============================================================= */
+  /* Print receipt                                                */
+  /* ============================================================= */
 
-  /* ---- Print ---- */
-  const printReceipt = (order: any) => {
-    const cafeName = settings.cafeName || "EL PRESTO PIZZA";
-    const phone = settings.phone || "+91 6392512314";
-    const address =
-      settings.address || "United College of Engineering and Research, Naini";
-    const orderDate = order.createdAt?.toDate
-      ? order.createdAt.toDate()
-      : new Date(order.createdAt || Date.now());
-    const dateStr = orderDate.toLocaleString();
+  const printReceipt = useCallback(
+    (order: OrderRecord) => {
+      const orderDate = toDate(order.createdAt) || new Date();
+      const itemsHtml = (order.items || [])
+        .map(
+          (item) =>
+            `<tr><td>${escapeHtml(item.quantity)}x ${escapeHtml(
+              item.name
+            )}</td><td style="text-align:right;">₹${(
+              safeNumber(item.price) * (item.quantity || 1)
+            ).toFixed(2)}</td></tr>`
+        )
+        .join("");
 
-    const itemsHtml = order.items
-      ?.map(
-        (item: any) =>
-          `<tr><td>${item.quantity}x ${item.name}</td><td style="text-align:right;">₹${(item.price * item.quantity).toFixed(2)}</td></tr>`
-      )
-      .join("");
+      const total =
+        order.total != null
+          ? safeNumber(order.total)
+          : (order.items || []).reduce(
+              (sum, i) => sum + safeNumber(i.price) * (i.quantity || 1),
+              0
+            );
 
-    const total =
-      order.total ||
-      order.items?.reduce((sum: number, i: any) => sum + i.price * i.quantity, 0) ||
-      0;
-
-    const receiptHtml = `
+      const receiptHtml = `
       <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt</title>
-      <style>* { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.4; width: 58mm; margin: 0 auto; padding: 8px; background: white; color: black; }
-      .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 6px; }
-      .header h1 { font-size: 16px; font-weight: bold; } .header p { font-size: 10px; margin: 2px 0; }
-      .order-info { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
-      table { width: 100%; border-collapse: collapse; margin: 6px 0; } th, td { padding: 2px 0; border-bottom: 1px dotted #ccc; text-align: left; } th { font-weight: bold; border-bottom: 1px solid #000; }
-      .total { font-weight: bold; font-size: 14px; text-align: right; border-top: 1px solid #000; padding-top: 6px; margin-top: 4px; }
-      .footer { text-align: center; font-size: 10px; margin-top: 8px; border-top: 1px dashed #000; padding-top: 6px; }
-      .instructions { font-style: italic; color: #555; margin: 4px 0; }
+      <style>*{margin:0;padding:0;box-sizing:border-box;}
+      body{font-family:'Courier New',monospace;font-size:12px;line-height:1.4;width:58mm;margin:0 auto;padding:8px;background:#fff;color:#000;}
+      .header{text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;}
+      .header h1{font-size:16px;font-weight:bold;} .header p{font-size:10px;margin:2px 0;}
+      .order-info{display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;}
+      table{width:100%;border-collapse:collapse;margin:6px 0;} th,td{padding:2px 0;border-bottom:1px dotted #ccc;text-align:left;} th{font-weight:bold;border-bottom:1px solid #000;}
+      .total{font-weight:bold;font-size:14px;text-align:right;border-top:1px solid #000;padding-top:6px;margin-top:4px;}
+      .footer{text-align:center;font-size:10px;margin-top:8px;border-top:1px dashed #000;padding-top:6px;}
+      .instructions{font-style:italic;color:#555;margin:4px 0;}
       </style></head><body>
-      <div class="header"><h1>${cafeName}</h1><p>${address}</p><p>${phone}</p></div>
-      <div class="order-info"><span><strong>Order #${order.orderNumber}</strong></span><span>${dateStr}</span></div>
-      <p><strong>Customer:</strong> ${order.customerName}</p>
-      <p><strong>Type:</strong> ${order.type === "delivery" ? "🛵 Delivery" : "🛍️ Pickup"}</p>
+      <div class="header"><h1>${escapeHtml(settings.cafeName)}</h1><p>${escapeHtml(
+        settings.address
+      )}</p><p>${escapeHtml(settings.phone)}</p></div>
+      <div class="order-info"><span><strong>Order #${escapeHtml(
+        order.orderNumber
+      )}</strong></span><span>${escapeHtml(orderDate.toLocaleString())}</span></div>
+      <p><strong>Customer:</strong> ${escapeHtml(order.customerName)}</p>
+      <p><strong>Type:</strong> ${
+        order.type === "delivery" ? "Delivery" : "Pickup"
+      }</p>
       <table><thead><tr><th>Item</th><th style="text-align:right;">Price</th></tr></thead><tbody>${itemsHtml}</tbody></table>
-      <div class="total">Total: ₹${Number(total).toFixed(2)}</div>
-      ${order.instructions ? `<div class="instructions">📝 ${order.instructions}</div>` : ""}
-      <div class="footer">Eat Without Guilt! 🍕 Visit Again.</div>
+      <div class="total">Total: ₹${total.toFixed(2)}</div>
+      ${
+        order.instructions
+          ? `<div class="instructions">${escapeHtml(order.instructions)}</div>`
+          : ""
+      }
+      <div class="footer">Eat Without Guilt! Visit Again.</div>
       </body></html>`;
 
-    const printWindow = window.open("", "_blank", "width=400,height=600");
-    if (printWindow) {
+      const printWindow = window.open("", "_blank", "width=400,height=600");
+      if (!printWindow) {
+        pushToast("error", "Please allow popups to print receipt.");
+        return;
+      }
       printWindow.document.write(receiptHtml);
       printWindow.document.close();
       printWindow.focus();
       printWindow.print();
-    } else {
-      alert("Please allow popups to print receipt.");
-    }
-  };
+    },
+    [settings, pushToast]
+  );
 
-  /* =============================================== */
-  /* Derived                                         */
-  /* =============================================== */
-  const getOrderCountByStatus = (status: string) =>
-    orders.filter((o) => o.status === status).length;
+  /* ============================================================= */
+  /* Derived (memoized)                                           */
+  /* ============================================================= */
 
-  const getTotalSalesToday = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return orders
-      .filter((o) => {
-        const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === today.getTime() && o.status !== "cancelled";
-      })
-      .reduce((sum, o) => sum + (o.total || 0), 0);
-  };
+  const activeCategoriesList: Category[] = useMemo(
+    () => (categories.length > 0 ? categories : DEFAULT_CATEGORIES),
+    [categories]
+  );
 
-  const getTotalOrdersToday = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return orders.filter((o) => {
-      const d = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime() === today.getTime() && o.status !== "cancelled";
-    }).length;
-  };
-
-  const getDeliveryOrdersCount = () =>
-    orders.filter((o) => o.type === "delivery" && o.status !== "cancelled").length;
-
-  const filteredOrders = orders.filter((o) => {
-    if (orderFilter !== "all" && o.status !== orderFilter) return false;
-    if (searchOrders) {
-      const q = searchOrders.toLowerCase();
-      return (
-        o.orderNumber?.toLowerCase().includes(q) ||
-        o.customerName?.toLowerCase().includes(q) ||
-        o.phone?.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
-
-  const activeCategoriesList: Category[] = useMemo(() => {
-    return categories && categories.length > 0 ? categories : DEFAULT_CATEGORIES;
-  }, [categories]);
-
-  const enrichedMenuItems = useMemo(() => {
-    const active = activeCategoriesList;
+  const enrichedMenuItems: EnrichedMenuItem[] = useMemo(() => {
     return menuItems.map((item) => {
-      const h = resolveItemCategoryHierarchy(item, active);
+      const h = resolveItemCategoryHierarchy(item, activeCategoriesList);
       return {
         ...item,
         resolvedCategory: h.parentCategory,
@@ -842,7 +1972,9 @@ export default function AdminPage() {
       });
       return Array.from(set);
     }
-    const cat = activeCategoriesList.find((c) => c.name === adminSelectedCategory);
+    const cat = activeCategoriesList.find(
+      (c) => c.name === adminSelectedCategory
+    );
     if (cat && cat.subcategories && cat.subcategories.length > 0) {
       return cat.subcategories.map((s) => s.name);
     }
@@ -878,15 +2010,20 @@ export default function AdminPage() {
       }
       return true;
     });
-  }, [enrichedMenuItems, adminSelectedCategory, adminSelectedSubcategory, searchMenu]);
+  }, [
+    enrichedMenuItems,
+    adminSelectedCategory,
+    adminSelectedSubcategory,
+    searchMenu,
+  ]);
 
   const groupedMenuItems = useMemo(() => {
     const map = new Map<
       string,
-      { category: string; subcategory: string; items: any[] }
+      { category: string; subcategory: string; items: EnrichedMenuItem[] }
     >();
     filteredMenuItems.forEach((item) => {
-      const key = item.resolvedCategory + ":::" + item.resolvedSubcategory;
+      const key = item.resolvedCategory + "::: " + item.resolvedSubcategory;
       if (!map.has(key)) {
         map.set(key, {
           category: item.resolvedCategory,
@@ -899,117 +2036,258 @@ export default function AdminPage() {
     return Array.from(map.values());
   }, [filteredMenuItems]);
 
-  const openAddModalForGroup = (catName: string, subName?: string) => {
-    setModalCategory(catName);
-    const cat = activeCategoriesList.find((c) => c.name === catName);
-    const defaultSub = subName || cat?.subcategories?.[0]?.name || "General";
-    setModalSubcategory(defaultSub);
-    setIsCustomSubcategory(false);
-    setCustomSubcategoryText("");
-    setShowAddMenuItemModal(true);
-  };
+  const todayStats = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    ).getTime();
+    const todayOrders = orders.filter((o) => {
+      const d = toDate(o.createdAt);
+      if (!d) return false;
+      return d.getTime() >= todayStart && o.status !== "cancelled";
+    });
+    const revenue = todayOrders.reduce(
+      (sum, o) => sum + safeNumber(o.total),
+      0
+    );
+    const deliveryCount = orders.filter(
+      (o) => o.type === "delivery" && o.status !== "cancelled"
+    ).length;
+    return {
+      revenue,
+      orderCount: todayOrders.length,
+      deliveryCount,
+    };
+  }, [orders]);
 
-  const completedOrders = orders.filter((o) => o.status === "completed");
-  const filteredHistory = completedOrders.filter((o) => {
-    if (historySearch) {
-      const q = historySearch.toLowerCase();
-      return (
-        o.orderNumber?.toLowerCase().includes(q) ||
-        o.customerName?.toLowerCase().includes(q)
+  const statusCounts = useMemo(() => {
+    const counts = {
+      pending: 0,
+      preparing: 0,
+      ready: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+    orders.forEach((o) => {
+      const k = getStatusKey(o) as keyof typeof counts;
+      if (k in counts) counts[k] += 1;
+    });
+    return counts;
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    let list = orders;
+    if (orderFilter !== "all") {
+      if (orderFilter === "active") {
+        list = list.filter((o) => {
+          const k = getStatusKey(o);
+          return k !== "completed" && k !== "cancelled" && k !== "delivered";
+        });
+      } else if (orderFilter === "delivered") {
+        list = list.filter((o) => getStatusKey(o) === "delivered");
+      } else {
+        list = list.filter((o) => getStatusKey(o) === orderFilter);
+      }
+    }
+    const q = searchOrders.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (o) =>
+          (o.orderNumber || "").toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q) ||
+          (o.phone || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [orders, orderFilter, searchOrders]);
+
+  const completedOrders = useMemo(
+    () => orders.filter((o) => getStatusKey(o) === "completed" || getStatusKey(o) === "delivered"),
+    [orders]
+  );
+
+  const filteredHistory = useMemo(() => {
+    let list = completedOrders;
+    const q = historySearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (o) =>
+          (o.orderNumber || "").toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q)
       );
     }
     if (historyDateFilter) {
-      const d = new Date(historyDateFilter);
-      d.setHours(0, 0, 0, 0);
-      const od = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
-      od.setHours(0, 0, 0, 0);
-      return od.getTime() === d.getTime();
+      const target = new Date(historyDateFilter);
+      target.setHours(0, 0, 0, 0);
+      const targetTs = target.getTime();
+      const nextDay = targetTs + 86_400_000;
+      list = list.filter((o) => {
+        const d = toDate(o.createdAt);
+        if (!d) return false;
+        const ts = d.getTime();
+        return ts >= targetTs && ts < nextDay;
+      });
     }
-    return true;
-  });
+    return list;
+  }, [completedOrders, historySearch, historyDateFilter]);
 
-  const exportHistory = () => {
-    const headers = ["Order #", "Customer", "Phone", "Type", "Total", "Items", "Date"];
-    const rows = filteredHistory.map((o) => [
-      o.orderNumber,
-      o.customerName,
-      o.phone || o.customerPhone,
-      o.type,
-      o.total,
-      o.items?.map((i: any) => `${i.name} x${i.quantity}`).join("; "),
-      o.createdAt?.toDate
-        ? o.createdAt.toDate().toLocaleString()
-        : new Date(o.createdAt).toLocaleString(),
-    ]);
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `elpresto_orders_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-  };
+  const kitchenOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const statusKey = getStatusKey(o);
+      if (kitchenStatusFilter !== "all") {
+        if (kitchenStatusFilter === "active") {
+          if (
+            statusKey === "completed" ||
+            statusKey === "cancelled" ||
+            statusKey === "delivered"
+          )
+            return false;
+        } else if (statusKey !== kitchenStatusFilter) {
+          return false;
+        }
+      }
+      if (kitchenSourceFilter !== "all") {
+        const src = (o.source || "").toLowerCase();
+        if (kitchenSourceFilter === "kitchen") {
+          if (
+            src !== "kitchen" &&
+            src !== "on_spot" &&
+            src !== "on spot" &&
+            src !== "pos" &&
+            !(o.kitchenNotes && o.kitchenNotes.includes("kitchen"))
+          )
+            return false;
+        } else if (kitchenSourceFilter === "website") {
+          if (src !== "website") return false;
+        } else if (kitchenSourceFilter === "swiggy") {
+          if (src !== "swiggy") return false;
+        } else if (kitchenSourceFilter === "zomato") {
+          if (src !== "zomato") return false;
+        }
+      }
+      if (kitchenSearchQuery.trim()) {
+        const q = kitchenSearchQuery.toLowerCase();
+        return (
+          (o.orderNumber || "").toLowerCase().includes(q) ||
+          (o.customerName || "").toLowerCase().includes(q) ||
+          (o.items || []).some((i) =>
+            (i.name || "").toLowerCase().includes(q)
+          )
+        );
+      }
+      return true;
+    });
+  }, [orders, kitchenStatusFilter, kitchenSourceFilter, kitchenSearchQuery]);
 
-  const toDate = (val: any) => (val?.toDate ? val.toDate() : new Date(val));
+  /* ============================================================= */
+  /* Reports                                                      */
+  /* ============================================================= */
 
-  const getFilteredOrdersForReport = () => {
+  const reportOrders = useMemo(() => {
     let filtered = orders.filter((o) => o.status !== "cancelled");
     const now = new Date();
     if (reportPeriod === "daily") {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      filtered = filtered.filter((o) => toDate(o.createdAt) >= today);
+      const start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      ).getTime();
+      filtered = filtered.filter((o) => {
+        const d = toDate(o.createdAt);
+        return d ? d.getTime() >= start : false;
+      });
     } else if (reportPeriod === "weekly") {
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay());
-      weekStart.setHours(0, 0, 0, 0);
-      filtered = filtered.filter((o) => toDate(o.createdAt) >= weekStart);
+      // ISO week starts on Monday.
+      const day = now.getDay();
+      const diff = (day + 6) % 7;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - diff);
+      monday.setHours(0, 0, 0, 0);
+      const start = monday.getTime();
+      filtered = filtered.filter((o) => {
+        const d = toDate(o.createdAt);
+        return d ? d.getTime() >= start : false;
+      });
     } else if (reportPeriod === "monthly") {
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      filtered = filtered.filter((o) => toDate(o.createdAt) >= monthStart);
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      filtered = filtered.filter((o) => {
+        const d = toDate(o.createdAt);
+        return d ? d.getTime() >= start : false;
+      });
     }
     return filtered;
-  };
+  }, [orders, reportPeriod]);
 
-  const computeBarData = (filteredOrders: any[]) => {
-    if (filteredOrders.length === 0) return [];
-    const groups = new Map();
-    const formatKey = (d: Date) =>
-      d.toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
-    filteredOrders.forEach((o) => {
+  const reportTotals = useMemo(() => {
+    const revenue = reportOrders.reduce(
+      (sum, o) => sum + safeNumber(o.total),
+      0
+    );
+    const count = reportOrders.length;
+    const avg = count > 0 ? revenue / count : 0;
+    return { revenue, count, avg };
+  }, [reportOrders]);
+
+  const barData = useMemo(() => {
+    if (reportOrders.length === 0) return [];
+    const groups = new Map<
+      string,
+      { name: string; revenue: number; orders: number; ts: number }
+    >();
+    reportOrders.forEach((o) => {
       const d = toDate(o.createdAt);
+      if (!d) return;
       const key = d.toDateString();
-      if (!groups.has(key)) groups.set(key, { name: formatKey(d), revenue: 0, orders: 0 });
-      const entry = groups.get(key);
-      entry.revenue += o.total || 0;
+      const ts = d.getTime();
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name: d.toLocaleDateString("en-IN", {
+            weekday: "short",
+            day: "numeric",
+          }),
+          revenue: 0,
+          orders: 0,
+          ts,
+        });
+      }
+      const entry = groups.get(key)!;
+      entry.revenue += safeNumber(o.total);
       entry.orders += 1;
     });
-    return Array.from(groups.values()).slice(-7);
-  };
+    return Array.from(groups.values())
+      .sort((a, b) => a.ts - b.ts)
+      .slice(-7)
+      .map(({ name, revenue, orders }) => ({ name, revenue, orders }));
+  }, [reportOrders]);
 
-  const computePieData = (filteredOrders: any[]) => {
-    const takeaway = filteredOrders.filter((o) => o.type === "takeaway").length;
-    const delivery = filteredOrders.filter((o) => o.type === "delivery").length;
+  const pieData = useMemo(() => {
+    const takeaway = reportOrders.filter((o) => o.type !== "delivery").length;
+    const delivery = reportOrders.filter((o) => o.type === "delivery").length;
+    if (takeaway === 0 && delivery === 0) {
+      return [];
+    }
     return [
-      { name: "Takeaway", value: takeaway || 1 },
-      { name: "Delivery", value: delivery || 0 },
+      { name: "Takeaway", value: takeaway },
+      { name: "Delivery", value: delivery },
     ];
-  };
+  }, [reportOrders]);
 
-  const computeTopItems = (filteredOrders: any[]) => {
+  const topItems = useMemo(() => {
     const counts: Record<string, number> = {};
-    filteredOrders.forEach((o) => {
-      o.items?.forEach((i: any) => {
-        counts[i.name] = (counts[i.name] || 0) + (i.quantity || 1);
+    reportOrders.forEach((o) => {
+      (o.items || []).forEach((i) => {
+        const name = i.name || "Unknown";
+        counts[name] = (counts[name] || 0) + (i.quantity || 1);
       });
     });
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
-  };
+  }, [reportOrders]);
 
-  const CHART_COLORS = ["#f97316", "#06b6d4", "#10b981", "#8b5cf6", "#f43f5e"];
-
-  const computeCategoryAnalytics = () => {
+  const categoryAnalytics = useMemo(() => {
     const itemCategoryMap = new Map<string, string>();
     menuItems.forEach((m) => {
       if (m.name && m.category) {
@@ -1017,7 +2295,11 @@ export default function AdminPage() {
       }
     });
     DUMMY_MENU.forEach((m) => {
-      if (m.name && m.category && !itemCategoryMap.has(m.name.toLowerCase().trim())) {
+      if (
+        m.name &&
+        m.category &&
+        !itemCategoryMap.has(m.name.toLowerCase().trim())
+      ) {
         itemCategoryMap.set(m.name.toLowerCase().trim(), m.category);
       }
     });
@@ -1029,7 +2311,10 @@ export default function AdminPage() {
         totalRevenue: number;
         itemsSold: number;
         orderCount: number;
-        itemBreakdown: Record<string, { name: string; quantity: number; revenue: number }>;
+        itemBreakdown: Record<
+          string,
+          { name: string; quantity: number; revenue: number }
+        >;
       }
     > = {};
 
@@ -1037,16 +2322,20 @@ export default function AdminPage() {
     let grandTotalItemsSold = 0;
 
     const validOrders = orders.filter((o) => o.status !== "cancelled");
-
     validOrders.forEach((order) => {
-      order.items?.forEach((item: any) => {
+      (order.items || []).forEach((item) => {
         const itemName = item.name || "Unknown Item";
         const itemKey = itemName.toLowerCase().trim();
-        let cat = item.category || itemCategoryMap.get(itemKey) || "Specialties";
-        const matchedCat = categories.find((c) => c.id === cat || c.name === cat);
+        let cat =
+          (item as { category?: string }).category ||
+          itemCategoryMap.get(itemKey) ||
+          "Specialties";
+        const matchedCat = categories.find(
+          (c) => c.id === cat || c.name === cat
+        );
         if (matchedCat) cat = matchedCat.name;
         const qty = Number(item.quantity) || 1;
-        const price = Number(item.price) || 0;
+        const price = safeNumber(item.price);
         const itemRevenue = price * qty;
         grandTotalRevenue += itemRevenue;
         grandTotalItemsSold += qty;
@@ -1064,7 +2353,11 @@ export default function AdminPage() {
         stat.itemsSold += qty;
         stat.orderCount += 1;
         if (!stat.itemBreakdown[itemKey]) {
-          stat.itemBreakdown[itemKey] = { name: itemName, quantity: 0, revenue: 0 };
+          stat.itemBreakdown[itemKey] = {
+            name: itemName,
+            quantity: 0,
+            revenue: 0,
+          };
         }
         stat.itemBreakdown[itemKey].quantity += qty;
         stat.itemBreakdown[itemKey].revenue += itemRevenue;
@@ -1073,14 +2366,17 @@ export default function AdminPage() {
 
     const categoryList = Object.values(categoryStats).map((stat) => {
       const contributionPercent =
-        grandTotalRevenue > 0 ? (stat.totalRevenue / grandTotalRevenue) * 100 : 0;
-      const topItems = Object.values(stat.itemBreakdown)
+        grandTotalRevenue > 0
+          ? (stat.totalRevenue / grandTotalRevenue) * 100
+          : 0;
+      const topItemsList = Object.values(stat.itemBreakdown)
         .sort((a, b) => b.quantity - a.quantity)
         .slice(0, 5);
-      return { ...stat, contributionPercent, topItems };
+      return { ...stat, contributionPercent, topItems: topItemsList };
     });
     categoryList.sort((a, b) => b.totalRevenue - a.totalRevenue);
-    const bestSellingCategory = categoryList.length > 0 ? categoryList[0] : null;
+    const bestSellingCategory =
+      categoryList.length > 0 ? categoryList[0] : null;
     const categoryBarData = categoryList.slice(0, 8).map((c) => ({
       name: c.category,
       revenue: Math.round(c.totalRevenue),
@@ -1098,82 +2394,176 @@ export default function AdminPage() {
       categoryBarData,
       categoryPieData,
     };
-  };
+  }, [orders, menuItems, categories]);
 
-  /* =============================================== */
-  /* LOGIN GATE                                      */
-  /* =============================================== */
-  if (isVerifyingAuth) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <Loader2 size={32} className="animate-spin text-orange-500" />
-      </div>
-    );
-  }
+  /* ============================================================= */
+  /* CSV export                                                   */
+  /* ============================================================= */
 
-  if (!isAuthenticated) {
-    return (
-      <StaffLoginForm
-        panel="admin"
-        panelDisplayName="Admin Operations Panel"
-        panelIcon={<Shield size={28} />}
-        onSuccess={(session) => {
-          setStaffSession(session);
-          setIsAuthenticated(true);
-        }}
-      />
-    );
-  }
+  const exportHistory = useCallback(() => {
+    const headers = [
+      "Order #",
+      "Customer",
+      "Phone",
+      "Type",
+      "Total",
+      "Items",
+      "Date",
+    ];
+    const rows = filteredHistory.map((o) => [
+      o.orderNumber || "",
+      o.customerName || "",
+      o.phone || o.customerPhone || "",
+      o.type || "",
+      safeNumber(o.total).toFixed(2),
+      (o.items || []).map((i) => `${i.name} x${i.quantity}`).join("; "),
+      formatISTDate(o.createdAt),
+    ]);
+    const csv = [
+      headers.map(escapeCsvField).join(","),
+      ...rows.map((r) => r.map(escapeCsvField).join(",")),
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `elpresto_orders_${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    pushToast("success", "CSV exported.");
+  }, [filteredHistory, pushToast]);
 
-  /* =============================================== */
-  /* Tabs                                            */
-  /* =============================================== */
-  const activeOrdersCount = orders.filter(
-    (o) => o.status === "preparing" || o.status === "ready"
-  ).length;
-  const kitchenActiveCount = orders.filter(
-    (o) => o.status === "pending" || o.status === "preparing"
-  ).length;
+  /* ============================================================= */
+  /* Trending debounced save                                      */
+  /* ============================================================= */
 
-  const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "kitchen", label: "Kitchen Orders", icon: ChefHat, badge: kitchenActiveCount },
-    { id: "liveOrders", label: "Live Orders", icon: ShoppingBag, badge: activeOrdersCount },
-    { id: "menu", label: "Menu Items", icon: Utensils },
-    { id: "categories", label: "Categories", icon: Layers },
-    { id: "history", label: "Order History", icon: History },
-    { id: "sales", label: "Sales Analytics", icon: BarChart3 },
-    { id: "promoCodes", label: "Promo Codes", icon: Tag },
-    { id: "panelAccess", label: "Panel Access", icon: ShieldCheck },
-    { id: "dbReset", label: "Database Reset", icon: AlertTriangle },
-    { id: "settings", label: "Settings", icon: Settings },
-  ];
+  const queueTrendingSave = useCallback(
+    (updated: TrendingSettings) => {
+      setTrendingSettings(updated);
+      if (trendingDebounceRef.current != null) {
+        window.clearTimeout(trendingDebounceRef.current);
+      }
+      trendingDebounceRef.current = window.setTimeout(async () => {
+        try {
+          await saveTrendingSettings(updated);
+          setTrendingSaveMsg("Saved");
+          window.setTimeout(() => setTrendingSaveMsg(null), 2000);
+        } catch (err) {
+          pushToast("error", "Failed to save trending settings.");
+        }
+        trendingDebounceRef.current = null;
+      }, 600);
+    },
+    [pushToast]
+  );
 
-  const tabTitle: Record<string, string> = {
-    dashboard: "Operations Overview",
-    kitchen: "Kitchen Orders Management",
-    liveOrders: "Live Orders Dispatch",
-    menu: "Menu Management",
-    categories: "Categories & Subcategories",
-    history: "Order History Archive",
-    sales: "Sales & Revenue Analytics",
-    promoCodes: "Discounts & Promo Codes",
-    panelAccess: "Panel Access & Security",
-    dbReset: "Database Reset",
-    settings: "Store Settings",
-  };
+  /* ============================================================= */
+  /* Panel access                                                 */
+  /* ============================================================= */
 
-  /* =============================================== */
-  /* Renderers                                       */
-  /* =============================================== */
+  const handleTogglePanel = useCallback(
+    (panelKey: PanelKey) => {
+      const current = panelAccess[panelKey];
+      if (panelKey === "admin" && current.enabled) {
+        setConfirm({
+          title: "Disable admin panel?",
+          message:
+            "You will lock yourself out of the admin panel. Are you sure?",
+          confirmLabel: "Disable",
+          destructive: true,
+          onConfirm: async () => {
+            const updated: PanelAccessData = {
+              ...panelAccess,
+              [panelKey]: {
+                ...current,
+                enabled: false,
+                updatedAt: Timestamp.now(),
+              },
+            };
+            try {
+              await savePanelAccessSettings(updated);
+              setPanelAccess(updated);
+              pushToast("error", "Admin panel disabled. Sign out to recover.");
+            } catch (err) {
+              pushToast("error", "Failed to update panel.");
+            }
+          },
+        });
+        return;
+      }
+      (async () => {
+        const updated: PanelAccessData = {
+          ...panelAccess,
+          [panelKey]: {
+            ...current,
+            enabled: !current.enabled,
+            updatedAt: Timestamp.now(),
+          },
+        };
+        try {
+          await savePanelAccessSettings(updated);
+          setPanelAccess(updated);
+          pushToast("success", `Updated ${current.name}.`);
+        } catch (err) {
+          pushToast("error", "Failed to update panel.");
+        }
+      })();
+    },
+    [panelAccess, pushToast]
+  );
+
+  const handleUpdatePanelPin = useCallback(
+    async (panelKey: PanelKey) => {
+      const newPin = panelPinInputs[panelKey]?.trim();
+      if (!newPin || newPin.length < 4) {
+        pushToast("error", "PIN must be at least 4 characters.");
+        return;
+      }
+      const current = panelAccess[panelKey];
+      try {
+        const hashed = await hashPin(newPin);
+        const updated: PanelAccessData = {
+          ...panelAccess,
+          [panelKey]: {
+            ...current,
+            pin: hashed,
+            updatedAt: Timestamp.now(),
+          },
+        };
+        await savePanelAccessSettings(updated);
+        setPanelAccess(updated);
+        setPanelPinInputs((prev) => ({ ...prev, [panelKey]: "" }));
+        pushToast("success", `Updated PIN for ${current.name}.`);
+      } catch (err) {
+        pushToast("error", "Failed to save PIN.");
+      }
+    },
+    [panelPinInputs, panelAccess, pushToast]
+  );
+
+  /* ============================================================= */
+  /* Order details handlers                                       */
+  /* ============================================================= */
+
+  const handleAssignRider = useCallback(async () => {
+    if (!showOrderDetailsModal) return;
+    const name = assignRiderInputRef.current?.value || "";
+    await assignDeliveryPartner(showOrderDetailsModal.id, name);
+  }, [showOrderDetailsModal, assignDeliveryPartner]);
+
+  /* ============================================================= */
+  /* Renderers                                                    */
+  /* ============================================================= */
+
   const renderDashboard = () => (
     <div className="space-y-6">
-      {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label="Today's Revenue"
-          value={`₹${getTotalSalesToday().toFixed(0)}`}
-          sub={`${getTotalOrdersToday()} orders today`}
+          value={`₹${Math.round(todayStats.revenue).toLocaleString("en-IN")}`}
+          sub={`${todayStats.orderCount} orders today`}
           icon={<IndianRupee size={20} />}
           gradient="from-emerald-500/20 to-teal-500/5"
           border="border-emerald-500/30"
@@ -1181,8 +2571,8 @@ export default function AdminPage() {
         />
         <MetricCard
           label="Total Orders"
-          value={getTotalOrdersToday()}
-          sub={`${getDeliveryOrdersCount()} delivery`}
+          value={todayStats.orderCount}
+          sub={`${todayStats.deliveryCount} delivery`}
           icon={<ShoppingBag size={20} />}
           gradient="from-orange-500/20 to-amber-500/5"
           border="border-orange-500/30"
@@ -1190,7 +2580,7 @@ export default function AdminPage() {
         />
         <MetricCard
           label="In Kitchen"
-          value={getOrderCountByStatus("preparing")}
+          value={statusCounts.preparing}
           sub="Actively preparing"
           icon={<Flame size={20} />}
           gradient="from-amber-500/20 to-yellow-500/5"
@@ -1199,7 +2589,7 @@ export default function AdminPage() {
         />
         <MetricCard
           label="Ready / In Transit"
-          value={getOrderCountByStatus("ready")}
+          value={statusCounts.ready}
           sub="Awaiting pickup"
           icon={<Truck size={20} />}
           gradient="from-blue-500/20 to-indigo-500/5"
@@ -1208,37 +2598,40 @@ export default function AdminPage() {
         />
       </div>
 
-      {/* Quick ops */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* Live queue */}
-        <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-slate-900/60 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25">
+              <div
+                aria-hidden="true"
+                className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
+              >
                 <Zap size={16} />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white">Live Order Queue</h3>
+                <h3 className="text-sm font-black text-white">
+                  Live Order Queue
+                </h3>
                 <p className="text-[11px] font-semibold text-slate-500">
                   Real-time incoming orders
                 </p>
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setActiveTab("liveOrders")}
               className="flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-orange-400 transition hover:bg-white/10"
             >
               View all
-              <ChevronRight size={12} />
+              <ChevronRight size={12} aria-hidden="true" />
             </button>
           </div>
 
           <div className="max-h-[360px] space-y-2.5 overflow-y-auto pr-1">
-            {orders.filter((o) => o.status !== "completed" && o.status !== "cancelled")
-              .length === 0 ? (
+            {filteredOrders.filter((o) => getStatusKey(o) !== "completed" && getStatusKey(o) !== "cancelled").length === 0 ? (
               <div className="flex flex-col items-center py-12 text-center">
                 <div className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-800/60">
-                  <Coffee size={26} className="text-slate-600" />
+                  <Coffee size={26} className="text-slate-600" aria-hidden="true" />
                 </div>
                 <p className="mt-3 text-xs font-black text-slate-400">
                   All caught up!
@@ -1249,7 +2642,10 @@ export default function AdminPage() {
               </div>
             ) : (
               orders
-                .filter((o) => o.status !== "completed" && o.status !== "cancelled")
+                .filter((o) => {
+                  const k = getStatusKey(o);
+                  return k !== "completed" && k !== "cancelled";
+                })
                 .slice(0, 5)
                 .map((o) => (
                   <div
@@ -1277,16 +2673,19 @@ export default function AdminPage() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span className="font-mono text-sm font-black text-emerald-400">
-                        ₹{Math.round(o.total || 0)}
+                        ₹{Math.round(safeNumber(o.total))}
                       </span>
                       <button
+                        type="button"
                         onClick={() => updateOrderStatus(o.id, "ready")}
                         className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-white shadow-md shadow-blue-500/25 transition hover:scale-[1.03] active:scale-95"
                       >
                         Ready
                       </button>
                       <button
+                        type="button"
                         onClick={() => setShowOrderDetailsModal(o)}
+                        aria-label={`View order ${o.orderNumber}`}
                         className="grid h-8 w-8 place-items-center rounded-xl bg-slate-700/60 text-slate-300 transition hover:bg-slate-700 hover:text-white"
                       >
                         <Eye size={13} />
@@ -1298,10 +2697,12 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Shortcuts */}
         <div className="space-y-4 rounded-3xl border border-white/5 bg-slate-900/60 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl">
           <div className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/25">
+            <div
+              aria-hidden="true"
+              className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md shadow-purple-500/25"
+            >
               <Sparkles size={16} />
             </div>
             <div>
@@ -1331,12 +2732,17 @@ export default function AdminPage() {
               label="Delivery Fleet"
               accent="emerald"
             />
-            <QuickLink href="/menu" emoji="🍕" label="Customer Menu" accent="amber" />
+            <QuickLink
+              href="/menu"
+              emoji="🍕"
+              label="Customer Menu"
+              accent="amber"
+            />
           </div>
 
           <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 p-3.5">
             <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-orange-300">
-              <Compass size={12} /> Hub Coordinates
+              <Compass size={12} aria-hidden="true" /> Hub Coordinates
             </p>
             <p className="mt-1.5 truncate font-mono text-[11px] font-semibold text-slate-300">
               {settings.cafeLat}, {settings.cafeLng}
@@ -1350,450 +2756,436 @@ export default function AdminPage() {
     </div>
   );
 
-  const renderLiveOrders = () => {
-    const statusCounts = {
-      all: orders.length,
-      preparing: orders.filter((o) => o.status === "preparing").length,
-      ready: orders.filter((o) => o.status === "ready").length,
-      completed: orders.filter((o) => o.status === "completed").length,
-    };
-
-    return (
-      <div className="space-y-5">
-        {/* Filter bar */}
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative flex-1 lg:max-w-xs">
-              <Search
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
-                size={15}
-              />
-              <input
-                type="text"
-                placeholder="Search order #, customer…"
-                className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2.5 pl-10 pr-4 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                value={searchOrders}
-                onChange={(e) => setSearchOrders(e.target.value)}
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
-                {(["all", "preparing", "ready", "completed"] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setOrderFilter(status)}
-                    className={`rounded-lg px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition ${
-                      orderFilter === status
-                        ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    {status} <span className="ml-0.5 opacity-80">({statusCounts[status]})</span>
-                  </button>
-                ))}
-              </div>
-
-              {newOrderNotification && (
-                <span className="animate-pulse rounded-full bg-red-500 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-white">
-                  🔔 New Order!
-                </span>
-              )}
-
-              <button
-                onClick={() => setLoading((p) => ({ ...p, orders: true }))}
-                className="grid h-9 w-9 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-400 transition hover:text-white"
-              >
-                <RefreshCw size={15} />
-              </button>
-            </div>
+  const renderLiveOrders = () => (
+    <div className="space-y-5">
+      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative flex-1 lg:max-w-xs">
+            <Search
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+              size={15}
+              aria-hidden="true"
+            />
+            <label htmlFor="live-orders-search" className="sr-only">
+              Search orders
+            </label>
+            <input
+              id="live-orders-search"
+              type="search"
+              placeholder="Search order #, customer…"
+              className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2.5 pl-10 pr-4 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+              value={searchOrders}
+              onChange={(e) => setSearchOrders(e.target.value)}
+            />
           </div>
-        </div>
 
-        {/* Orders list */}
-        <div className="space-y-3">
-          {filteredOrders.length === 0 ? (
-            <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/50 py-20">
-              <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-800/60">
-                <ShoppingBag size={36} className="text-slate-600" />
-              </div>
-              <p className="mt-4 text-sm font-black text-slate-400">
-                No orders matching this filter
-              </p>
-              <p className="mt-1 text-xs font-semibold text-slate-600">
-                Try changing your filter or search query
-              </p>
-            </div>
-          ) : (
-            filteredOrders.map((o) => (
-              <OrderCard
-                key={o.id}
-                order={o}
-                onPrint={() => printReceipt(o)}
-                onView={() => setShowOrderDetailsModal(o)}
-                onMarkPaid={() =>
-                  updateDoc(doc(db, "orders", o.id), { paymentStatus: "paid" })
-                }
-                onMarkReady={() => updateOrderStatus(o.id, "ready")}
-                onComplete={() => updateOrderStatus(o.id, "completed")}
-                onCancel={() => cancelOrder(o.id, "Manager cancelled")}
-              />
-            ))
-          )}
+          <div
+            role="tablist"
+            aria-label="Filter orders"
+            className="flex flex-wrap items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1"
+          >
+            {(
+              [
+                { id: "all", label: "All" },
+                { id: "active", label: "Active" },
+                { id: "preparing", label: "Preparing" },
+                { id: "ready", label: "Ready" },
+                { id: "completed", label: "Completed" },
+              ] as const
+            ).map((status) => (
+              <button
+                key={status.id}
+                type="button"
+                role="tab"
+                aria-selected={orderFilter === status.id}
+                onClick={() => setOrderFilter(status.id)}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition ${
+                  orderFilter === status.id
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {status.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    );
-  };
 
-  const renderKitchenOrders = () => {
-    const kitchenOrders = orders.filter((o) => {
-      if (kitchenStatusFilter === "pending" && o.status !== "pending") return false;
-      if (kitchenStatusFilter === "preparing" && o.status !== "preparing") return false;
-      if (kitchenStatusFilter === "ready" && o.status !== "ready") return false;
-      if (kitchenStatusFilter === "completed" && o.status !== "completed") return false;
-      if (
-        kitchenStatusFilter === "active" &&
-        (o.status === "completed" || o.status === "cancelled")
-      )
-        return false;
-      if (kitchenSourceFilter !== "all") {
-        const src = (o.source || "").toLowerCase();
-        if (
-          kitchenSourceFilter === "kitchen" &&
-          src !== "kitchen" &&
-          src !== "on_spot" &&
-          !(o.kitchenNotes && o.kitchenNotes.includes("kitchen"))
-        )
-          return false;
-        if (
-          kitchenSourceFilter === "website" &&
-          src !== "website" &&
-          (src === "kitchen" || src === "swiggy" || src === "zomato")
-        )
-          return false;
-        if (kitchenSourceFilter === "swiggy" && src !== "swiggy") return false;
-        if (kitchenSourceFilter === "zomato" && src !== "zomato") return false;
-      }
-      if (kitchenSearchQuery) {
-        const q = kitchenSearchQuery.toLowerCase();
-        return (
-          o.orderNumber?.toLowerCase().includes(q) ||
-          o.customerName?.toLowerCase().includes(q) ||
-          o.items?.some((i: any) => i.name?.toLowerCase().includes(q))
-        );
-      }
-      return true;
-    });
-
-    const counts = {
-      pending: orders.filter((o) => o.status === "pending").length,
-      preparing: orders.filter((o) => o.status === "preparing").length,
-      ready: orders.filter((o) => o.status === "ready").length,
-      completed: orders.filter((o) => o.status === "completed").length,
-    };
-
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-900/90 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:p-6">
-          <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-orange-500/10 blur-3xl" />
-          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 ring-1 ring-white/10">
-                <ChefHat size={22} />
-              </div>
-              <div className="min-w-0">
-                <h2 className="flex flex-wrap items-center gap-2 text-base font-black text-white sm:text-lg">
-                  Kitchen Live Operations
-                  <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-400 ring-1 ring-orange-500/30">
-                    {counts.pending + counts.preparing + counts.ready} Active
-                  </span>
-                </h2>
-                <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
-                  Monitor cooking queue, prep timers, and order sources
-                </p>
-              </div>
-            </div>
-
-            <Link
-              href="/kitchen"
-              target="_blank"
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
-            >
-              Open Dedicated KDS <ExternalLink size={13} />
-            </Link>
-          </div>
-        </div>
-
-        {/* Metrics */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MiniMetric
-            label="New"
-            value={counts.pending}
-            color="amber"
-            icon={<Bell size={18} />}
-          />
-          <MiniMetric
-            label="Preparing"
-            value={counts.preparing}
-            color="orange"
-            icon={<Flame size={18} />}
-          />
-          <MiniMetric
-            label="Ready"
-            value={counts.ready}
-            color="blue"
-            icon={<Truck size={18} />}
-          />
-          <MiniMetric
-            label="Completed"
-            value={counts.completed}
-            color="emerald"
-            icon={<CheckCircle size={18} />}
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative flex-1 lg:max-w-xs">
-              <Search
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
-                size={14}
-              />
-              <input
-                type="text"
-                placeholder="Search ticket # or customer…"
-                value={kitchenSearchQuery}
-                onChange={(e) => setKitchenSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2.5 pl-10 pr-4 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
-                {[
-                  { id: "all", label: "All" },
-                  { id: "active", label: "Active" },
-                  { id: "pending", label: "New" },
-                  { id: "preparing", label: "Prepping" },
-                  { id: "ready", label: "Ready" },
-                  { id: "completed", label: "Done" },
-                ].map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setKitchenStatusFilter(s.id)}
-                    className={`rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
-                      kitchenStatusFilter === s.id
-                        ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-
-              <select
-                value={kitchenSourceFilter}
-                onChange={(e) => setKitchenSourceFilter(e.target.value)}
-                className="rounded-xl border border-white/5 bg-slate-800 px-3 py-2 text-[11px] font-black text-white focus:outline-none"
-              >
-                <option value="all">All Channels</option>
-                <option value="kitchen">🏪 On Spot</option>
-                <option value="website">🌐 Website</option>
-                <option value="swiggy">🟠 Swiggy</option>
-                <option value="zomato">🔴 Zomato</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Tickets grid */}
-        {kitchenOrders.length === 0 ? (
+      <div className="space-y-3">
+        {filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/50 py-20">
             <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-800/60">
-              <ChefHat size={36} className="text-slate-600" />
+              <ShoppingBag
+                size={36}
+                className="text-slate-600"
+                aria-hidden="true"
+              />
             </div>
             <p className="mt-4 text-sm font-black text-slate-400">
-              No kitchen orders matching filters
+              No orders matching this filter
+            </p>
+            <p className="mt-1 text-xs font-semibold text-slate-600">
+              Try changing your filter or search query
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {kitchenOrders.map((order: any) => {
-              const src = (order.source || "").toLowerCase();
-              const isEditable =
-                src === "kitchen" ||
-                src === "on_spot" ||
-                (order.kitchenNotes && order.kitchenNotes.includes("kitchen"));
-              const orderDate = order.createdAt?.toDate
-                ? order.createdAt.toDate()
-                : new Date(order.createdAt || Date.now());
-              const elapsedMins = Math.floor((Date.now() - orderDate.getTime()) / 60000);
-              const isLate = elapsedMins >= 15;
-
-              return (
-                <div
-                  key={order.id}
-                  className={`relative flex flex-col justify-between gap-3 overflow-hidden rounded-2xl border p-4 shadow-md transition ${
-                    isLate
-                      ? "border-red-500/50 bg-red-950/20 ring-1 ring-red-500/20"
-                      : "border-white/5 bg-slate-900 hover:border-white/10"
-                  }`}
-                >
-                  {/* header */}
-                  <div>
-                    <div className="mb-2 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-base font-black text-white">
-                            {order.orderNumber}
-                          </span>
-                          <span
-                            className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${
-                              src === "swiggy"
-                                ? "bg-orange-500/15 text-orange-300 ring-orange-500/30"
-                                : src === "zomato"
-                                ? "bg-red-500/15 text-red-300 ring-red-500/30"
-                                : isEditable
-                                ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
-                                : "bg-blue-500/15 text-blue-300 ring-blue-500/30"
-                            }`}
-                          >
-                            {src === "swiggy"
-                              ? "🟠 Swiggy"
-                              : src === "zomato"
-                              ? "🔴 Zomato"
-                              : isEditable
-                              ? "🏪 On Spot"
-                              : "🌐 Website"}
-                          </span>
-                        </div>
-                        <p className="mt-1 truncate text-[11px] font-bold text-slate-400">
-                          👤 {order.customerName}
-                        </p>
-                      </div>
-
-                      <span
-                        className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-1 font-mono text-[10px] font-black ${
-                          isLate
-                            ? "animate-pulse bg-red-500 text-white"
-                            : elapsedMins >= 10
-                            ? "bg-amber-500/20 text-amber-300"
-                            : "bg-slate-800 text-slate-300"
-                        }`}
-                      >
-                        <Clock size={9} /> {elapsedMins}m
-                      </span>
-                    </div>
-
-                    {/* status row */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <StatusChip status={order.status} />
-                      {isEditable ? (
-                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
-                          <Edit size={10} /> Editable
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                          <Lock size={10} /> Locked
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* items */}
-                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-white/5 bg-slate-800/40 p-2.5 text-xs">
-                    {order.items?.map((item: any, i: number) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between gap-2 text-slate-200"
-                      >
-                        <span className="truncate">
-                          <strong className="mr-1.5 font-mono text-orange-400">
-                            {item.quantity}×
-                          </strong>
-                          {item.name}
-                        </span>
-                        <span className="shrink-0 font-mono text-[11px] text-slate-400">
-                          ₹{((item.price || 0) * item.quantity).toFixed(0)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {order.instructions && (
-                    <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2 text-[11px] font-bold text-amber-300">
-                      📝 {order.instructions}
-                    </p>
-                  )}
-
-                  {/* footer */}
-                  <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-3">
-                    <span className="font-mono text-base font-black text-emerald-400">
-                      ₹{Math.round(order.total || 0)}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {order.status === "pending" && (
-                        <button
-                          onClick={() => updateOrderStatus(order.id, "preparing")}
-                          className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
-                        >
-                          Start Prep
-                        </button>
-                      )}
-                      {order.status === "preparing" && (
-                        <button
-                          onClick={() => updateOrderStatus(order.id, "ready")}
-                          className="rounded-xl bg-blue-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-500 hover:scale-[1.03] active:scale-95"
-                        >
-                          Mark Ready
-                        </button>
-                      )}
-                      {order.status === "ready" && (
-                        <button
-                          onClick={() => updateOrderStatus(order.id, "completed")}
-                          className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition hover:bg-emerald-500 hover:scale-[1.03] active:scale-95"
-                        >
-                          Complete
-                        </button>
-                      )}
-                      <button
-                        onClick={() => printReceipt(order)}
-                        className="grid h-8 w-8 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-                      >
-                        <Printer size={13} />
-                      </button>
-                      <button
-                        onClick={() => setShowOrderDetailsModal(order)}
-                        className="grid h-8 w-8 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-                      >
-                        <Eye size={13} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          filteredOrders.map((o) => (
+            <OrderCard
+              key={o.id}
+              order={o}
+              onPrint={() => printReceipt(o)}
+              onView={() => setShowOrderDetailsModal(o)}
+              onMarkPaid={async () => {
+                try {
+                  await writeWithAudit(doc(db, "orders", o.id), {
+                    paymentStatus: "paid",
+                  });
+                  pushToast("success", "Marked paid.");
+                } catch {
+                  pushToast("error", "Failed to update payment.");
+                }
+              }}
+              onMarkReady={() => updateOrderStatus(o.id, "ready")}
+              onComplete={() => updateOrderStatus(o.id, "completed")}
+              onCancel={() => cancelOrder(o.id, o.orderNumber || o.id)}
+            />
+          ))
         )}
       </div>
-    );
-  };
+    </div>
+  );
+
+  const renderKitchenOrders = () => (
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-900/90 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:p-6">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-orange-500/10 blur-3xl"
+        />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              aria-hidden="true"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 ring-1 ring-white/10"
+            >
+              <ChefHat size={22} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="flex flex-wrap items-center gap-2 text-base font-black text-white sm:text-lg">
+                Kitchen Live Operations
+                <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-400 ring-1 ring-orange-500/30">
+                  {statusCounts.pending +
+                    statusCounts.preparing +
+                    statusCounts.ready}{" "}
+                  Active
+                </span>
+              </h2>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                Monitor cooking queue, prep timers, and order sources
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/kitchen"
+            target="_blank"
+            rel="noreferrer"
+            className="flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
+          >
+            Open Dedicated KDS{" "}
+            <ExternalLink size={13} aria-hidden="true" />
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MiniMetric
+          label="New"
+          value={statusCounts.pending}
+          color="amber"
+          icon={<Bell size={18} />}
+        />
+        <MiniMetric
+          label="Preparing"
+          value={statusCounts.preparing}
+          color="orange"
+          icon={<Flame size={18} />}
+        />
+        <MiniMetric
+          label="Ready"
+          value={statusCounts.ready}
+          color="blue"
+          icon={<Truck size={18} />}
+        />
+        <MiniMetric
+          label="Completed"
+          value={statusCounts.completed}
+          color="emerald"
+          icon={<CheckCircle size={18} />}
+        />
+      </div>
+
+      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative flex-1 lg:max-w-xs">
+            <Search
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+              size={14}
+              aria-hidden="true"
+            />
+            <label htmlFor="kitchen-search" className="sr-only">
+              Search kitchen orders
+            </label>
+            <input
+              id="kitchen-search"
+              type="search"
+              placeholder="Search ticket # or customer…"
+              value={kitchenSearchQuery}
+              onChange={(e) => setKitchenSearchQuery(e.target.value)}
+              className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2.5 pl-10 pr-4 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
+              {[
+                { id: "all", label: "All" },
+                { id: "active", label: "Active" },
+                { id: "pending", label: "New" },
+                { id: "preparing", label: "Prepping" },
+                { id: "ready", label: "Ready" },
+                { id: "completed", label: "Done" },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setKitchenStatusFilter(s.id)}
+                  aria-pressed={kitchenStatusFilter === s.id}
+                  className={`rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
+                    kitchenStatusFilter === s.id
+                      ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            <label htmlFor="kitchen-source" className="sr-only">
+              Filter by order source
+            </label>
+            <select
+              id="kitchen-source"
+              value={kitchenSourceFilter}
+              onChange={(e) => setKitchenSourceFilter(e.target.value)}
+              className="rounded-xl border border-white/5 bg-slate-800 px-3 py-2 text-[11px] font-black text-white focus:outline-none"
+            >
+              <option value="all">All Channels</option>
+              <option value="kitchen">On Spot</option>
+              <option value="website">Website</option>
+              <option value="swiggy">Swiggy</option>
+              <option value="zomato">Zomato</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {kitchenOrders.length === 0 ? (
+        <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/50 py-20">
+          <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-800/60">
+            <ChefHat size={36} className="text-slate-600" aria-hidden="true" />
+          </div>
+          <p className="mt-4 text-sm font-black text-slate-400">
+            No kitchen orders matching filters
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {kitchenOrders.map((order) => {
+            const src = (order.source || "").toLowerCase();
+            const isEditable =
+              src === "kitchen" ||
+              src === "on_spot" ||
+              src === "pos" ||
+              (order.kitchenNotes && order.kitchenNotes.includes("kitchen"));
+            const orderDate = toDate(order.createdAt) || new Date();
+            const elapsedMins = Math.floor(
+              (Date.now() - orderDate.getTime()) / 60000
+            );
+            const isLate = elapsedMins >= 15;
+
+            return (
+              <div
+                key={order.id}
+                className={`relative flex flex-col justify-between gap-3 overflow-hidden rounded-2xl border p-4 shadow-md transition ${
+                  isLate
+                    ? "border-red-500/50 bg-red-950/20 ring-1 ring-red-500/20"
+                    : "border-white/5 bg-slate-900 hover:border-white/10"
+                }`}
+              >
+                <div>
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-base font-black text-white">
+                          {order.orderNumber}
+                        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${
+                            src === "swiggy"
+                              ? "bg-orange-500/15 text-orange-300 ring-orange-500/30"
+                              : src === "zomato"
+                              ? "bg-red-500/15 text-red-300 ring-red-500/30"
+                              : isEditable
+                              ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
+                              : "bg-blue-500/15 text-blue-300 ring-blue-500/30"
+                          }`}
+                        >
+                          {src === "swiggy"
+                            ? "🟠 Swiggy"
+                            : src === "zomato"
+                            ? "🔴 Zomato"
+                            : isEditable
+                            ? "🏪 On Spot"
+                            : "🌐 Website"}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-[11px] font-bold text-slate-400">
+                        👤 {order.customerName}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-1 font-mono text-[10px] font-black ${
+                        isLate
+                          ? "animate-pulse bg-red-500 text-white"
+                          : elapsedMins >= 10
+                          ? "bg-amber-500/20 text-amber-300"
+                          : "bg-slate-800 text-slate-300"
+                      }`}
+                    >
+                      <Clock size={9} aria-hidden="true" /> {elapsedMins}m
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <StatusChip status={getStatusKey(order)} />
+                    {isEditable ? (
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
+                        <Edit size={10} aria-hidden="true" /> Editable
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                        <Lock size={10} aria-hidden="true" /> Locked
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-white/5 bg-slate-800/40 p-2.5 text-xs">
+                  {(order.items || []).map((item, i) => (
+                    <div
+                      key={`${item.id || item.name}-${i}`}
+                      className="flex items-center justify-between gap-2 text-slate-200"
+                    >
+                      <span className="truncate">
+                        <strong className="mr-1.5 font-mono text-orange-400">
+                          {item.quantity}×
+                        </strong>
+                        {item.name}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-slate-400">
+                        ₹
+                        {Math.round(
+                          safeNumber(item.price) * (item.quantity || 1)
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {order.instructions && (
+                  <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2 text-[11px] font-bold text-amber-300">
+                    📝 {order.instructions}
+                  </p>
+                )}
+
+                <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-3">
+                  <span className="font-mono text-base font-black text-emerald-400">
+                    ₹{Math.round(safeNumber(order.total))}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {getStatusKey(order) === "pending" && (
+                      <button
+                        type="button"
+                        onClick={() => updateOrderStatus(order.id, "preparing")}
+                        className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
+                      >
+                        Start Prep
+                      </button>
+                    )}
+                    {getStatusKey(order) === "preparing" && (
+                      <button
+                        type="button"
+                        onClick={() => updateOrderStatus(order.id, "ready")}
+                        className="rounded-xl bg-blue-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-500 hover:scale-[1.03] active:scale-95"
+                      >
+                        Mark Ready
+                      </button>
+                    )}
+                    {getStatusKey(order) === "ready" && (
+                      <button
+                        type="button"
+                        onClick={() => updateOrderStatus(order.id, "completed")}
+                        className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition hover:bg-emerald-500 hover:scale-[1.03] active:scale-95"
+                      >
+                        Complete
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => printReceipt(order)}
+                      aria-label={`Print order ${order.orderNumber}`}
+                      className="grid h-8 w-8 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
+                    >
+                      <Printer size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowOrderDetailsModal(order)}
+                      aria-label={`View order ${order.orderNumber}`}
+                      className="grid h-8 w-8 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
+                    >
+                      <Eye size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
   const renderMenuManagement = () => (
     <div className="space-y-6">
-      {/* Control bar */}
       <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-md">
             <Search
               className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
               size={15}
+              aria-hidden="true"
             />
+            <label htmlFor="menu-search" className="sr-only">
+              Search menu items
+            </label>
             <input
-              type="text"
+              id="menu-search"
+              type="search"
               placeholder="Search items by name, category, or description…"
               className="w-full rounded-2xl border border-white/5 bg-slate-800/80 py-3 pl-11 pr-9 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
               value={searchMenu}
@@ -1801,7 +3193,9 @@ export default function AdminPage() {
             />
             {searchMenu && (
               <button
+                type="button"
                 onClick={() => setSearchMenu("")}
+                aria-label="Clear search"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-white"
               >
                 <X size={14} />
@@ -1814,14 +3208,19 @@ export default function AdminPage() {
               {filteredMenuItems.length} of {enrichedMenuItems.length} products
             </span>
             <button
+              type="button"
               onClick={() => {
                 setModalCategory(
-                  adminSelectedCategory !== "all" ? adminSelectedCategory : "Food"
+                  adminSelectedCategory !== "all"
+                    ? adminSelectedCategory
+                    : "Food"
                 );
                 const cat = activeCategoriesList.find(
                   (c) =>
                     c.name ===
-                    (adminSelectedCategory !== "all" ? adminSelectedCategory : "Food")
+                    (adminSelectedCategory !== "all"
+                      ? adminSelectedCategory
+                      : "Food")
                 );
                 setModalSubcategory(
                   adminSelectedSubcategory !== "all"
@@ -1834,15 +3233,14 @@ export default function AdminPage() {
               }}
               className="flex shrink-0 items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-xs font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
             >
-              <Plus size={15} strokeWidth={3} /> Add Product
+              <Plus size={15} strokeWidth={3} aria-hidden="true" /> Add Product
             </button>
           </div>
         </div>
 
-        {/* Category tabs */}
         <div className="mt-4 border-t border-white/5 pt-4">
           <div className="mb-2 flex items-center gap-1.5">
-            <Folder size={12} className="text-orange-400" />
+            <Folder size={12} className="text-orange-400" aria-hidden="true" />
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
               Categories
             </span>
@@ -1877,7 +3275,6 @@ export default function AdminPage() {
             })}
           </div>
 
-          {/* Subcategories */}
           {availableSubcategories.length > 0 && (
             <div className="mt-3 border-t border-white/5 pt-3">
               <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto">
@@ -1912,11 +3309,10 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Grouped items */}
       {groupedMenuItems.length === 0 ? (
         <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/50 py-20">
           <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-800/60">
-            <Utensils size={36} className="text-slate-600" />
+            <Utensils size={36} className="text-slate-600" aria-hidden="true" />
           </div>
           <p className="mt-4 text-sm font-black text-slate-400">
             No products in this view
@@ -1927,9 +3323,12 @@ export default function AdminPage() {
               : "Add your first item to this category below."}
           </p>
           <button
+            type="button"
             onClick={() => {
               setModalCategory(
-                adminSelectedCategory !== "all" ? adminSelectedCategory : "Food"
+                adminSelectedCategory !== "all"
+                  ? adminSelectedCategory
+                  : "Food"
               );
               setModalSubcategory(
                 adminSelectedSubcategory !== "all"
@@ -1942,7 +3341,7 @@ export default function AdminPage() {
             }}
             className="mt-5 flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
           >
-            <Plus size={14} strokeWidth={3} /> Add Item
+            <Plus size={14} strokeWidth={3} aria-hidden="true" /> Add Item
           </button>
         </div>
       ) : (
@@ -1954,7 +3353,10 @@ export default function AdminPage() {
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/25">
+                  <div
+                    aria-hidden="true"
+                    className="grid h-9 w-9 place-items-center rounded-xl bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/25"
+                  >
                     <Utensils size={16} />
                   </div>
                   <div>
@@ -1962,7 +3364,11 @@ export default function AdminPage() {
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                         {group.category}
                       </span>
-                      <ChevronRight size={12} className="text-slate-600" />
+                      <ChevronRight
+                        size={12}
+                        className="text-slate-600"
+                        aria-hidden="true"
+                      />
                       <h3 className="text-sm font-black text-white">
                         {group.subcategory}
                       </h3>
@@ -1974,12 +3380,17 @@ export default function AdminPage() {
                 </div>
 
                 <button
-                  onClick={() =>
-                    openAddModalForGroup(group.category, group.subcategory)
-                  }
+                  type="button"
+                  onClick={() => {
+                    setModalCategory(group.category);
+                    setModalSubcategory(group.subcategory);
+                    setIsCustomSubcategory(false);
+                    setCustomSubcategoryText("");
+                    setShowAddMenuItemModal(true);
+                  }}
                   className="flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-orange-300 transition hover:bg-orange-500/20"
                 >
-                  <Plus size={12} strokeWidth={3} /> Add
+                  <Plus size={12} strokeWidth={3} aria-hidden="true" /> Add
                 </button>
               </div>
 
@@ -1992,14 +3403,23 @@ export default function AdminPage() {
                     <div>
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                          <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+                          <span
+                            aria-hidden="true"
+                            className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"
+                          />
                           {item.isVeg !== false ? "Veg" : "Non-Veg"}
                         </span>
                         <div className="flex items-center gap-1">
                           <IconAction
                             onClick={() => toggleMenuItemAvailable(item.id)}
-                            title={item.available !== false ? "Mark sold out" : "Restore"}
-                            variant={item.available !== false ? "success" : "danger"}
+                            title={
+                              item.available !== false
+                                ? "Mark sold out"
+                                : "Restore"
+                            }
+                            variant={
+                              item.available !== false ? "success" : "danger"
+                            }
                           >
                             {item.available !== false ? (
                               <CheckCircle size={13} />
@@ -2009,8 +3429,12 @@ export default function AdminPage() {
                           </IconAction>
                           <IconAction
                             onClick={() => {
-                              setModalCategory(item.resolvedCategory || "Food");
-                              setModalSubcategory(item.resolvedSubcategory || "General");
+                              setModalCategory(
+                                item.resolvedCategory || "Food"
+                              );
+                              setModalSubcategory(
+                                item.resolvedSubcategory || "General"
+                              );
                               setIsCustomSubcategory(false);
                               setCustomSubcategoryText("");
                               setShowEditMenuItemModal(item);
@@ -2020,7 +3444,7 @@ export default function AdminPage() {
                             <Edit size={13} />
                           </IconAction>
                           <IconAction
-                            onClick={() => deleteMenuItem(item.id)}
+                            onClick={() => deleteMenuItem(item.id, item.name || "")}
                             title="Delete"
                             variant="danger"
                           >
@@ -2044,7 +3468,7 @@ export default function AdminPage() {
                           Price
                         </p>
                         <p className="font-mono text-base font-black text-white">
-                          ₹{item.price}
+                          ₹{safeNumber(item.price)}
                         </p>
                       </div>
                       <span
@@ -2070,10 +3494,16 @@ export default function AdminPage() {
   const renderCategoryManagement = () => (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
-        <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-purple-500/10 blur-3xl" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-purple-500/10 blur-3xl"
+        />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/25 ring-1 ring-white/10">
+            <div
+              aria-hidden="true"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/25 ring-1 ring-white/10"
+            >
               <Layers size={22} />
             </div>
             <div className="min-w-0">
@@ -2086,10 +3516,11 @@ export default function AdminPage() {
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setShowAddCategoryModal(true)}
             className="flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
           >
-            <Plus size={15} strokeWidth={3} /> Add Category
+            <Plus size={15} strokeWidth={3} aria-hidden="true" /> Add Category
           </button>
         </div>
       </div>
@@ -2108,12 +3539,17 @@ export default function AdminPage() {
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/25">
+                  <div
+                    aria-hidden="true"
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/25"
+                  >
                     <Folder size={17} />
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-black text-white">{cat.name}</span>
+                      <span className="text-sm font-black text-white">
+                        {cat.name}
+                      </span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${
                           cat.enabled
@@ -2142,13 +3578,21 @@ export default function AdminPage() {
                     )}
                   </IconAction>
                   <IconAction
-                    onClick={() => setShowEditCategoryModal(cat)}
+                    onClick={() => {
+                      const newName = window.prompt(
+                        "Rename category",
+                        cat.name
+                      );
+                      if (newName && newName.trim() && newName.trim() !== cat.name) {
+                        editCategory(cat.id, newName.trim());
+                      }
+                    }}
                     title="Rename"
                   >
                     <Edit size={14} />
                   </IconAction>
                   <IconAction
-                    onClick={() => deleteCategory(cat.id)}
+                    onClick={() => deleteCategory(cat.id, cat.name)}
                     title="Delete"
                     variant="danger"
                   >
@@ -2160,17 +3604,18 @@ export default function AdminPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    <Tag size={11} className="text-amber-400" />
+                    <Tag size={11} className="text-amber-400" aria-hidden="true" />
                     {subs.length} Subcategories
                   </span>
                   <button
+                    type="button"
                     onClick={() => {
                       setShowAddSubModal(cat);
                       setNewSubNameInput("");
                     }}
                     className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-orange-400 transition hover:text-orange-300"
                   >
-                    <Plus size={12} strokeWidth={3} /> Add
+                    <Plus size={12} strokeWidth={3} aria-hidden="true" /> Add
                   </button>
                 </div>
 
@@ -2180,7 +3625,7 @@ export default function AdminPage() {
                   </p>
                 ) : (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {subs.map((sub: any) => {
+                    {subs.map((sub) => {
                       const subItemCount = enrichedMenuItems.filter(
                         (i) =>
                           i.resolvedCategory === cat.name &&
@@ -2196,9 +3641,15 @@ export default function AdminPage() {
                             {subItemCount}
                           </span>
                           <button
+                            type="button"
                             onClick={() =>
-                              deleteSubcategoryFromCategory(cat.id, sub.id)
+                              deleteSubcategoryFromCategory(
+                                cat.id,
+                                sub.id,
+                                sub.name
+                              )
                             }
+                            aria-label={`Remove ${sub.name}`}
                             className="text-slate-500 transition hover:text-red-400"
                           >
                             <X size={12} />
@@ -2225,16 +3676,25 @@ export default function AdminPage() {
               <Search
                 className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
                 size={15}
+                aria-hidden="true"
               />
+              <label htmlFor="history-search" className="sr-only">
+                Search history
+              </label>
               <input
-                type="text"
+                id="history-search"
+                type="search"
                 placeholder="Search history…"
                 className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2.5 pl-10 pr-4 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
               />
             </div>
+            <label htmlFor="history-date" className="sr-only">
+              Filter by date
+            </label>
             <input
+              id="history-date"
               type="date"
               className="rounded-xl border border-white/5 bg-slate-800/80 px-4 py-2.5 text-xs font-semibold text-white focus:border-orange-500/40 focus:outline-none"
               value={historyDateFilter}
@@ -2243,27 +3703,44 @@ export default function AdminPage() {
           </div>
 
           <button
+            type="button"
             onClick={exportHistory}
             className="flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/5 bg-slate-800 px-4 py-2.5 text-xs font-black text-slate-200 transition hover:bg-slate-700"
           >
-            <Download size={14} /> Export CSV
+            <Download size={14} aria-hidden="true" /> Export CSV
           </button>
         </div>
       </div>
 
       <div className="overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 backdrop-blur-xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-xs" aria-label="Order history">
             <thead className="bg-slate-800/60 text-[10px] font-black uppercase tracking-widest text-slate-400">
               <tr>
-                <th className="px-4 py-3 text-left">Order #</th>
-                <th className="px-4 py-3 text-left">Customer</th>
-                <th className="px-4 py-3 text-left">Type</th>
-                <th className="px-4 py-3 text-left">Total</th>
-                <th className="px-4 py-3 text-left">Payment</th>
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-4 py-3 text-left">Items</th>
-                <th className="px-4 py-3 text-center">Receipt</th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Order #
+                </th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Customer
+                </th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Type
+                </th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Total
+                </th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Payment
+                </th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Date
+                </th>
+                <th scope="col" className="px-4 py-3 text-left">
+                  Items
+                </th>
+                <th scope="col" className="px-4 py-3 text-center">
+                  Receipt
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -2271,7 +3748,11 @@ export default function AdminPage() {
                 <tr>
                   <td colSpan={8} className="py-16 text-center">
                     <div className="flex flex-col items-center">
-                      <History size={36} className="text-slate-700" />
+                      <History
+                        size={36}
+                        className="text-slate-700"
+                        aria-hidden="true"
+                      />
                       <p className="mt-3 text-sm font-black text-slate-500">
                         No orders in history
                       </p>
@@ -2287,12 +3768,14 @@ export default function AdminPage() {
                     <td className="px-4 py-3 font-mono font-black text-white">
                       {o.orderNumber}
                     </td>
-                    <td className="px-4 py-3 font-semibold">{o.customerName}</td>
+                    <td className="px-4 py-3 font-semibold">
+                      {o.customerName}
+                    </td>
                     <td className="px-4 py-3">
                       {o.type === "delivery" ? "🛵 Delivery" : "🛍️ Pickup"}
                     </td>
                     <td className="px-4 py-3 font-mono font-black text-emerald-400">
-                      ₹{Math.round(o.total || 0)}
+                      ₹{Math.round(safeNumber(o.total))}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -2303,21 +3786,23 @@ export default function AdminPage() {
                         }`}
                       >
                         {(o.paymentStatus || "pending") === "paid"
-                          ? "✓ Paid"
-                          : "⏳ Pending"}
+                          ? "Paid"
+                          : "Pending"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400">
-                      {o.createdAt?.toDate
-                        ? o.createdAt.toDate().toLocaleDateString()
-                        : new Date(o.createdAt).toLocaleDateString()}
+                      {formatISTDateShort(o.createdAt)}
                     </td>
                     <td className="max-w-xs truncate px-4 py-3 text-slate-400">
-                      {o.items?.map((i: any) => `${i.name} x${i.quantity}`).join(", ")}
+                      {(o.items || [])
+                        .map((i) => `${i.name} x${i.quantity}`)
+                        .join(", ")}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <button
+                        type="button"
                         onClick={() => printReceipt(o)}
+                        aria-label={`Print receipt for ${o.orderNumber}`}
                         className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
                       >
                         <Printer size={13} />
@@ -2334,29 +3819,18 @@ export default function AdminPage() {
   );
 
   const renderSalesReports = () => {
-    const filteredOrdersForReport = getFilteredOrdersForReport();
-    const barData = computeBarData(filteredOrdersForReport);
-    const pieData = computePieData(filteredOrdersForReport);
-    const topItems = computeTopItems(filteredOrdersForReport);
-
-    const totalRevenue = filteredOrdersForReport.reduce(
-      (sum, o) => sum + (o.total || 0),
-      0
-    );
-    const totalOrders = filteredOrdersForReport.length;
-    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-
-    const catAnalytics = computeCategoryAnalytics();
     const { categoryList, bestSellingCategory, categoryBarData, categoryPieData } =
-      catAnalytics;
+      categoryAnalytics;
 
     return (
       <div className="space-y-8">
-        {/* Header */}
         <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/10">
+              <div
+                aria-hidden="true"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/10"
+              >
                 <BarChart3 size={22} />
               </div>
               <div>
@@ -2369,10 +3843,17 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
+            <div
+              role="tablist"
+              aria-label="Report period"
+              className="flex items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1"
+            >
               {(["daily", "weekly", "monthly"] as const).map((period) => (
                 <button
                   key={period}
+                  type="button"
+                  role="tab"
+                  aria-selected={reportPeriod === period}
                   onClick={() => setReportPeriod(period)}
                   className={`rounded-lg px-3.5 py-2 text-[11px] font-black uppercase tracking-wider transition ${
                     reportPeriod === period
@@ -2387,77 +3868,86 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Summary */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <KpiCard
             label="Period Revenue"
-            value={`₹${totalRevenue.toFixed(0)}`}
+            value={`₹${Math.round(reportTotals.revenue).toLocaleString("en-IN")}`}
             icon={<IndianRupee size={18} />}
             color="emerald"
           />
           <KpiCard
             label="Total Orders"
-            value={totalOrders}
+            value={reportTotals.count}
             icon={<ShoppingBag size={18} />}
             color="orange"
           />
           <KpiCard
             label="Avg Ticket"
-            value={`₹${avgOrderValue.toFixed(0)}`}
+            value={`₹${Math.round(reportTotals.avg).toLocaleString("en-IN")}`}
             icon={<TrendingUp size={18} />}
             color="blue"
           />
         </div>
 
-        {/* Charts row */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <Modern3DBarChart
               data={barData}
-              title="3D Revenue Trend"
+              title="Revenue Trend"
               theme="orange"
             />
           </div>
 
           <div className="flex flex-col justify-between gap-4">
-            <Modern3DDonutChart
-              data={pieData}
-              title="3D Order Split"
-            />
+            {pieData.length > 0 ? (
+              <Modern3DDonutChart data={pieData} title="Order Split" />
+            ) : (
+              <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 text-center text-xs font-semibold text-slate-500">
+                No orders in this period.
+              </div>
+            )}
 
             <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
               <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
                 Top Sellers
               </p>
               <div className="space-y-1.5 text-xs">
-                {topItems.map(([name, qty], idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-2"
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-orange-500/15 font-mono text-[10px] font-black text-orange-400">
-                        {idx + 1}
+                {topItems.length === 0 ? (
+                  <p className="text-[11px] italic text-slate-500">
+                    No data yet.
+                  </p>
+                ) : (
+                  topItems.map(([name, qty], idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-orange-500/15 font-mono text-[10px] font-black text-orange-400">
+                          {idx + 1}
+                        </span>
+                        <span className="truncate font-semibold text-slate-300">
+                          {name}
+                        </span>
                       </span>
-                      <span className="truncate font-semibold text-slate-300">
-                        {name}
+                      <span className="shrink-0 font-mono text-[11px] font-black text-orange-400">
+                        {qty}×
                       </span>
-                    </span>
-                    <span className="shrink-0 font-mono text-[11px] font-black text-orange-400">
-                      {qty}×
-                    </span>
-                  </div>
-                ))}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Category analytics */}
         <div className="space-y-5 border-t border-white/5 pt-6">
           <div className="flex flex-col gap-3 rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-500 to-yellow-500 text-white shadow-md shadow-amber-500/25">
+              <div
+                aria-hidden="true"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-500 to-yellow-500 text-white shadow-md shadow-amber-500/25"
+              >
                 <Crown size={18} />
               </div>
               <div>
@@ -2472,8 +3962,14 @@ export default function AdminPage() {
 
             {bestSellingCategory && (
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-black">
-                <Award size={13} className="text-amber-400" />
-                <span className="text-amber-300">Best: {bestSellingCategory.category}</span>
+                <Award
+                  size={13}
+                  className="text-amber-400"
+                  aria-hidden="true"
+                />
+                <span className="text-amber-300">
+                  Best: {bestSellingCategory.category}
+                </span>
                 <span className="font-mono text-emerald-400">
                   ₹{Math.round(bestSellingCategory.totalRevenue)}
                 </span>
@@ -2484,30 +3980,35 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* 3D Category Performance Pillars */}
-          <Modern3DCategoryChart
-            data={categoryBarData}
-            title="3D Category Revenue & Volume"
-            subtitle="Multi-dimensional sales performance by menu section"
-          />
-
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <Modern3DBarChart
+          {categoryBarData.length > 0 && (
+            <>
+              <Modern3DCategoryChart
                 data={categoryBarData}
-                title="3D Category Revenue Comparison"
-                theme="emerald"
+                title="Category Revenue & Volume"
+                subtitle="Multi-dimensional sales performance by menu section"
               />
-            </div>
 
-            <div>
-              <Modern3DDonutChart
-                data={categoryPieData}
-                title="3D Category Share"
-                totalLabel="Category Sales"
-              />
-            </div>
-          </div>
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <Modern3DBarChart
+                    data={categoryBarData}
+                    title="Category Revenue Comparison"
+                    theme="emerald"
+                  />
+                </div>
+
+                <div>
+                  {categoryPieData.length > 0 && (
+                    <Modern3DDonutChart
+                      data={categoryPieData}
+                      title="Category Share"
+                      totalLabel="Category Sales"
+                    />
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {categoryList.map((cat, idx) => (
@@ -2574,7 +4075,7 @@ export default function AdminPage() {
                     </p>
                   ) : (
                     <div className="space-y-1.5">
-                      {cat.topItems.slice(0, 3).map((item: any, i: number) => (
+                      {cat.topItems.slice(0, 3).map((item, i) => (
                         <div
                           key={i}
                           className="flex items-center justify-between gap-2 text-xs"
@@ -2601,10 +4102,16 @@ export default function AdminPage() {
   const renderPromoCodes = () => (
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
-        <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-orange-500/10 blur-3xl" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-orange-500/10 blur-3xl"
+        />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/25 ring-1 ring-white/10">
+            <div
+              aria-hidden="true"
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/25 ring-1 ring-white/10"
+            >
               <Tag size={22} />
             </div>
             <div className="min-w-0">
@@ -2617,6 +4124,7 @@ export default function AdminPage() {
             </div>
           </div>
           <button
+            type="button"
             onClick={() => {
               setPromoForm({
                 code: "",
@@ -2635,16 +4143,15 @@ export default function AdminPage() {
             }}
             className="flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
           >
-            <Plus size={15} strokeWidth={3} /> Create Promo
+            <Plus size={15} strokeWidth={3} aria-hidden="true" /> Create Promo
           </button>
         </div>
       </div>
 
-      {/* Promo grid */}
       {promoCodes.length === 0 ? (
         <div className="flex flex-col items-center rounded-3xl border border-white/5 bg-slate-900/50 py-20">
           <div className="grid h-20 w-20 place-items-center rounded-3xl bg-slate-800/60">
-            <Tag size={36} className="text-slate-600" />
+            <Tag size={36} className="text-slate-600" aria-hidden="true" />
           </div>
           <p className="mt-4 text-sm font-black text-slate-400">
             No promo codes yet
@@ -2657,18 +4164,28 @@ export default function AdminPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {promoCodes.map((p) => {
             const isExpired =
-              p.expiryDate && new Date(p.expiryDate).getTime() < Date.now();
+              !!p.expiryDate && new Date(p.expiryDate).getTime() < Date.now();
             const isExhausted = p.usageLimitTotal
               ? (p.usageCount || 0) >= p.usageLimitTotal
               : false;
             const isLive = p.active && !isExpired && !isExhausted;
+            const stateLabel = isLive
+              ? "Live"
+              : isExpired
+              ? "Expired"
+              : isExhausted
+              ? "Limit hit"
+              : "Inactive";
 
             return (
               <div
                 key={p.id}
                 className="relative flex flex-col gap-4 overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl transition hover:border-white/10"
               >
-                <span className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl" />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl"
+                />
 
                 <div className="relative flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -2683,7 +4200,7 @@ export default function AdminPage() {
                             : "bg-red-500/15 text-red-300 ring-red-500/30"
                         }`}
                       >
-                        {isLive ? "Live" : isExpired ? "Expired" : isExhausted ? "Limit hit" : "Inactive"}
+                        {stateLabel}
                       </span>
                     </div>
                     {p.description && (
@@ -2697,7 +4214,18 @@ export default function AdminPage() {
                     <IconAction
                       onClick={() => {
                         setShowEditPromoModal(p);
-                        setPromoForm(p);
+                        setPromoForm({
+                          code: p.code,
+                          discountType: p.discountType,
+                          discountValue: p.discountValue,
+                          minOrderValue: p.minOrderValue,
+                          maxDiscountCap: p.maxDiscountCap,
+                          usageLimitTotal: p.usageLimitTotal,
+                          usageLimitPerUser: p.usageLimitPerUser,
+                          active: p.active,
+                          expiryDate: p.expiryDate,
+                          description: p.description,
+                        });
                         setShowAddPromoModal(true);
                       }}
                       title="Edit"
@@ -2745,11 +4273,13 @@ export default function AdminPage() {
                   <span className="text-[10px] font-bold text-slate-500">
                     Expires:{" "}
                     {p.expiryDate
-                      ? new Date(p.expiryDate).toLocaleDateString()
+                      ? formatISTDateShort(p.expiryDate)
                       : "Never"}
                   </span>
                   <button
+                    type="button"
                     onClick={() => togglePromoActive(p.id, p.active)}
+                    aria-pressed={p.active}
                     className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300 transition hover:text-white"
                   >
                     {p.active ? (
@@ -2766,33 +4296,54 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Audit log */}
       <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
         <div className="mb-4 flex items-center gap-2">
-          <History size={15} className="text-orange-400" />
-          <h3 className="text-sm font-black text-white">Redemption Audit Log</h3>
+          <History
+            size={15}
+            className="text-orange-400"
+            aria-hidden="true"
+          />
+          <h3 className="text-sm font-black text-white">
+            Redemption Audit Log
+          </h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs" aria-label="Promo usage">
             <thead className="border-b border-white/5 text-[10px] font-black uppercase tracking-widest text-slate-500">
               <tr>
-                <th className="py-2.5 pr-3">Promo</th>
-                <th className="py-2.5 pr-3">Order</th>
-                <th className="py-2.5 pr-3">User</th>
-                <th className="py-2.5 pr-3">Discount</th>
-                <th className="py-2.5">Date</th>
+                <th scope="col" className="py-2.5 pr-3">
+                  Promo
+                </th>
+                <th scope="col" className="py-2.5 pr-3">
+                  Order
+                </th>
+                <th scope="col" className="py-2.5 pr-3">
+                  User
+                </th>
+                <th scope="col" className="py-2.5 pr-3">
+                  Discount
+                </th>
+                <th scope="col" className="py-2.5">
+                  Date
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {promoUsageLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-slate-500">
+                  <td
+                    colSpan={5}
+                    className="py-6 text-center text-slate-500"
+                  >
                     No redemption records yet.
                   </td>
                 </tr>
               ) : (
-                promoUsageLogs.slice(0, 15).map((log, idx) => (
-                  <tr key={idx} className="text-slate-300 transition hover:bg-white/5">
+                promoUsageLogs.slice(0, 15).map((log) => (
+                  <tr
+                    key={log.id}
+                    className="text-slate-300 transition hover:bg-white/5"
+                  >
                     <td className="py-2.5 pr-3 font-mono font-black text-orange-400">
                       {log.code}
                     </td>
@@ -2806,9 +4357,7 @@ export default function AdminPage() {
                       ₹{log.discountApplied}
                     </td>
                     <td className="py-2.5 text-slate-400">
-                      {log.usedAt?.toDate
-                        ? log.usedAt.toDate().toLocaleString()
-                        : "Recently"}
+                      {formatISTDate(log.usedAt)}
                     </td>
                   </tr>
                 ))
@@ -2823,9 +4372,15 @@ export default function AdminPage() {
   const renderDbReset = () => (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="relative overflow-hidden rounded-3xl border border-red-500/30 bg-gradient-to-br from-red-950/50 via-red-900/20 to-slate-900/60 p-6 backdrop-blur-xl">
-        <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-red-500/20 blur-3xl" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-red-500/20 blur-3xl"
+        />
         <div className="relative flex items-start gap-3">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-red-500 to-rose-500 text-white shadow-lg shadow-red-500/30">
+          <div
+            aria-hidden="true"
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-red-500 to-rose-500 text-white shadow-lg shadow-red-500/30"
+          >
             <AlertTriangle size={22} />
           </div>
           <div>
@@ -2834,8 +4389,8 @@ export default function AdminPage() {
             </h2>
             <p className="mt-1.5 text-xs leading-relaxed text-red-200/80">
               Purges all transactional data (past orders, invoices, promo
-              redemption logs) back to zero. Product catalog, categories, store
-              settings, and passwords are preserved.
+              redemption logs) back to zero. Product catalog, categories,
+              store settings, and passwords are preserved.
             </p>
           </div>
         </div>
@@ -2855,7 +4410,10 @@ export default function AdminPage() {
             "Full audit logging with date, time, and operator info",
           ].map((text, i) => (
             <li key={i} className="flex items-start gap-2.5">
-              <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30">
+              <span
+                aria-hidden="true"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30"
+              >
                 <Check size={11} strokeWidth={3} />
               </span>
               <span className="text-slate-300">{text}</span>
@@ -2875,7 +4433,11 @@ export default function AdminPage() {
           <p className="mb-2 select-all rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 font-mono text-[11px] font-black text-amber-300">
             CONFIRM-RESET-TRANSACTIONS-ZERO
           </p>
+          <label htmlFor="reset-confirm" className="sr-only">
+            Confirmation phrase
+          </label>
           <input
+            id="reset-confirm"
             type="text"
             placeholder="Type the phrase above…"
             value={resetConfirmText}
@@ -2886,6 +4448,7 @@ export default function AdminPage() {
 
         {resetMessage && (
           <div
+            role="status"
             className={`mb-4 rounded-xl p-3.5 text-xs font-bold ${
               resetMessage.type === "success"
                 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
@@ -2899,18 +4462,21 @@ export default function AdminPage() {
         <button
           type="button"
           disabled={
-            resetConfirmText !== "CONFIRM-RESET-TRANSACTIONS-ZERO" || isResettingDb
+            resetConfirmText !== "CONFIRM-RESET-TRANSACTIONS-ZERO" ||
+            isResettingDb
           }
           onClick={handleExecuteDatabaseReset}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 py-3.5 text-xs font-black text-white shadow-lg shadow-red-600/30 transition hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
         >
           {isResettingDb ? (
             <>
-              <Loader2 size={15} className="animate-spin" /> Executing Reset…
+              <Loader2 size={15} className="animate-spin" aria-hidden="true" />{" "}
+              Executing Reset…
             </>
           ) : (
             <>
-              <AlertTriangle size={15} /> Execute Reset to Zero
+              <AlertTriangle size={15} aria-hidden="true" /> Execute Reset to
+              Zero
             </>
           )}
         </button>
@@ -2919,12 +4485,11 @@ export default function AdminPage() {
   );
 
   const renderSettings = () => {
-    const handleChange = (key: string, value: any) =>
+    const handleChange = (key: keyof GeneralSettings, value: unknown) =>
       setSettings((prev) => ({ ...prev, [key]: value }));
 
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        {/* Store profile */}
         <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Store size={18} />}
@@ -2934,8 +4499,11 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className={labelCls}>Brand Name</label>
+              <label htmlFor="set-brand" className={labelCls}>
+                Brand Name
+              </label>
               <input
+                id="set-brand"
                 type="text"
                 className={inputCls}
                 value={settings.cafeName}
@@ -2943,8 +4511,11 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className={labelCls}>Order Hotline</label>
+              <label htmlFor="set-phone" className={labelCls}>
+                Order Hotline
+              </label>
               <input
+                id="set-phone"
                 type="text"
                 className={inputCls}
                 value={settings.phone}
@@ -2952,8 +4523,11 @@ export default function AdminPage() {
               />
             </div>
             <div className="md:col-span-2">
-              <label className={labelCls}>Address</label>
+              <label htmlFor="set-address" className={labelCls}>
+                Address
+              </label>
               <input
+                id="set-address"
                 type="text"
                 className={inputCls}
                 value={settings.address}
@@ -2961,8 +4535,11 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className={labelCls}>Opening Time</label>
+              <label htmlFor="set-open" className={labelCls}>
+                Opening Time
+              </label>
               <input
+                id="set-open"
                 type="time"
                 className={inputCls}
                 value={settings.openTime}
@@ -2970,8 +4547,11 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className={labelCls}>Closing Time</label>
+              <label htmlFor="set-close" className={labelCls}>
+                Closing Time
+              </label>
               <input
+                id="set-close"
                 type="time"
                 className={inputCls}
                 value={settings.closeTime}
@@ -2981,7 +4561,6 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Delivery */}
         <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Truck size={18} />}
@@ -2991,7 +4570,9 @@ export default function AdminPage() {
 
           <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-slate-800/40 p-4">
             <div className="min-w-0">
-              <p className="text-xs font-black text-white">Enable Home Delivery</p>
+              <p className="text-xs font-black text-white">
+                Enable Home Delivery
+              </p>
               <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
                 Show delivery option at customer checkout
               </p>
@@ -3001,6 +4582,7 @@ export default function AdminPage() {
               onClick={() =>
                 handleChange("deliveryEnabled", !settings.deliveryEnabled)
               }
+              aria-pressed={settings.deliveryEnabled}
               className="shrink-0"
             >
               {settings.deliveryEnabled ? (
@@ -3013,69 +4595,98 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className={labelCls}>Hub Latitude</label>
+              <label htmlFor="set-lat" className={labelCls}>
+                Hub Latitude
+              </label>
               <input
+                id="set-lat"
                 type="number"
                 step="0.0000001"
                 className={inputCls}
                 value={settings.cafeLat}
-                onChange={(e) => handleChange("cafeLat", parseFloat(e.target.value))}
+                disabled={!settings.deliveryEnabled}
+                onChange={(e) =>
+                  handleChange("cafeLat", safeNumber(e.target.value))
+                }
               />
               <p className="mt-1.5 font-mono text-[10px] font-bold text-slate-500">
                 UCER: 25.3409769
               </p>
             </div>
             <div>
-              <label className={labelCls}>Hub Longitude</label>
+              <label htmlFor="set-lng" className={labelCls}>
+                Hub Longitude
+              </label>
               <input
+                id="set-lng"
                 type="number"
                 step="0.0000001"
                 className={inputCls}
                 value={settings.cafeLng}
-                onChange={(e) => handleChange("cafeLng", parseFloat(e.target.value))}
+                disabled={!settings.deliveryEnabled}
+                onChange={(e) =>
+                  handleChange("cafeLng", safeNumber(e.target.value))
+                }
               />
               <p className="mt-1.5 font-mono text-[10px] font-bold text-slate-500">
                 UCER: 81.9116436
               </p>
             </div>
             <div>
-              <label className={labelCls}>Delivery Radius (km)</label>
+              <label htmlFor="set-radius" className={labelCls}>
+                Delivery Radius (km)
+              </label>
               <input
+                id="set-radius"
                 type="number"
                 step="0.5"
+                min="0"
                 className={inputCls}
                 value={settings.deliveryRadiusKm}
+                disabled={!settings.deliveryEnabled}
                 onChange={(e) =>
-                  handleChange("deliveryRadiusKm", parseFloat(e.target.value))
+                  handleChange("deliveryRadiusKm", safeNumber(e.target.value))
                 }
               />
             </div>
             <div>
-              <label className={labelCls}>Base Fee (₹)</label>
+              <label htmlFor="set-base-fee" className={labelCls}>
+                Base Fee (₹)
+              </label>
               <input
+                id="set-base-fee"
                 type="number"
+                min="0"
                 className={inputCls}
                 value={settings.baseDeliveryFee}
+                disabled={!settings.deliveryEnabled}
                 onChange={(e) =>
-                  handleChange("baseDeliveryFee", parseFloat(e.target.value))
+                  handleChange("baseDeliveryFee", safeNumber(e.target.value))
                 }
               />
             </div>
             <div>
-              <label className={labelCls}>Free Delivery Above (₹)</label>
+              <label htmlFor="set-free-threshold" className={labelCls}>
+                Free Delivery Above (₹)
+              </label>
               <input
+                id="set-free-threshold"
                 type="number"
+                min="0"
                 className={inputCls}
                 value={settings.freeDeliveryThreshold}
+                disabled={!settings.deliveryEnabled}
                 onChange={(e) =>
-                  handleChange("freeDeliveryThreshold", parseFloat(e.target.value))
+                  handleChange(
+                    "freeDeliveryThreshold",
+                    safeNumber(e.target.value)
+                  )
                 }
               />
             </div>
           </div>
         </div>
 
-        {/* Trending */}
         <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Flame size={18} />}
@@ -3084,7 +4695,7 @@ export default function AdminPage() {
             action={
               trendingSaveMsg ? (
                 <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-300">
-                  ✓ Saved
+                  ✓ {trendingSaveMsg}
                 </span>
               ) : undefined
             }
@@ -3092,20 +4703,22 @@ export default function AdminPage() {
 
           <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-slate-800/40 p-4">
             <div className="min-w-0">
-              <p className="text-xs font-black text-white">Enable Trending Now</p>
+              <p className="text-xs font-black text-white">
+                Enable Trending Now
+              </p>
               <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
                 Show carousel at top of customer menu
               </p>
             </div>
             <button
               type="button"
-              onClick={async () => {
-                const updated = { ...trendingSettings, enabled: !trendingSettings.enabled };
-                setTrendingSettings(updated);
-                await saveTrendingSettings(updated);
-                setTrendingSaveMsg("Saved!");
-                setTimeout(() => setTrendingSaveMsg(null), 2500);
-              }}
+              onClick={() =>
+                queueTrendingSave({
+                  ...trendingSettings,
+                  enabled: !trendingSettings.enabled,
+                })
+              }
+              aria-pressed={trendingSettings.enabled}
               className="shrink-0"
             >
               {trendingSettings.enabled ? (
@@ -3118,127 +4731,98 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className={labelCls}>Calculation Mode</label>
+              <label htmlFor="set-trending-mode" className={labelCls}>
+                Calculation Mode
+              </label>
               <select
+                id="set-trending-mode"
                 className={inputCls}
                 value={trendingSettings.mode}
-                onChange={async (e) => {
-                  const mode = e.target.value as "auto" | "manual";
-                  const updated = { ...trendingSettings, mode };
-                  setTrendingSettings(updated);
-                  await saveTrendingSettings(updated);
-                }}
+                onChange={(e) =>
+                  queueTrendingSave({
+                    ...trendingSettings,
+                    mode: e.target.value as "auto" | "manual",
+                  })
+                }
               >
                 <option value="auto">Automatic (from real orders)</option>
                 <option value="manual">Manual (curated)</option>
               </select>
             </div>
             <div>
-              <label className={labelCls}>Max Items</label>
+              <label htmlFor="set-trending-max" className={labelCls}>
+                Max Items
+              </label>
               <input
+                id="set-trending-max"
                 type="number"
                 min="2"
                 max="12"
                 className={inputCls}
                 value={trendingSettings.maxItems || 6}
-                onChange={async (e) => {
-                  const maxItems = parseInt(e.target.value) || 6;
-                  const updated = { ...trendingSettings, maxItems };
-                  setTrendingSettings(updated);
-                  await saveTrendingSettings(updated);
-                }}
+                onChange={(e) =>
+                  queueTrendingSave({
+                    ...trendingSettings,
+                    maxItems: Math.max(
+                      2,
+                      Math.min(12, parseInt(e.target.value) || 6)
+                    ),
+                  })
+                }
               />
             </div>
           </div>
         </div>
 
         <button
-          onClick={() => updateSettings(settings)}
+          type="button"
+          onClick={updateSettings}
           className="mx-auto flex items-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-8 py-3.5 text-sm font-black text-white shadow-lg shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
         >
-          <Save size={16} /> Save All Settings
+          <Save size={16} aria-hidden="true" /> Save All Settings
         </button>
       </div>
     );
   };
 
-  const handleTogglePanel = async (panelKey: keyof PanelAccessData) => {
-    const current = panelAccess[panelKey];
-    const updated: PanelAccessData = {
-      ...panelAccess,
-      [panelKey]: {
-        ...current,
-        enabled: !current.enabled,
-        updatedAt: Timestamp.now(),
-      },
-    };
-    try {
-      await savePanelAccessSettings(updated);
-      setPanelAccess(updated);
-      setPanelSaveMsg(`Successfully updated ${current.name} status.`);
-      setTimeout(() => setPanelSaveMsg(null), 3000);
-    } catch (err: any) {
-      alert("Failed to update panel status: " + err.message);
-    }
-  };
-
-  const handleUpdatePanelPin = async (panelKey: keyof PanelAccessData) => {
-    const newPin = panelPinInputs[panelKey]?.trim();
-    if (!newPin) return alert("Please enter a valid non-empty PIN.");
-    if (newPin.length < 4) return alert("PIN must be at least 4 characters.");
-
-    const current = panelAccess[panelKey];
-    const updated: PanelAccessData = {
-      ...panelAccess,
-      [panelKey]: { ...current, pin: newPin, updatedAt: Timestamp.now() },
-    };
-
-    try {
-      await savePanelAccessSettings(updated);
-      setPanelAccess(updated);
-      setPanelPinInputs((prev) => ({ ...prev, [panelKey]: "" }));
-      setPanelSaveMsg(`Updated password for ${current.name}!`);
-      setTimeout(() => setPanelSaveMsg(null), 3500);
-    } catch (err: any) {
-      alert("Failed to save password: " + err.message);
-    }
-  };
-
   const renderPanelAccess = () => {
-    const panelConfigs = [
+    const panelConfigs: {
+      key: PanelKey;
+      title: string;
+      route: string;
+      icon: StatusIcon;
+      desc: string;
+      gradient: string;
+    }[] = [
       {
-        key: "admin" as const,
+        key: "admin",
         title: "Admin Management Portal",
         route: "/admin",
         icon: ShieldCheck,
-        defaultPin: "admin9090",
         desc: "Main operations, revenue analytics, menu, and settings.",
         gradient: "from-orange-500 to-amber-500",
       },
       {
-        key: "kitchen" as const,
+        key: "kitchen",
         title: "Kitchen Station Display",
         route: "/kitchen",
         icon: ChefHat,
-        defaultPin: "kitchen1234",
         desc: "Live order queue, KOT receipts, prep timers, and dispatch.",
         gradient: "from-amber-500 to-yellow-500",
       },
       {
-        key: "counter" as const,
+        key: "counter",
         title: "Counter POS & Cashier",
         route: "/counter",
         icon: Store,
-        defaultPin: "counter1234",
         desc: "Quick billing, thermal receipt printing, customer linking.",
         gradient: "from-blue-500 to-indigo-500",
       },
       {
-        key: "delivery" as const,
+        key: "delivery",
         title: "Delivery Fleet Portal",
         route: "/delivery",
         icon: Truck,
-        defaultPin: "delivery1234",
         desc: "GPS rider tracking, OTP verification, and order completion.",
         gradient: "from-emerald-500 to-teal-500",
       },
@@ -3247,10 +4831,16 @@ export default function AdminPage() {
     return (
       <div className="space-y-6">
         <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
-          <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-emerald-500/10 blur-3xl" />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-emerald-500/10 blur-3xl"
+          />
           <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/10">
+              <div
+                aria-hidden="true"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25 ring-1 ring-white/10"
+              >
                 <ShieldCheck size={22} />
               </div>
               <div className="min-w-0">
@@ -3270,38 +4860,44 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Centralized Multi-Outlet Developer Platform Hub */}
         <div className="rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 via-purple-950/40 to-slate-900/60 p-6 backdrop-blur-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/25">
+              <div
+                aria-hidden="true"
+                className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/25"
+              >
                 <ShieldCheck size={24} />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black text-white">Centralized Developer &amp; Multi-Outlet Platform</h3>
-                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[9px] font-mono font-bold text-indigo-300 border border-indigo-500/30">
+                  <h3 className="text-base font-black text-white">
+                    Centralized Developer &amp; Multi-Outlet Platform
+                  </h3>
+                  <span className="rounded-full border border-indigo-500/30 bg-indigo-500/20 px-2 py-0.5 font-mono text-[9px] font-bold text-indigo-300">
                     Cross-Branch
                   </span>
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Manage multiple restaurant outlets, kitchens, counters, delivery fleets, RBAC roles, and audit trails.
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Manage multiple restaurant outlets, kitchens, counters,
+                  delivery fleets, RBAC roles, and audit trails.
                 </p>
               </div>
             </div>
 
             <Link
               href="/developer"
-              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5 text-xs font-black text-white shadow-lg shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-95 shrink-0"
+              className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5 text-xs font-black text-white shadow-lg shadow-indigo-500/25 transition hover:scale-[1.02] active:scale-95"
             >
-              Open Developer Hub &rarr;
+              Open Developer Hub →
             </Link>
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           {panelConfigs.map((item) => {
-            const config = panelAccess[item.key] || DEFAULT_PANEL_CONFIGS[item.key];
+            const config =
+              panelAccess[item.key] || DEFAULT_PANEL_CONFIGS[item.key];
             const Icon = item.icon;
             const isEnabled = config.enabled !== false;
             const showPin = showPinMap[item.key] || false;
@@ -3318,6 +4914,7 @@ export default function AdminPage() {
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <div
+                      aria-hidden="true"
                       className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-lg ring-1 ring-white/10 ${
                         isEnabled
                           ? `bg-gradient-to-br ${item.gradient}`
@@ -3344,8 +4941,11 @@ export default function AdminPage() {
                     }`}
                   >
                     <span
+                      aria-hidden="true"
                       className={`h-1.5 w-1.5 rounded-full ${
-                        isEnabled ? "animate-pulse bg-emerald-400" : "bg-red-500"
+                        isEnabled
+                          ? "animate-pulse bg-emerald-400"
+                          : "bg-red-500"
                       }`}
                     />
                     {isEnabled ? "Active" : "Disabled"}
@@ -3357,6 +4957,7 @@ export default function AdminPage() {
                 </p>
 
                 <button
+                  type="button"
                   onClick={() => handleTogglePanel(item.key)}
                   className={`mb-4 w-full rounded-xl py-2.5 text-[11px] font-black uppercase tracking-wider transition ${
                     isEnabled
@@ -3370,27 +4971,40 @@ export default function AdminPage() {
                 <div className="space-y-3 border-t border-white/5 pt-4">
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      <Key size={11} className="text-orange-400" /> Current PIN
+                      <Key size={11} className="text-orange-400" aria-hidden="true" />{" "}
+                      Current PIN
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="max-w-[140px] truncate rounded-lg border border-white/5 bg-slate-800 px-2.5 py-1 font-mono text-[11px] font-black text-amber-300">
-                        {showPin ? config.pin : "••••••••"}
+                        {showPin ? "•••• (hashed)" : "••••••••"}
                       </span>
                       <button
+                        type="button"
                         onClick={() =>
-                          setShowPinMap((prev) => ({ ...prev, [item.key]: !showPin }))
+                          setShowPinMap((prev) => ({
+                            ...prev,
+                            [item.key]: !showPin,
+                          }))
                         }
                         className="text-[10px] font-black uppercase tracking-wider text-slate-400 transition hover:text-white"
                       >
-                        {showPin ? "Hide" : "Show"}
+                        {showPin ? "Hide" : "Reveal"}
                       </button>
                     </div>
                   </div>
 
                   <div className="flex gap-2">
+                    <label
+                      htmlFor={`pin-input-${item.key}`}
+                      className="sr-only"
+                    >
+                      New PIN
+                    </label>
                     <input
-                      type="text"
-                      placeholder={`New PIN (min 4 chars)…`}
+                      id={`pin-input-${item.key}`}
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="New PIN (min 4 chars)…"
                       value={panelPinInputs[item.key] || ""}
                       onChange={(e) =>
                         setPanelPinInputs((prev) => ({
@@ -3401,6 +5015,7 @@ export default function AdminPage() {
                       className="flex-1 rounded-xl border border-white/5 bg-slate-800/70 px-3 py-2 font-mono text-xs font-semibold text-white placeholder-slate-500 focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                     />
                     <button
+                      type="button"
                       onClick={() => handleUpdatePanelPin(item.key)}
                       className="shrink-0 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
                     >
@@ -3416,24 +5031,131 @@ export default function AdminPage() {
     );
   };
 
-  /* =============================================== */
-  /* MAIN LAYOUT                                     */
-  /* =============================================== */
+  /* ============================================================= */
+  /* Nav                                                          */
+  /* ============================================================= */
+
+  const activeOrdersCount = useMemo(
+    () =>
+      orders.filter((o) => {
+        const k = getStatusKey(o);
+        return k === "preparing" || k === "ready";
+      }).length,
+    [orders]
+  );
+  const kitchenActiveCount = useMemo(
+    () =>
+      orders.filter((o) => {
+        const k = getStatusKey(o);
+        return k === "pending" || k === "preparing";
+      }).length,
+    [orders]
+  );
+
+  const navItems = useMemo(
+    () => [
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, badge: 0 },
+      {
+        id: "kitchen",
+        label: "Kitchen Orders",
+        icon: ChefHat,
+        badge: kitchenActiveCount,
+      },
+      {
+        id: "liveOrders",
+        label: "Live Orders",
+        icon: ShoppingBag,
+        badge: activeOrdersCount,
+      },
+      { id: "menu", label: "Menu Items", icon: Utensils, badge: 0 },
+      { id: "categories", label: "Categories", icon: Layers, badge: 0 },
+      { id: "history", label: "Order History", icon: History, badge: 0 },
+      { id: "sales", label: "Sales Analytics", icon: BarChart3, badge: 0 },
+      { id: "promoCodes", label: "Promo Codes", icon: Tag, badge: 0 },
+      {
+        id: "panelAccess",
+        label: "Panel Access",
+        icon: ShieldCheck,
+        badge: 0,
+      },
+      {
+        id: "dbReset",
+        label: "Database Reset",
+        icon: AlertTriangle,
+        badge: 0,
+      },
+      { id: "settings", label: "Settings", icon: Settings, badge: 0 },
+    ],
+    [kitchenActiveCount, activeOrdersCount]
+  );
+
+  const tabTitle: Record<string, string> = {
+    dashboard: "Operations Overview",
+    kitchen: "Kitchen Orders Management",
+    liveOrders: "Live Orders Dispatch",
+    menu: "Menu Management",
+    categories: "Categories & Subcategories",
+    history: "Order History Archive",
+    sales: "Sales & Revenue Analytics",
+    promoCodes: "Discounts & Promo Codes",
+    panelAccess: "Panel Access & Security",
+    dbReset: "Database Reset",
+    settings: "Store Settings",
+  };
+
+  /* ============================================================= */
+  /* Login gate                                                   */
+  /* ============================================================= */
+
+  if (isVerifyingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <Loader2
+          size={32}
+          className="animate-spin text-orange-500"
+          aria-label="Loading"
+        />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <StaffLoginForm
+        panel="admin"
+        panelDisplayName="Admin Operations Panel"
+        panelIcon={<ShieldCheck size={28} />}
+        onSuccess={(session: unknown) => {
+          setStaffSession((session as StaffSession) || null);
+          setIsAuthenticated(true);
+        }}
+      />
+    );
+  }
+
+  /* ============================================================= */
+  /* Render                                                       */
+  /* ============================================================= */
+
   return (
     <div className="flex min-h-screen flex-col overflow-hidden bg-slate-950 text-slate-100 lg:flex-row">
-      {/* ============================================= */}
-      {/* SIDEBAR                                        */}
-      {/* ============================================= */}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+
+      {/* SIDEBAR */}
       <aside
+        aria-label="Admin navigation"
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col justify-between border-r border-white/5 bg-slate-900/95 p-4 backdrop-blur-xl transition-transform duration-300 lg:relative lg:translate-x-0 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="space-y-6">
-          {/* Logo */}
           <div className="flex items-center justify-between px-1 pt-1">
             <div className="flex items-center gap-2.5">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-tr from-orange-500 via-amber-500 to-yellow-500 text-2xl shadow-lg shadow-orange-500/30 ring-1 ring-white/10">
+              <div
+                aria-hidden="true"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-tr from-orange-500 via-amber-500 to-yellow-500 text-2xl shadow-lg shadow-orange-500/30 ring-1 ring-white/10"
+              >
                 🍕
               </div>
               <div>
@@ -3446,14 +5168,15 @@ export default function AdminPage() {
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setIsSidebarOpen(false)}
+              aria-label="Close navigation"
               className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-slate-400 transition hover:text-white lg:hidden"
             >
               <X size={16} />
             </button>
           </div>
 
-          {/* Quick stats */}
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-2xl border border-white/5 bg-slate-800/60 p-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">
@@ -3473,7 +5196,6 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Nav */}
           <nav className="space-y-1">
             {navItems.map((tab) => {
               const Icon = tab.icon;
@@ -3481,10 +5203,12 @@ export default function AdminPage() {
               return (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => {
                     setActiveTab(tab.id);
                     setIsSidebarOpen(false);
                   }}
+                  aria-current={isActive ? "page" : undefined}
                   className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-black transition-all ${
                     isActive
                       ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
@@ -3492,10 +5216,10 @@ export default function AdminPage() {
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Icon size={16} />
+                    <Icon size={16} aria-hidden="true" />
                     <span>{tab.label}</span>
                   </div>
-                  {tab.badge ? (
+                  {tab.badge > 0 && (
                     <span
                       className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] font-black ${
                         isActive
@@ -3505,49 +5229,51 @@ export default function AdminPage() {
                     >
                       {tab.badge}
                     </span>
-                  ) : null}
+                  )}
                 </button>
               );
             })}
           </nav>
         </div>
 
-        {/* Footer */}
         <div className="space-y-2 border-t border-white/5 pt-4">
           <div className="flex items-center justify-between rounded-xl border border-white/5 bg-slate-800/40 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
             <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400"
+              />
               Live
             </span>
             <span className="font-mono">UCER</span>
           </div>
 
           <button
+            type="button"
             onClick={handleLogout}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 py-2.5 text-xs font-black text-red-400 transition hover:bg-red-500/20"
           >
-            <LogOut size={14} /> Sign Out
+            <LogOut size={14} aria-hidden="true" /> Sign Out
           </button>
         </div>
       </aside>
 
-      {/* Mobile backdrop */}
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
           className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm lg:hidden"
         />
       )}
 
-      {/* ============================================= */}
-      {/* MAIN                                          */}
-      {/* ============================================= */}
+      {/* MAIN */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-white/5 bg-slate-900/70 px-4 backdrop-blur-xl sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <button
+              type="button"
               onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open navigation"
               className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-800 text-slate-400 transition hover:text-white lg:hidden"
             >
               <MenuIcon size={16} />
@@ -3561,19 +5287,27 @@ export default function AdminPage() {
               </p>
             </div>
             <span className="hidden items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-400 sm:flex">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span
+                aria-hidden="true"
+                className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400"
+              />
               Live
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => {
                 const next = !settings.soundEnabled;
                 setSettings((p) => ({ ...p, soundEnabled: next }));
                 soundEnabledRef.current = next;
                 if (next) playNotificationSound();
               }}
+              aria-label={
+                settings.soundEnabled ? "Mute alerts" : "Enable alerts"
+              }
+              aria-pressed={settings.soundEnabled}
               className={`grid h-9 w-9 place-items-center rounded-xl border transition ${
                 settings.soundEnabled
                   ? "border-orange-500/40 bg-orange-500/15 text-orange-400"
@@ -3581,20 +5315,24 @@ export default function AdminPage() {
               }`}
               title="Sound notifications"
             >
-              {settings.soundEnabled ? <Bell size={15} /> : <BellOff size={15} />}
+              {settings.soundEnabled ? (
+                <Bell size={15} />
+              ) : (
+                <BellOff size={15} />
+              )}
             </button>
 
             <Link
               href="/"
               target="_blank"
+              rel="noreferrer"
               className="hidden items-center gap-1.5 rounded-xl border border-white/5 bg-slate-800 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-200 transition hover:bg-slate-700 sm:flex"
             >
-              View Site <ExternalLink size={11} />
+              View Site <ExternalLink size={11} aria-hidden="true" />
             </Link>
           </div>
         </header>
 
-        {/* Content */}
         <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:p-8">
           {activeTab === "dashboard" && renderDashboard()}
           {activeTab === "kitchen" && renderKitchenOrders()}
@@ -3610,11 +5348,7 @@ export default function AdminPage() {
         </main>
       </div>
 
-      {/* ============================================= */}
-      {/* MODALS                                        */}
-      {/* ============================================= */}
-
-      {/* Promo modal */}
+      {/* MODALS */}
       <Modal
         isOpen={showAddPromoModal}
         onClose={() => {
@@ -3625,22 +5359,31 @@ export default function AdminPage() {
       >
         <form onSubmit={savePromoCode} className="space-y-4">
           <div>
-            <label className={labelCls}>Promo Code *</label>
+            <label htmlFor="promo-code" className={labelCls}>
+              Promo Code *
+            </label>
             <input
+              id="promo-code"
               type="text"
               required
               placeholder="e.g. PRESTO50"
               value={promoForm.code || ""}
               onChange={(e) =>
-                setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })
+                setPromoForm({
+                  ...promoForm,
+                  code: e.target.value.toUpperCase(),
+                })
               }
               className={`${inputCls} font-mono font-black`}
             />
           </div>
 
           <div>
-            <label className={labelCls}>Description</label>
+            <label htmlFor="promo-desc" className={labelCls}>
+              Description
+            </label>
             <input
+              id="promo-desc"
               type="text"
               placeholder="e.g. 15% off above ₹199"
               value={promoForm.description || ""}
@@ -3653,11 +5396,17 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Type *</label>
+              <label htmlFor="promo-type" className={labelCls}>
+                Type *
+              </label>
               <select
+                id="promo-type"
                 value={promoForm.discountType || "percentage"}
                 onChange={(e) =>
-                  setPromoForm({ ...promoForm, discountType: e.target.value as any })
+                  setPromoForm({
+                    ...promoForm,
+                    discountType: e.target.value as "percentage" | "flat",
+                  })
                 }
                 className={inputCls}
               >
@@ -3666,16 +5415,22 @@ export default function AdminPage() {
               </select>
             </div>
             <div>
-              <label className={labelCls}>Value *</label>
+              <label htmlFor="promo-value" className={labelCls}>
+                Value *
+              </label>
               <input
+                id="promo-value"
                 type="number"
                 required
                 min="1"
+                max={
+                  promoForm.discountType === "percentage" ? 100 : undefined
+                }
                 value={promoForm.discountValue || ""}
                 onChange={(e) =>
                   setPromoForm({
                     ...promoForm,
-                    discountValue: Number(e.target.value),
+                    discountValue: safeNumber(e.target.value),
                   })
                 }
                 className={inputCls}
@@ -3685,30 +5440,36 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Min Order (₹)</label>
+              <label htmlFor="promo-min" className={labelCls}>
+                Min Order (₹)
+              </label>
               <input
+                id="promo-min"
                 type="number"
                 min="0"
                 value={promoForm.minOrderValue || ""}
                 onChange={(e) =>
                   setPromoForm({
                     ...promoForm,
-                    minOrderValue: Number(e.target.value),
+                    minOrderValue: safeNumber(e.target.value),
                   })
                 }
                 className={inputCls}
               />
             </div>
             <div>
-              <label className={labelCls}>Max Cap (₹)</label>
+              <label htmlFor="promo-cap" className={labelCls}>
+                Max Cap (₹)
+              </label>
               <input
+                id="promo-cap"
                 type="number"
                 min="0"
                 value={promoForm.maxDiscountCap || ""}
                 onChange={(e) =>
                   setPromoForm({
                     ...promoForm,
-                    maxDiscountCap: Number(e.target.value),
+                    maxDiscountCap: safeNumber(e.target.value),
                   })
                 }
                 className={inputCls}
@@ -3718,30 +5479,39 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Total Uses</label>
+              <label htmlFor="promo-total" className={labelCls}>
+                Total Uses
+              </label>
               <input
+                id="promo-total"
                 type="number"
                 min="1"
                 value={promoForm.usageLimitTotal || ""}
                 onChange={(e) =>
                   setPromoForm({
                     ...promoForm,
-                    usageLimitTotal: Number(e.target.value),
+                    usageLimitTotal: safeNumber(e.target.value),
                   })
                 }
                 className={inputCls}
               />
             </div>
             <div>
-              <label className={labelCls}>Per User</label>
+              <label htmlFor="promo-per-user" className={labelCls}>
+                Per User
+              </label>
               <input
+                id="promo-per-user"
                 type="number"
                 min="1"
                 value={promoForm.usageLimitPerUser || 1}
                 onChange={(e) =>
                   setPromoForm({
                     ...promoForm,
-                    usageLimitPerUser: Number(e.target.value),
+                    usageLimitPerUser: Math.max(
+                      1,
+                      safeNumber(e.target.value, 1)
+                    ),
                   })
                 }
                 className={inputCls}
@@ -3751,8 +5521,11 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Expiry Date</label>
+              <label htmlFor="promo-expiry" className={labelCls}>
+                Expiry Date
+              </label>
               <input
+                id="promo-expiry"
                 type="date"
                 value={promoForm.expiryDate || ""}
                 onChange={(e) =>
@@ -3762,11 +5535,17 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className={labelCls}>Status</label>
+              <label htmlFor="promo-active" className={labelCls}>
+                Status
+              </label>
               <select
+                id="promo-active"
                 value={promoForm.active ? "true" : "false"}
                 onChange={(e) =>
-                  setPromoForm({ ...promoForm, active: e.target.value === "true" })
+                  setPromoForm({
+                    ...promoForm,
+                    active: e.target.value === "true",
+                  })
                 }
                 className={inputCls}
               >
@@ -3797,24 +5576,35 @@ export default function AdminPage() {
         </form>
       </Modal>
 
-      {/* Category add */}
       <Modal
         isOpen={showAddCategoryModal}
         onClose={() => setShowAddCategoryModal(false)}
         title="Add Category"
       >
         <form
-          onSubmit={async (e: any) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            const name = e.target.name.value;
-            if (name) {
+            const fd = new FormData(e.currentTarget);
+            const name = String(fd.get("name") || "");
+            if (name.trim()) {
               await addCategory(name);
               setShowAddCategoryModal(false);
             }
           }}
           className="space-y-4"
         >
-          <input name="name" className={inputCls} placeholder="Category name" required />
+          <div>
+            <label htmlFor="cat-name" className={labelCls}>
+              Category name
+            </label>
+            <input
+              id="cat-name"
+              name="name"
+              className={inputCls}
+              required
+              autoFocus
+            />
+          </div>
           <button
             type="submit"
             className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2.5 text-xs font-black text-white transition hover:scale-[1.01] active:scale-95"
@@ -3824,66 +5614,82 @@ export default function AdminPage() {
         </form>
       </Modal>
 
-      {/* Category edit */}
       <Modal
         isOpen={!!showEditCategoryModal}
         onClose={() => setShowEditCategoryModal(null)}
-        title="Edit Category"
+        title="Rename Category"
       >
-        <form
-          onSubmit={async (e: any) => {
-            e.preventDefault();
-            const name = e.target.name.value;
-            if (name && showEditCategoryModal) {
-              await editCategory(showEditCategoryModal.id, name);
-              setShowEditCategoryModal(null);
-            }
-          }}
-          className="space-y-4"
-        >
-          <input
-            name="name"
-            defaultValue={showEditCategoryModal?.name || ""}
-            className={inputCls}
-            required
-          />
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2.5 text-xs font-black text-white transition hover:scale-[1.01] active:scale-95"
+        {showEditCategoryModal && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              const name = String(fd.get("name") || "").trim();
+              if (name && name !== showEditCategoryModal.name) {
+                editCategory(showEditCategoryModal.id, name);
+                setShowEditCategoryModal(null);
+              }
+            }}
+            className="space-y-4"
           >
-            Update Category
-          </button>
-        </form>
+            <div>
+              <label htmlFor="cat-edit-name" className={labelCls}>
+                New name
+              </label>
+              <input
+                id="cat-edit-name"
+                name="name"
+                defaultValue={showEditCategoryModal.name}
+                className={inputCls}
+                required
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2.5 text-xs font-black text-white transition hover:scale-[1.01] active:scale-95"
+            >
+              Rename Category
+            </button>
+          </form>
+        )}
       </Modal>
 
-      {/* Menu item add */}
       <Modal
         isOpen={showAddMenuItemModal}
         onClose={() => setShowAddMenuItemModal(false)}
         title="Add Menu Product"
       >
         <form
-          onSubmit={async (e: any) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            const fd = new FormData(e.target);
-            const name = (fd.get("name") as string)?.trim();
-            const price = parseFloat(fd.get("price") as string);
+            const fd = new FormData(e.currentTarget);
+            const name = String(fd.get("name") || "").trim();
+            const price = safeNumber(fd.get("price"));
             const category = modalCategory;
             const subcategory = isCustomSubcategory
               ? customSubcategoryText.trim()
               : modalSubcategory;
-            if (!name) return alert("Product name is required.");
-            if (isNaN(price) || price < 0) return alert("Enter valid price.");
-            if (!category || !subcategory) return alert("Select category & subcategory.");
-
+            if (!name) {
+              pushToast("error", "Product name is required.");
+              return;
+            }
+            if (price < 0) {
+              pushToast("error", "Enter a valid price.");
+              return;
+            }
+            if (!category || !subcategory) {
+              pushToast("error", "Select category & subcategory.");
+              return;
+            }
             await addMenuItem({
               name,
               category,
               subcategory,
               price,
-              description: (fd.get("description") as string)?.trim() || "",
+              description: String(fd.get("description") || "").trim(),
               imageUrl:
-                (fd.get("image") as string)?.trim() ||
+                String(fd.get("image") || "").trim() ||
                 "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&q=80",
               available: true,
               isVeg: fd.get("isVeg") === "on",
@@ -3893,25 +5699,36 @@ export default function AdminPage() {
           className="space-y-4"
         >
           <div>
-            <label className={labelCls}>Product Name *</label>
+            <label htmlFor="mi-name" className={labelCls}>
+              Product Name *
+            </label>
             <input
+              id="mi-name"
               name="name"
               placeholder="e.g. Farmhouse Pizza"
               className={inputCls}
               required
+              autoFocus
             />
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className={labelCls}>Category *</label>
+              <label htmlFor="mi-cat" className={labelCls}>
+                Category *
+              </label>
               <select
+                id="mi-cat"
                 value={modalCategory}
                 onChange={(e) => {
                   const newCat = e.target.value;
                   setModalCategory(newCat);
-                  const found = activeCategoriesList.find((c) => c.name === newCat);
-                  setModalSubcategory(found?.subcategories?.[0]?.name || "General");
+                  const found = activeCategoriesList.find(
+                    (c) => c.name === newCat
+                  );
+                  setModalSubcategory(
+                    found?.subcategories?.[0]?.name || "General"
+                  );
                   setIsCustomSubcategory(false);
                 }}
                 className={inputCls}
@@ -3925,11 +5742,15 @@ export default function AdminPage() {
               </select>
             </div>
             <div>
-              <label className={labelCls}>Subcategory *</label>
+              <label htmlFor="mi-sub" className={labelCls}>
+                Subcategory *
+              </label>
               <select
+                id="mi-sub"
                 value={isCustomSubcategory ? "__custom__" : modalSubcategory}
                 onChange={(e) => {
-                  if (e.target.value === "__custom__") setIsCustomSubcategory(true);
+                  if (e.target.value === "__custom__")
+                    setIsCustomSubcategory(true);
                   else {
                     setIsCustomSubcategory(false);
                     setModalSubcategory(e.target.value);
@@ -3938,8 +5759,9 @@ export default function AdminPage() {
                 className={inputCls}
                 required
               >
-                {(activeCategoriesList.find((c) => c.name === modalCategory)
-                  ?.subcategories || []
+                {(
+                  activeCategoriesList.find((c) => c.name === modalCategory)
+                    ?.subcategories || []
                 ).map((s) => (
                   <option key={s.id} value={s.name}>
                     {s.name}
@@ -3952,15 +5774,16 @@ export default function AdminPage() {
 
           {isCustomSubcategory && (
             <div>
-              <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-amber-400">
+              <label htmlFor="mi-custom-sub" className={labelCls}>
                 New Subcategory Name *
               </label>
               <input
+                id="mi-custom-sub"
                 type="text"
                 placeholder="e.g. Waffles"
                 value={customSubcategoryText}
                 onChange={(e) => setCustomSubcategoryText(e.target.value)}
-                className="w-full rounded-xl border border-amber-500/60 bg-slate-800/70 px-4 py-2.5 text-xs font-semibold text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                className={inputCls}
                 required
               />
             </div>
@@ -3968,8 +5791,11 @@ export default function AdminPage() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className={labelCls}>Price (₹) *</label>
+              <label htmlFor="mi-price" className={labelCls}>
+                Price (₹) *
+              </label>
               <input
+                id="mi-price"
                 name="price"
                 type="number"
                 step="1"
@@ -3988,15 +5814,22 @@ export default function AdminPage() {
                   className="h-4 w-4 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
                 />
                 <span className="flex items-center gap-1 text-xs font-black text-emerald-400">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Pure Veg
+                  <span
+                    aria-hidden="true"
+                    className="h-2 w-2 rounded-full bg-emerald-500"
+                  />{" "}
+                  Pure Veg
                 </span>
               </label>
             </div>
           </div>
 
           <div>
-            <label className={labelCls}>Description</label>
+            <label htmlFor="mi-desc" className={labelCls}>
+              Description
+            </label>
             <textarea
+              id="mi-desc"
               name="description"
               placeholder="Ingredients, toppings, base…"
               rows={2}
@@ -4005,8 +5838,11 @@ export default function AdminPage() {
           </div>
 
           <div>
-            <label className={labelCls}>Image URL</label>
+            <label htmlFor="mi-image" className={labelCls}>
+              Image URL
+            </label>
             <input
+              id="mi-image"
               name="image"
               placeholder="https://… (leave blank for default)"
               className={inputCls}
@@ -4031,7 +5867,6 @@ export default function AdminPage() {
         </form>
       </Modal>
 
-      {/* Menu item edit */}
       <Modal
         isOpen={!!showEditMenuItemModal}
         onClose={() => setShowEditMenuItemModal(null)}
@@ -4039,25 +5874,27 @@ export default function AdminPage() {
       >
         {showEditMenuItemModal && (
           <form
-            onSubmit={async (e: any) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              const fd = new FormData(e.target);
-              const name = (fd.get("name") as string)?.trim();
-              const price = parseFloat(fd.get("price") as string);
+              const fd = new FormData(e.currentTarget);
+              const name = String(fd.get("name") || "").trim();
+              const price = safeNumber(fd.get("price"));
               const category = modalCategory;
               const subcategory = isCustomSubcategory
                 ? customSubcategoryText.trim()
                 : modalSubcategory;
-              if (!name) return alert("Product name is required.");
-              if (isNaN(price) || price < 0) return alert("Enter valid price.");
+              if (!name) {
+                pushToast("error", "Product name is required.");
+                return;
+              }
               await editMenuItem(showEditMenuItemModal.id, {
                 name,
                 category,
                 subcategory,
                 price,
-                description: (fd.get("description") as string)?.trim() || "",
+                description: String(fd.get("description") || "").trim(),
                 imageUrl:
-                  (fd.get("image") as string)?.trim() ||
+                  String(fd.get("image") || "").trim() ||
                   showEditMenuItemModal.imageUrl ||
                   "",
                 available: fd.get("available") === "on",
@@ -4068,25 +5905,36 @@ export default function AdminPage() {
             className="space-y-4"
           >
             <div>
-              <label className={labelCls}>Product Name *</label>
+              <label htmlFor="mei-name" className={labelCls}>
+                Product Name *
+              </label>
               <input
+                id="mei-name"
                 name="name"
                 defaultValue={showEditMenuItemModal.name}
                 className={inputCls}
                 required
+                autoFocus
               />
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className={labelCls}>Category *</label>
+                <label htmlFor="mei-cat" className={labelCls}>
+                  Category *
+                </label>
                 <select
+                  id="mei-cat"
                   value={modalCategory}
                   onChange={(e) => {
                     const newCat = e.target.value;
                     setModalCategory(newCat);
-                    const found = activeCategoriesList.find((c) => c.name === newCat);
-                    setModalSubcategory(found?.subcategories?.[0]?.name || "General");
+                    const found = activeCategoriesList.find(
+                      (c) => c.name === newCat
+                    );
+                    setModalSubcategory(
+                      found?.subcategories?.[0]?.name || "General"
+                    );
                     setIsCustomSubcategory(false);
                   }}
                   className={inputCls}
@@ -4100,11 +5948,17 @@ export default function AdminPage() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>Subcategory *</label>
+                <label htmlFor="mei-sub" className={labelCls}>
+                  Subcategory *
+                </label>
                 <select
-                  value={isCustomSubcategory ? "__custom__" : modalSubcategory}
+                  id="mei-sub"
+                  value={
+                    isCustomSubcategory ? "__custom__" : modalSubcategory
+                  }
                   onChange={(e) => {
-                    if (e.target.value === "__custom__") setIsCustomSubcategory(true);
+                    if (e.target.value === "__custom__")
+                      setIsCustomSubcategory(true);
                     else {
                       setIsCustomSubcategory(false);
                       setModalSubcategory(e.target.value);
@@ -4113,8 +5967,9 @@ export default function AdminPage() {
                   className={inputCls}
                   required
                 >
-                  {(activeCategoriesList.find((c) => c.name === modalCategory)
-                    ?.subcategories || []
+                  {(
+                    activeCategoriesList.find((c) => c.name === modalCategory)
+                      ?.subcategories || []
                   ).map((s) => (
                     <option key={s.id} value={s.name}>
                       {s.name}
@@ -4127,14 +5982,15 @@ export default function AdminPage() {
 
             {isCustomSubcategory && (
               <div>
-                <label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-amber-400">
+                <label htmlFor="mei-custom-sub" className={labelCls}>
                   New Subcategory Name *
                 </label>
                 <input
+                  id="mei-custom-sub"
                   type="text"
                   value={customSubcategoryText}
                   onChange={(e) => setCustomSubcategoryText(e.target.value)}
-                  className="w-full rounded-xl border border-amber-500/60 bg-slate-800/70 px-4 py-2.5 text-xs font-semibold text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  className={inputCls}
                   required
                 />
               </div>
@@ -4142,8 +5998,11 @@ export default function AdminPage() {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <label className={labelCls}>Price (₹) *</label>
+                <label htmlFor="mei-price" className={labelCls}>
+                  Price (₹) *
+                </label>
                 <input
+                  id="mei-price"
                   name="price"
                   type="number"
                   min="0"
@@ -4160,7 +6019,9 @@ export default function AdminPage() {
                     defaultChecked={showEditMenuItemModal.available !== false}
                     className="h-4 w-4 rounded border-slate-700 bg-slate-800 text-orange-500 focus:ring-orange-500"
                   />
-                  <span className="text-xs font-black text-white">In Stock</span>
+                  <span className="text-xs font-black text-white">
+                    In Stock
+                  </span>
                 </label>
               </div>
               <div className="flex items-center pt-5">
@@ -4172,15 +6033,22 @@ export default function AdminPage() {
                     className="h-4 w-4 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500"
                   />
                   <span className="flex items-center gap-1 text-xs font-black text-emerald-400">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" /> Veg
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 rounded-full bg-emerald-500"
+                    />{" "}
+                    Veg
                   </span>
                 </label>
               </div>
             </div>
 
             <div>
-              <label className={labelCls}>Description</label>
+              <label htmlFor="mei-desc" className={labelCls}>
+                Description
+              </label>
               <textarea
+                id="mei-desc"
                 name="description"
                 defaultValue={showEditMenuItemModal.description || ""}
                 rows={2}
@@ -4189,8 +6057,11 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <label className={labelCls}>Image URL</label>
+              <label htmlFor="mei-image" className={labelCls}>
+                Image URL
+              </label>
               <input
+                id="mei-image"
                 name="image"
                 defaultValue={showEditMenuItemModal.imageUrl || ""}
                 className={inputCls}
@@ -4216,7 +6087,6 @@ export default function AdminPage() {
         )}
       </Modal>
 
-      {/* Add subcategory */}
       <Modal
         isOpen={!!showAddSubModal}
         onClose={() => setShowAddSubModal(null)}
@@ -4224,10 +6094,13 @@ export default function AdminPage() {
       >
         {showAddSubModal && (
           <form
-            onSubmit={async (e: any) => {
+            onSubmit={async (e) => {
               e.preventDefault();
               if (newSubNameInput.trim()) {
-                await addSubcategoryToCategory(showAddSubModal.id, newSubNameInput);
+                await addSubcategoryToCategory(
+                  showAddSubModal.id,
+                  newSubNameInput
+                );
                 setShowAddSubModal(null);
                 setNewSubNameInput("");
               }
@@ -4235,8 +6108,11 @@ export default function AdminPage() {
             className="space-y-4"
           >
             <div>
-              <label className={labelCls}>Subcategory Name</label>
+              <label htmlFor="new-sub-name" className={labelCls}>
+                Subcategory Name
+              </label>
               <input
+                id="new-sub-name"
                 type="text"
                 placeholder="e.g. Pasta, Wraps…"
                 value={newSubNameInput}
@@ -4265,7 +6141,6 @@ export default function AdminPage() {
         )}
       </Modal>
 
-      {/* Order details */}
       <Modal
         isOpen={!!showOrderDetailsModal}
         onClose={() => setShowOrderDetailsModal(null)}
@@ -4277,7 +6152,7 @@ export default function AdminPage() {
               <span className="font-mono text-base font-black text-white">
                 {showOrderDetailsModal.orderNumber}
               </span>
-              <StatusChip status={showOrderDetailsModal.status} />
+              <StatusChip status={getStatusKey(showOrderDetailsModal)} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -4305,7 +6180,7 @@ export default function AdminPage() {
               <div className="space-y-3 rounded-2xl border border-white/5 bg-slate-800/40 p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs font-black text-orange-400">
-                    <Truck size={14} /> Delivery Info
+                    <Truck size={14} aria-hidden="true" /> Delivery Info
                   </span>
                   {showOrderDetailsModal.deliveryDistance && (
                     <span className="font-mono text-[11px] font-bold text-slate-400">
@@ -4315,7 +6190,8 @@ export default function AdminPage() {
                 </div>
 
                 <p className="text-[11px] leading-relaxed text-slate-300">
-                  {showOrderDetailsModal.deliveryAddress?.fullAddress ||
+                  {(typeof showOrderDetailsModal.deliveryAddress === "object" &&
+                    showOrderDetailsModal.deliveryAddress?.fullAddress) ||
                     (typeof showOrderDetailsModal.location === "string"
                       ? showOrderDetailsModal.location
                       : showOrderDetailsModal.location?.address) ||
@@ -4323,12 +6199,20 @@ export default function AdminPage() {
                 </p>
 
                 <div>
-                  <label className={labelCls}>Delivery Status</label>
+                  <label htmlFor="delivery-status-select" className={labelCls}>
+                    Delivery Status
+                  </label>
                   <select
+                    id="delivery-status-select"
                     className={inputCls}
-                    value={showOrderDetailsModal.deliveryStatus || "pending"}
+                    value={
+                      showOrderDetailsModal.deliveryStatus || "pending"
+                    }
                     onChange={(e) =>
-                      updateDeliveryStatus(showOrderDetailsModal.id, e.target.value)
+                      updateDeliveryStatus(
+                        showOrderDetailsModal.id,
+                        e.target.value
+                      )
                     }
                   >
                     <option value="pending">Pending</option>
@@ -4339,24 +6223,23 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className={labelCls}>Assign Delivery Partner</label>
+                  <label htmlFor="assign-rider-input" className={labelCls}>
+                    Assign Delivery Partner
+                  </label>
                   <div className="flex gap-2">
                     <input
                       id="assign-rider-input"
+                      ref={assignRiderInputRef}
                       type="text"
                       placeholder="e.g. Rahul Kumar"
-                      defaultValue={showOrderDetailsModal.deliveryPersonName || ""}
+                      defaultValue={
+                        showOrderDetailsModal.deliveryPersonName || ""
+                      }
                       className={inputCls}
                     />
                     <button
                       type="button"
-                      onClick={() =>
-                        assignDeliveryPartner(
-                          showOrderDetailsModal.id,
-                          (document.getElementById("assign-rider-input") as HTMLInputElement)
-                            ?.value
-                        )
-                      }
+                      onClick={handleAssignRider}
                       className="shrink-0 rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white shadow-md shadow-orange-500/25 transition hover:bg-orange-600"
                     >
                       Assign
@@ -4364,25 +6247,28 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {showOrderDetailsModal.deliveryLatitude && (
-                  <div className="flex gap-2 pt-1">
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${showOrderDetailsModal.deliveryLatitude},${showOrderDetailsModal.deliveryLongitude}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 rounded-xl bg-blue-500/15 py-2 text-center text-[11px] font-black uppercase tracking-wider text-blue-300 ring-1 ring-blue-500/30 transition hover:bg-blue-500/25"
-                    >
-                      Maps
-                    </a>
-                    <Link
-                      href="/track"
-                      target="_blank"
-                      className="flex-1 rounded-xl bg-orange-500/15 py-2 text-center text-[11px] font-black uppercase tracking-wider text-orange-300 ring-1 ring-orange-500/30 transition hover:bg-orange-500/25"
-                    >
-                      Track Map
-                    </Link>
-                  </div>
-                )}
+                {typeof showOrderDetailsModal.deliveryLatitude === "number" &&
+                  typeof showOrderDetailsModal.deliveryLongitude ===
+                    "number" && (
+                    <div className="flex gap-2 pt-1">
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${showOrderDetailsModal.deliveryLatitude},${showOrderDetailsModal.deliveryLongitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 rounded-xl bg-blue-500/15 py-2 text-center text-[11px] font-black uppercase tracking-wider text-blue-300 ring-1 ring-blue-500/30 transition hover:bg-blue-500/25"
+                      >
+                        Maps
+                      </a>
+                      <Link
+                        href="/track"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 rounded-xl bg-orange-500/15 py-2 text-center text-[11px] font-black uppercase tracking-wider text-orange-300 ring-1 ring-orange-500/30 transition hover:bg-orange-500/25"
+                      >
+                        Track Map
+                      </Link>
+                    </div>
+                  )}
               </div>
             )}
 
@@ -4391,13 +6277,16 @@ export default function AdminPage() {
                 Items
               </p>
               <div className="space-y-1.5 rounded-xl border border-white/5 bg-slate-800/40 p-3">
-                {showOrderDetailsModal.items?.map((item: any, i: number) => (
+                {(showOrderDetailsModal.items || []).map((item, i) => (
                   <div key={i} className="flex justify-between text-xs">
                     <span className="font-semibold text-slate-300">
                       {item.quantity}× {item.name}
                     </span>
                     <span className="font-mono font-black text-white">
-                      ₹{(item.price * item.quantity).toFixed(2)}
+                      ₹
+                      {(
+                        safeNumber(item.price) * (item.quantity || 1)
+                      ).toFixed(2)}
                     </span>
                   </div>
                 ))}
@@ -4406,9 +6295,10 @@ export default function AdminPage() {
                   <span className="font-mono">
                     ₹
                     {Math.round(
-                      showOrderDetailsModal.subtotal ||
-                        showOrderDetailsModal.total ||
-                        0
+                      safeNumber(
+                        showOrderDetailsModal.subtotal ??
+                          showOrderDetailsModal.total
+                      )
                     )}
                   </span>
                 </div>
@@ -4423,7 +6313,7 @@ export default function AdminPage() {
                 <div className="flex justify-between border-t border-white/5 pt-2 text-sm font-black">
                   <span className="text-white">Total</span>
                   <span className="font-mono text-emerald-400">
-                    ₹{Math.round(showOrderDetailsModal.total || 0)}
+                    ₹{Math.round(safeNumber(showOrderDetailsModal.total))}
                   </span>
                 </div>
                 <div className="flex items-center justify-between border-t border-white/5 pt-2">
@@ -4442,12 +6332,14 @@ export default function AdminPage() {
                     </span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${
-                        (showOrderDetailsModal.paymentStatus || "pending") === "paid"
+                        (showOrderDetailsModal.paymentStatus || "pending") ===
+                        "paid"
                           ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
                           : "bg-amber-500/15 text-amber-300 ring-amber-500/30"
                       }`}
                     >
-                      {(showOrderDetailsModal.paymentStatus || "pending") === "paid"
+                      {(showOrderDetailsModal.paymentStatus || "pending") ===
+                      "paid"
                         ? "✓ Paid"
                         : "⏳ Pending"}
                     </span>
@@ -4464,15 +6356,17 @@ export default function AdminPage() {
 
             <div className="flex gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => {
                   printReceipt(showOrderDetailsModal);
                   setShowOrderDetailsModal(null);
                 }}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-800 py-2.5 text-xs font-black text-white transition hover:bg-slate-700"
               >
-                <Printer size={14} /> Print Receipt
+                <Printer size={14} aria-hidden="true" /> Print Receipt
               </button>
               <button
+                type="button"
                 onClick={() => setShowOrderDetailsModal(null)}
                 className="rounded-xl bg-slate-800 px-5 py-2.5 text-xs font-black text-slate-400 transition hover:bg-slate-700 hover:text-white"
               >
@@ -4487,300 +6381,8 @@ export default function AdminPage() {
 }
 
 /* ============================================================= */
-/* Reusable components                                           */
+/* Order Card                                                    */
 /* ============================================================= */
-
-function MetricCard({
-  label,
-  value,
-  sub,
-  icon,
-  gradient,
-  border,
-  iconGradient,
-}: {
-  label: string;
-  value: any;
-  sub?: string;
-  icon: React.ReactNode;
-  gradient: string;
-  border: string;
-  iconGradient: string;
-}) {
-  return (
-    <div
-      className={`relative overflow-hidden rounded-3xl border ${border} bg-gradient-to-br ${gradient} bg-slate-900/60 p-5 backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-lg`}
-    >
-      <span className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-white/5 blur-2xl" />
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-            {label}
-          </p>
-          <p className="mt-1.5 font-mono text-2xl font-black leading-none text-white lg:text-3xl">
-            {value}
-          </p>
-          {sub && (
-            <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-500">
-              {sub}
-            </p>
-          )}
-        </div>
-        <div
-          className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${iconGradient} text-white shadow-lg ring-1 ring-white/10`}
-        >
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MiniMetric({
-  label,
-  value,
-  color,
-  icon,
-}: {
-  label: string;
-  value: number;
-  color: "amber" | "orange" | "blue" | "emerald";
-  icon: React.ReactNode;
-}) {
-  const tones: Record<string, string> = {
-    amber: "bg-amber-500/10 border-amber-500/25 text-amber-400",
-    orange: "bg-orange-500/10 border-orange-500/25 text-orange-400",
-    blue: "bg-blue-500/10 border-blue-500/25 text-blue-400",
-    emerald: "bg-emerald-500/10 border-emerald-500/25 text-emerald-400",
-  };
-  return (
-    <div
-      className={`flex items-center justify-between rounded-2xl border p-3.5 ${tones[color]}`}
-    >
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-widest opacity-90">
-          {label}
-        </p>
-        <p className="mt-1 font-mono text-2xl font-black text-white">{value}</p>
-      </div>
-      <div className="grid h-9 w-9 place-items-center rounded-xl bg-black/20">
-        {icon}
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  icon,
-  color,
-}: {
-  label: string;
-  value: any;
-  icon: React.ReactNode;
-  color: "emerald" | "orange" | "blue";
-}) {
-  const tones: Record<string, string> = {
-    emerald: "from-emerald-500 to-teal-500",
-    orange: "from-orange-500 to-amber-500",
-    blue: "from-blue-500 to-indigo-500",
-  };
-  return (
-    <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
-      <div className="flex items-center gap-2.5">
-        <div
-          className={`grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br ${tones[color]} text-white shadow-md`}
-        >
-          {icon}
-        </div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-          {label}
-        </p>
-      </div>
-      <p className="mt-3 font-mono text-2xl font-black text-white lg:text-3xl">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function QuickLink({
-  href,
-  emoji,
-  label,
-  accent,
-}: {
-  href: string;
-  emoji: string;
-  label: string;
-  accent: "orange" | "blue" | "emerald" | "amber";
-}) {
-  const tones: Record<string, string> = {
-    orange: "hover:border-orange-500/30 hover:bg-orange-500/5",
-    blue: "hover:border-blue-500/30 hover:bg-blue-500/5",
-    emerald: "hover:border-emerald-500/30 hover:bg-emerald-500/5",
-    amber: "hover:border-amber-500/30 hover:bg-amber-500/5",
-  };
-  return (
-    <Link
-      href={href}
-      target="_blank"
-      className={`flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 px-4 py-3 text-xs font-black text-slate-200 transition ${tones[accent]}`}
-    >
-      <span className="flex items-center gap-2.5">
-        <span className="text-base">{emoji}</span>
-        {label}
-      </span>
-      <ExternalLink size={13} className="text-slate-500" />
-    </Link>
-  );
-}
-
-function CategoryPill({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-black transition ${
-        active
-          ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-          : "border border-white/5 bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
-      }`}
-    >
-      <span>{label}</span>
-      <span
-        className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-black ${
-          active ? "bg-white/25 text-white" : "bg-white/5 text-slate-400"
-        }`}
-      >
-        {count}
-      </span>
-    </button>
-  );
-}
-
-function SubPill({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count?: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-black transition ${
-        active
-          ? "border border-amber-500/40 bg-amber-500/15 text-amber-300"
-          : "border border-white/5 bg-slate-800/60 text-slate-400 hover:text-slate-200"
-      }`}
-    >
-      <span>{label}</span>
-      {count !== undefined && (
-        <span className="font-mono text-[10px] opacity-80">({count})</span>
-      )}
-    </button>
-  );
-}
-
-function IconAction({
-  children,
-  onClick,
-  title,
-  variant,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  title: string;
-  variant?: "success" | "danger";
-}) {
-  let cls =
-    "border-white/5 bg-slate-800/60 text-slate-400 hover:bg-slate-700 hover:text-white";
-  if (variant === "success")
-    cls = "border-emerald-500/30 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25";
-  if (variant === "danger")
-    cls = "border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20";
-
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      title={title}
-      className={`grid h-7 w-7 place-items-center rounded-lg border transition active:scale-90 ${cls}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function StatusChip({ status }: { status: string }) {
-  let cls = "bg-amber-500/15 text-amber-300 ring-amber-500/30";
-  let label = status;
-  if (status === "preparing") {
-    cls = "bg-orange-500/15 text-orange-300 ring-orange-500/30";
-    label = "Preparing";
-  } else if (status === "ready") {
-    cls = "bg-blue-500/15 text-blue-300 ring-blue-500/30";
-    label = "Ready";
-  } else if (status === "completed") {
-    cls = "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30";
-    label = "Completed";
-  } else if (status === "cancelled") {
-    cls = "bg-red-500/15 text-red-300 ring-red-500/30";
-    label = "Cancelled";
-  } else if (status === "pending") {
-    label = "New";
-  }
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${cls}`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function RuleTile({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent: "orange" | "emerald" | "slate";
-}) {
-  const tones: Record<string, string> = {
-    orange: "text-orange-400",
-    emerald: "text-emerald-400",
-    slate: "text-slate-200",
-  };
-  return (
-    <div className="rounded-xl border border-white/5 bg-slate-800/40 p-2.5">
-      <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">
-        {label}
-      </p>
-      <p className={`mt-0.5 truncate font-mono text-xs font-black ${tones[accent]}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
 
 function OrderCard({
   order,
@@ -4791,7 +6393,7 @@ function OrderCard({
   onComplete,
   onCancel,
 }: {
-  order: any;
+  order: OrderRecord;
   onPrint: () => void;
   onView: () => void;
   onMarkPaid: () => void;
@@ -4801,6 +6403,7 @@ function OrderCard({
 }) {
   const isDelivery = order.type === "delivery";
   const paid = (order.paymentStatus || "pending") === "paid";
+  const status = getStatusKey(order);
 
   return (
     <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl transition hover:border-white/10 sm:p-5">
@@ -4810,7 +6413,7 @@ function OrderCard({
             <span className="font-mono text-base font-black text-white">
               {order.orderNumber}
             </span>
-            <StatusChip status={order.status} />
+            <StatusChip status={status} />
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ring-1 ${
                 isDelivery
@@ -4820,12 +6423,14 @@ function OrderCard({
             >
               {isDelivery ? (
                 <>
-                  <Truck size={10} /> Delivery
-                  {order.deliveryDistance ? ` ~${order.deliveryDistance}km` : ""}
+                  <Truck size={10} aria-hidden="true" /> Delivery
+                  {order.deliveryDistance
+                    ? ` ~${order.deliveryDistance}km`
+                    : ""}
                 </>
               ) : (
                 <>
-                  <ShoppingBag size={10} /> Pickup
+                  <ShoppingBag size={10} aria-hidden="true" /> Pickup
                 </>
               )}
             </span>
@@ -4868,18 +6473,23 @@ function OrderCard({
               {order.items?.length || 0} items
             </span>
             <span className="font-mono font-black text-emerald-400">
-              ₹{Math.round(order.total || 0)}
+              ₹{Math.round(safeNumber(order.total))}
             </span>
           </div>
 
-          {order.deliveryAddress?.fullAddress && (
-            <p className="flex items-start gap-1.5 text-[11px] font-semibold text-slate-400">
-              <MapPin size={12} className="mt-0.5 shrink-0 text-orange-400" />
-              <span className="line-clamp-1">
-                {order.deliveryAddress.fullAddress}
-              </span>
-            </p>
-          )}
+          {typeof order.deliveryAddress === "object" &&
+            order.deliveryAddress?.fullAddress && (
+              <p className="flex items-start gap-1.5 text-[11px] font-semibold text-slate-400">
+                <MapPin
+                  size={12}
+                  className="mt-0.5 shrink-0 text-orange-400"
+                  aria-hidden="true"
+                />
+                <span className="line-clamp-1">
+                  {order.deliveryAddress.fullAddress}
+                </span>
+              </p>
+            )}
 
           {order.instructions && (
             <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] font-bold italic text-amber-300">
@@ -4890,22 +6500,25 @@ function OrderCard({
 
         <div className="flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-3 lg:border-0 lg:pt-0">
           <button
+            type="button"
             onClick={onPrint}
+            aria-label={`Print order ${order.orderNumber}`}
             className="grid h-9 w-9 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-            title="Print"
           >
             <Printer size={14} />
           </button>
           <button
+            type="button"
             onClick={onView}
+            aria-label={`View order ${order.orderNumber}`}
             className="grid h-9 w-9 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-            title="View"
           >
             <Eye size={14} />
           </button>
 
-          {!paid && order.status !== "completed" && (
+          {!paid && status !== "completed" && (
             <button
+              type="button"
               onClick={onMarkPaid}
               className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-400 transition hover:bg-emerald-500/20"
             >
@@ -4913,65 +6526,35 @@ function OrderCard({
             </button>
           )}
 
-          {order.status === "preparing" && (
+          {status === "preparing" && (
             <button
+              type="button"
               onClick={onMarkReady}
               className="rounded-xl bg-blue-600 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-blue-500/25 transition hover:bg-blue-500"
             >
               Ready
             </button>
           )}
-          {order.status === "ready" && (
+          {status === "ready" && (
             <button
+              type="button"
               onClick={onComplete}
               className="rounded-xl bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition hover:bg-emerald-500"
             >
               Complete
             </button>
           )}
-          {order.status !== "completed" && order.status !== "cancelled" && (
+          {status !== "completed" && status !== "cancelled" && (
             <button
+              type="button"
               onClick={onCancel}
+              aria-label={`Cancel order ${order.orderNumber}`}
               className="grid h-9 w-9 place-items-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-400 transition hover:bg-red-500/20"
-              title="Cancel"
             >
               <Trash2 size={14} />
             </button>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Modal({
-  isOpen,
-  onClose,
-  title,
-  children,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 backdrop-blur-md sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-slate-900/95 shadow-2xl backdrop-blur-2xl sm:rounded-3xl">
-        <div className="flex justify-center pt-3 sm:hidden">
-          <span className="h-1.5 w-12 rounded-full bg-slate-700" />
-        </div>
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/5 p-4">
-          <h3 className="truncate text-sm font-black text-white">{title}</h3>
-          <button
-            onClick={onClose}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
       </div>
     </div>
   );
