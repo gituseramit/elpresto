@@ -4,9 +4,8 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 /**
- * Routes that own their own full-screen chrome (sidebar, header, cart)
- * and must not render the customer Header or Cart. Prefix-matched so
- * nested routes like /admin/orders are covered.
+ * Routes that own their own full-screen chrome and must not render the
+ * customer Header / Cart. Prefix-matched so nested routes are covered.
  */
 const DASHBOARD_PREFIXES = [
   "/admin",
@@ -14,6 +13,7 @@ const DASHBOARD_PREFIXES = [
   "/counter",
   "/delivery",
   "/developer",
+  "/auth",
 ] as const;
 
 function isDashboardRoute(pathname: string | null): boolean {
@@ -29,8 +29,6 @@ export default function RouteAwareChrome({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-
   if (isDashboardRoute(pathname)) return null;
-
   return <>{children}</>;
 }
