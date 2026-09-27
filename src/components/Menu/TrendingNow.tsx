@@ -1,13 +1,37 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
-import { Flame, Star, Plus, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
-import { useCartStore, MenuItem } from "@/store/useCartStore";
-import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import {
+  Flame,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { useCartStore, type MenuItem } from "@/store/useCartStore";
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { subscribeTrendingSettings, TrendingSettings, DEFAULT_TRENDING_SETTINGS } from "@/lib/trendingService";
+import {
+  subscribeTrendingSettings,
+  DEFAULT_TRENDING_SETTINGS,
+  type TrendingSettings,
+} from "@/lib/trendingService";
 import { DUMMY_MENU } from "@/data/menu";
+
+/* ============================================================= */
+/* Types                                                         */
+/* ============================================================= */
 
 interface TrendingItem extends MenuItem {
   orderCount?: number;
@@ -15,113 +39,201 @@ interface TrendingItem extends MenuItem {
   trendingRank?: number;
 }
 
+interface OrderLineItem {
+  id?: string;
+  name?: string;
+  quantity?: number;
+}
+
+interface OrderRecord {
+  status?: string;
+  items?: OrderLineItem[];
+}
+
+interface ProductRating {
+  averageRating: number;
+  totalRatings: number;
+}
+
+const SCROLL_STEP_PX = 320;
+
+/* ============================================================= */
+/* Component                                                     */
+/* ============================================================= */
+
 export default function TrendingNow({
   productRatings = {},
 }: {
-  productRatings?: Record<string, { averageRating: number; totalRatings: number }>;
+  productRatings?: Record<string, ProductRating>;
 }) {
-  const [trendingSettings, setTrendingSettings] = useState<TrendingSettings>(DEFAULT_TRENDING_SETTINGS);
-  const [liveOrders, setLiveOrders] = useState<any[]>([]);
+  const [trendingSettings, setTrendingSettings] = useState<TrendingSettings>(
+    DEFAULT_TRENDING_SETTINGS
+  );
+  const [liveOrders, setLiveOrders] = useState<OrderRecord[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   const addItem = useCartStore((state) => state.addItem);
   const cartItems = useCartStore((state) => state.items);
 
-  // Subscribe to Trending Admin Settings
+  /* Cart quantity lookup — built once per cart change instead of
+   * doing a linear .find() for every card. */
+  const cartQuantities = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const ci of cartItems) map.set(ci.id, ci.quantity);
+    return map;
+  }, [cartItems]);
+
+  /* Subscribe to trending settings */
   useEffect(() => {
     return subscribeTrendingSettings((settings) => {
       setTrendingSettings(settings);
     });
   }, []);
 
-  // Fetch recent orders to compute true popularity
-  useEffect(() => {
-    try {
-      const q = query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100));
-      return onSnapshot(q, (snap) => {
-        const docs = snap.docs.map((d) => d.data());
-        setLiveOrders(docs);
-      });
-    } catch {
-      return () => {};
-    }
-  }, []);
+  /* Only subscribe to recent orders when we actually need them.
+   * In manual mode or when trending is disabled, there is no reason
+   * to keep a Firestore listener alive. */
+  const needsOrderData =
+    trendingSettings.enabled && trendingSettings.mode === "auto";
 
-  // Calculate top trending dishes
+  useEffect(() => {
+    if (!needsOrderData) {
+      setLiveOrders([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, "orders"),
+      orderBy("createdAt", "desc"),
+      limit(100)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const docs = snap.docs.map((d) => d.data() as OrderRecord);
+        setLiveOrders(docs);
+      },
+      (err) => {
+        console.warn("Trending orders listener error:", err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [needsOrderData]);
+
+  /* ---------- Compute trending list ---------- */
   const trendingItems = useMemo<TrendingItem[]>(() => {
     if (!trendingSettings.enabled) return [];
 
-    // If Admin set Manual mode, pick specific manual items
-    if (trendingSettings.mode === "manual" && trendingSettings.manualItemIds.length > 0) {
-      const selected = trendingSettings.manualItemIds
+    const max = Math.max(1, trendingSettings.maxItems || 6);
+
+    /* Manual mode — admin-curated list */
+    if (
+      trendingSettings.mode === "manual" &&
+      trendingSettings.manualItemIds.length > 0
+    ) {
+      return trendingSettings.manualItemIds
         .map((id) => DUMMY_MENU.find((m) => m.id === id))
-        .filter(Boolean) as MenuItem[];
-      return selected.slice(0, trendingSettings.maxItems || 6).map((item, idx) => ({
-        ...item,
-        trendingRank: idx + 1,
-        ratingValue: productRatings[item.id]?.averageRating || 4.9,
-      }));
+        .filter((x): x is MenuItem => Boolean(x))
+        .slice(0, max)
+        .map((item, idx) => ({
+          ...item,
+          trendingRank: idx + 1,
+          ratingValue: productRatings[item.id]?.averageRating ?? 4.9,
+        }));
     }
 
-    // Auto Mode: Count frequency in orders
-    const frequencyMap: Record<string, { count: number; name: string }> = {};
-    liveOrders.forEach((order) => {
-      if (order.status !== "cancelled" && Array.isArray(order.items)) {
-        order.items.forEach((item: any) => {
-          const key = item.id || item.name;
-          if (!frequencyMap[key]) frequencyMap[key] = { count: 0, name: item.name };
-          frequencyMap[key].count += item.quantity || 1;
-        });
+    /* Auto mode — rank by order frequency */
+    const frequency = new Map<string, { count: number; name: string }>();
+    for (const order of liveOrders) {
+      if (order.status === "cancelled") continue;
+      if (!Array.isArray(order.items)) continue;
+      for (const item of order.items) {
+        const key = String(item.id || item.name || "").trim();
+        if (!key) continue;
+        const prev = frequency.get(key);
+        if (prev) {
+          prev.count += item.quantity || 1;
+        } else {
+          frequency.set(key, {
+            count: item.quantity || 1,
+            name: String(item.name || ""),
+          });
+        }
       }
-    });
+    }
 
-    // Match with menu items
-    const rankedFromOrders = Object.entries(frequencyMap)
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([key, data]) => {
-        const found = DUMMY_MENU.find((m) => m.id === key || m.name.toLowerCase() === data.name.toLowerCase());
-        if (!found) return null;
-        return {
-          ...found,
-          orderCount: data.count,
-          ratingValue: productRatings[found.id]?.averageRating || 4.9,
-        };
-      })
-      .filter(Boolean) as TrendingItem[];
+    const ranked: TrendingItem[] = [];
+    const rankedIds = new Set<string>();
 
-    // Fallback: fill with bestsellers if not enough live orders yet
-    const usedIds = new Set(rankedFromOrders.map((i) => i.id));
-    const fallbackList = DUMMY_MENU.filter((m) => !usedIds.has(m.id)).slice(0, 8);
+    const sorted = Array.from(frequency.entries()).sort(
+      (a, b) => b[1].count - a[1].count
+    );
 
-    const merged = [...rankedFromOrders, ...fallbackList].slice(0, trendingSettings.maxItems || 6);
+    for (const [key, data] of sorted) {
+      const found = DUMMY_MENU.find(
+        (m) =>
+          m.id === key ||
+          m.name.toLowerCase() === data.name.toLowerCase()
+      );
+      if (!found || rankedIds.has(found.id)) continue;
+      rankedIds.add(found.id);
+      ranked.push({
+        ...found,
+        orderCount: data.count,
+        ratingValue: productRatings[found.id]?.averageRating ?? 4.9,
+      });
+      if (ranked.length >= max) break;
+    }
 
-    return merged.map((item, idx) => ({
+    /* Fill remaining slots with bestsellers if not enough live orders */
+    if (ranked.length < max) {
+      for (const item of DUMMY_MENU) {
+        if (rankedIds.has(item.id)) continue;
+        rankedIds.add(item.id);
+        ranked.push({
+          ...item,
+          ratingValue: productRatings[item.id]?.averageRating ?? 4.8,
+        });
+        if (ranked.length >= max) break;
+      }
+    }
+
+    return ranked.map((item, idx) => ({
       ...item,
       trendingRank: idx + 1,
-      ratingValue: productRatings[item.id]?.averageRating || 4.8,
     }));
   }, [liveOrders, trendingSettings, productRatings]);
+
+  /* ---------- Carousel scroll ---------- */
+  const scrollContainer = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      left: dir === "left" ? -SCROLL_STEP_PX : SCROLL_STEP_PX,
+      behavior: "smooth",
+    });
+  };
 
   if (!trendingSettings.enabled || trendingItems.length === 0) {
     return null;
   }
 
-  const scrollContainer = (dir: "left" | "right") => {
-    const el = document.getElementById("trending-scroll-container");
-    if (el) {
-      const scrollAmount = dir === "left" ? -320 : 320;
-      el.scrollBy({ left: scrollAmount, behavior: "smooth" });
-    }
-  };
-
   return (
-    <section className="container mx-auto max-w-6xl px-4 pt-8 pb-4">
-      {/* Heading Bar */}
-      <div className="flex items-center justify-between mb-4">
+    <section className="mx-auto max-w-6xl px-4 pb-4 pt-8">
+      {/* Heading bar */}
+      <div className="mb-4 flex items-center justify-between">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 border border-red-200 text-[#D92312] text-xs font-black uppercase tracking-wider mb-1">
-            <Flame size={14} className="fill-[#D92312] animate-bounce" />
+          <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-[#D92312]">
+            <Flame
+              size={14}
+              className="fill-[#D92312]"
+              aria-hidden="true"
+            />
             <span>Community Favorites</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-gray-950 flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-xl font-black text-gray-950 sm:text-2xl">
             Trending Now Across Prayagraj
           </h2>
         </div>
@@ -131,91 +243,116 @@ export default function TrendingNow({
           <button
             type="button"
             onClick={() => scrollContainer("left")}
-            className="p-2 bg-white rounded-xl border border-gray-200 hover:bg-orange-50 text-gray-700 shadow-xs active:scale-95 transition"
-            aria-label="Scroll left"
+            aria-label="Scroll trending items left"
+            className="rounded-xl border border-gray-200 bg-white p-2 text-gray-700 transition-transform hover:-translate-y-0.5 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 active:scale-95"
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={18} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={() => scrollContainer("right")}
-            className="p-2 bg-white rounded-xl border border-gray-200 hover:bg-orange-50 text-gray-700 shadow-xs active:scale-95 transition"
-            aria-label="Scroll right"
+            aria-label="Scroll trending items right"
+            className="rounded-xl border border-gray-200 bg-white p-2 text-gray-700 transition-transform hover:-translate-y-0.5 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 active:scale-95"
           >
-            <ChevronRight size={18} />
+            <ChevronRight size={18} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {/* Horizontally Scrollable Cards Container */}
+      {/* Horizontal scroll container */}
       <div
-        id="trending-scroll-container"
-        className="flex items-stretch gap-4 overflow-x-auto pb-4 pt-1 hide-scrollbar scroll-smooth"
+        ref={scrollRef}
+        className="hide-scrollbar flex snap-x snap-mandatory items-stretch gap-4 overflow-x-auto pb-4 pt-1"
       >
         {trendingItems.map((dish) => {
-          const qtyInCart = cartItems.find((i) => i.id === dish.id)?.quantity || 0;
+          const qtyInCart = cartQuantities.get(dish.id) ?? 0;
+          const ratingText =
+            dish.ratingValue !== undefined
+              ? dish.ratingValue.toFixed(1)
+              : "4.8";
 
           return (
-            <div
+            <article
               key={dish.id}
-              className="flex-shrink-0 w-64 sm:w-72 bg-white rounded-3xl p-4 border border-orange-100/90 shadow-[0_4px_18px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_30px_rgba(217,35,18,0.12)] hover:border-red-200 transition-all flex flex-col justify-between group"
+              className="group flex w-64 shrink-0 snap-start flex-col justify-between rounded-3xl border border-orange-100/90 bg-white p-4 shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:border-red-200 hover:shadow-md sm:w-72"
             >
               <div>
-                {/* Image Container with Badges */}
-                <div className="relative w-full h-36 rounded-2xl overflow-hidden bg-orange-50 mb-3 border border-orange-100/80">
+                {/* Image */}
+                <div className="relative mb-3 h-36 w-full overflow-hidden rounded-2xl border border-orange-100/80 bg-orange-50">
                   {dish.imageUrl ? (
                     <Image
                       src={dish.imageUrl}
                       alt={dish.name}
                       fill
-                      sizes="288px"
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
+                      sizes="(max-width: 640px) 256px, 288px"
+                      loading="lazy"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-3xl">🍕</div>
+                    <div
+                      aria-hidden="true"
+                      className="flex h-full w-full items-center justify-center text-3xl"
+                    >
+                      🍕
+                    </div>
                   )}
 
-                  {/* Rank Pill */}
-                  <div className="absolute top-2.5 left-2.5 bg-gradient-to-r from-[#D92312] to-[#F59E0B] text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-md flex items-center gap-1">
-                    <Flame size={12} className="fill-white" />
+                  {/* Rank pill */}
+                  <div className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-gradient-to-r from-[#D92312] to-[#F59E0B] px-2.5 py-0.5 text-[10px] font-black text-white shadow-md">
+                    <Flame
+                      size={12}
+                      className="fill-white"
+                      aria-hidden="true"
+                    />
                     <span>#{dish.trendingRank} TRENDING</span>
                   </div>
 
-                  {/* Pure Veg Indicator */}
-                  <div className="absolute bottom-2.5 left-2.5 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md text-[9px] font-black text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                  {/* Atta indicator — solid, no blur */}
+                  <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-[9px] font-black text-emerald-800 shadow-sm">
+                    <span
+                      aria-hidden="true"
+                      className="h-1.5 w-1.5 rounded-full bg-emerald-600"
+                    />
                     <span>100% Atta</span>
                   </div>
                 </div>
 
-                {/* Title & Category */}
-                <h3 className="font-black text-sm text-gray-950 group-hover:text-[#D92312] transition line-clamp-1">
-                  {dish.name}
-                </h3>
-                <p className="text-[11px] text-gray-500 line-clamp-2 mt-0.5 font-medium leading-relaxed">
-                  {dish.description || "Fresh stoneground atta base, farm toppings & real cheese."}
+                {/* Title + rating */}
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="line-clamp-1 text-sm font-black text-gray-950 transition-colors group-hover:text-[#D92312]">
+                    {dish.name}
+                  </h3>
+                  <span className="shrink-0 rounded-md border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-900">
+                    ⭐ {ratingText}
+                  </span>
+                </div>
+                <p className="mt-0.5 line-clamp-2 text-[11px] font-medium leading-relaxed text-gray-500">
+                  {dish.description ||
+                    "Fresh stoneground atta base, farm toppings & real cheese."}
                 </p>
               </div>
 
-              {/* Price & Add to Cart Button */}
-              <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between">
-                <div>
-                  <span className="font-black text-base text-[#D92312] font-mono">₹{dish.price}</span>
-                  <span className="text-[10px] text-gray-400 line-through ml-1.5">
-                    ₹{Math.round(dish.price * 1.25)}
-                  </span>
-                </div>
+              {/* Price + add */}
+              <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
+                <span className="font-mono text-base font-black text-[#D92312]">
+                  ₹{dish.price}
+                </span>
 
                 <button
                   type="button"
                   onClick={() => addItem(dish)}
-                  className="px-3.5 py-1.5 bg-white hover:bg-red-50 text-[#D92312] font-black text-xs rounded-xl border-2 border-[#D92312] shadow-xs hover:shadow-md transition active:scale-95 flex items-center gap-1"
+                  aria-label={
+                    qtyInCart > 0
+                      ? `Add another ${dish.name} (currently ${qtyInCart} in cart)`
+                      : `Add ${dish.name} to cart`
+                  }
+                  className="flex items-center gap-1 rounded-xl border-2 border-[#D92312] bg-white px-3.5 py-1.5 text-xs font-black text-[#D92312] shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-red-50 active:scale-95"
                 >
-                  <Plus size={14} />
+                  <Plus size={14} aria-hidden="true" />
                   <span>{qtyInCart > 0 ? `ADD (${qtyInCart})` : "ADD"}</span>
                 </button>
               </div>
-            </div>
+            </article>
           );
         })}
       </div>
