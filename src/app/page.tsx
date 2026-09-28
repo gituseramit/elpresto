@@ -15,6 +15,9 @@ import {
   Trophy,
   Utensils,
 } from "lucide-react";
+import type { ComponentType } from "react";
+
+type StatusIcon = ComponentType<{ size?: number; className?: string }>;
 
 /* ============================================================= */
 /* Metadata                                                      */
@@ -803,50 +806,59 @@ export default function Home() {
       {/* ============================================================ */}
       {/* 6. PILLARS                                                    */}
       {/* ============================================================ */}
-      <section className="px-4 py-16">
-        <div className="mx-auto max-w-5xl">
-          <div
-            className="relative overflow-hidden rounded-[3rem] border border-red-400/30 bg-gradient-to-br from-[#800C04] via-[#A8170D] to-[#D92312] p-8 text-white shadow-[0_25px_60px_-15px_rgba(217,35,18,0.4)] md:p-14"
-            style={pillarsBackgroundStyle}
-          >
-            <div className="relative z-10 mx-auto mb-10 max-w-2xl text-center">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/20 px-4 py-1.5 text-xs font-black uppercase tracking-widest text-amber-200">
-                <ShieldCheck size={12} aria-hidden="true" /> 100% Purity &amp;
-                Taste Promise
-              </span>
-              <h2 className="mt-3 text-3xl font-black tracking-tight md:text-5xl">
-                Why Thousands Trust EL PRESTO
-              </h2>
-              <p className="mt-2 text-sm font-medium text-red-100 md:text-base">
-                Fast food doesn&apos;t have to be junk food. We proved that
-                pizza can be healthy, guilt-free, and super tasty.
-              </p>
-            </div>
+      <section className="px-4 py-16 sm:py-20">
+  <div className="mx-auto max-w-5xl">
+    <div
+      className="relative overflow-hidden rounded-3xl border border-white/10 p-8 shadow-[0_25px_60px_-15px_rgba(26,16,8,0.35)] sm:p-10 md:rounded-[2.5rem] md:p-14"
+      style={pillarsBackgroundStyle}
+    >
+      {/* Header — left-aligned on desktop for editorial pacing */}
+      <div className="mb-10 max-w-2xl text-left sm:mb-12">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/10 px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.15em] text-amber-200">
+          <ShieldCheck size={12} aria-hidden="true" />
+          Our Promise
+        </span>
 
-            <ul className="relative z-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {pillars.map((pillar, idx) => (
-                <li
-                  key={idx}
-                  className="group flex flex-col items-center rounded-3xl border border-white/20 bg-black/20 p-6 text-center shadow-inner transition-transform hover:-translate-y-1 hover:bg-black/30"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="mb-3 text-4xl drop-shadow-md transition-transform group-hover:scale-110 group-hover:-rotate-6"
-                  >
-                    {pillar.emoji}
-                  </span>
-                  <h3 className="mb-1.5 text-base font-black text-white">
-                    {pillar.title}
-                  </h3>
-                  <p className="text-xs font-medium leading-relaxed text-amber-100/90">
-                    {pillar.description}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
+        <h2 className="mt-4 text-3xl font-black leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl">
+          Why 1,200+ students
+          <br className="hidden sm:block" />
+          order from us every week
+        </h2>
+
+        <p className="mt-3 max-w-lg text-sm leading-relaxed text-amber-100/75 sm:text-base">
+          Every pizza is baked on stone-ground whole wheat with real
+          mozzarella and zero palm oil. No shortcuts.
+        </p>
+      </div>
+
+      {/* Pillars */}
+      <ul
+        aria-label="Our quality commitments"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5"
+      >
+        {pillars.map((pillar) => (
+          <li
+            key={pillar.id}
+            className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-5 transition-colors duration-200 hover:border-amber-400/30 hover:bg-white/[0.07] motion-reduce:transition-none"
+          >
+            <span
+              aria-hidden="true"
+              className="mb-4 text-2xl leading-none"
+            >
+              {pillar.emoji}
+            </span>
+            <h3 className="text-[15px] font-black text-white">
+              {pillar.title}
+            </h3>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-amber-100/70">
+              {pillar.description}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</section>
 
       {/* ============================================================ */}
       {/* 7. HOW IT WORKS                                               */}
