@@ -1,21 +1,37 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import { getRoadRoute, RouteResult } from "@/lib/routing";
-import { Navigation, Clock, Compass, ShieldCheck } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type {
+  DivIcon,
+  Map as LeafletMap,
+  Marker as LeafletMarker,
+  Polyline as LeafletPolyline,
+  TileLayer,
+} from "leaflet";
+import { AlertTriangle, Clock, Locate, Navigation } from "lucide-react";
+import { getRoadRoute } from "@/lib/routing";
 
-// Fix Leaflet default marker icons in Next.js
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
-  iconUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-});
+/* ============================================================ */
+/* Types                                                         */
+/* ============================================================ */
+
+interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+interface RouteStats {
+  distanceKm: number;
+  durationMinutes: number;
+}
+
+type RouteState = "idle" | "loading" | "ready" | "error";
 
 interface DeliveryLiveMapProps {
   riderLat?: number;
@@ -27,6 +43,8 @@ interface DeliveryLiveMapProps {
   customerName?: string;
   className?: string;
   showHud?: boolean;
+  /** When omitted, follows `prefers-color-scheme`. */
+  theme?: "light" | "dark";
   onRouteCalculated?: (route: {
     distanceKm: number;
     durationMinutes: number;
@@ -34,71 +52,525 @@ interface DeliveryLiveMapProps {
   }) => void;
 }
 
+/* ============================================================ */
+/* Constants                                                     */
+/* ============================================================ */
+
+const EARTH_RADIUS_M = 6_371_000;
+const MIN_REFETCH_METERS = 50;
+const DEBOUNCE_MS = 500;
+const DEFAULT_CAFE: LatLng = { lat: 25.3409769, lng: 81.9116436 };
+
+/* ============================================================ */
+/* Helpers                                                       */
+/* ============================================================ */
+
+function isValidCoord(lat: unknown, lng: unknown): boolean {
+  if (typeof lat !== "number" || typeof lng !== "number") return false;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
+  /* Reject (0, 0) — always a sentinel for "uninitialized" in this app. */
+  if (lat === 0 && lng === 0) return false;
+  return true;
+}
+
+function haversineMeters(a: LatLng, b: LatLng): number {
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  const clamped = Math.min(1, Math.max(0, h));
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(clamped));
+}
+
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatDistance(km: number): string {
+  if (!Number.isFinite(km) || km <= 0) return "—";
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(km < 10 ? 1 : 0)} km`;
+}
+
+/**
+ * Accepts routes shaped as `[lat, lng][]`, `{ lat, lng }[]`,
+ * `{ latitude, longitude }[]`, or the same wrapped in
+ * `{ coordinates: ... }`. Returns a clean `[lat, lng][]`.
+ */
+function normalizeRouteCoordinates(raw: unknown): [number, number][] {
+  if (!raw) return [];
+
+  let value = raw;
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "coordinates" in (raw as Record<string, unknown>)
+  ) {
+    value = (raw as { coordinates: unknown }).coordinates;
+  }
+
+  if (!Array.isArray(value)) return [];
+
+  const out: [number, number][] = [];
+  for (const entry of value) {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      const [a, b] = entry;
+      if (typeof a === "number" && typeof b === "number") {
+        out.push([a, b]);
+      }
+      continue;
+    }
+    if (entry && typeof entry === "object") {
+      const o = entry as Record<string, unknown>;
+      const lat =
+        typeof o.lat === "number"
+          ? o.lat
+          : typeof o.latitude === "number"
+          ? o.latitude
+          : null;
+      const lng =
+        typeof o.lng === "number"
+          ? o.lng
+          : typeof o.lon === "number"
+          ? o.lon
+          : typeof o.longitude === "number"
+          ? o.longitude
+          : null;
+      if (lat !== null && lng !== null) out.push([lat, lng]);
+    }
+  }
+  return out;
+}
+
+function prefersDark(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+/* ============================================================ */
+/* Tile sources                                                  */
+/* ============================================================ */
+
+const TILES: Record<
+  "light" | "dark",
+  { url: string; attribution: string }
+> = {
+  light: {
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+};
+
+/* ============================================================ */
+/* SVG marker icons                                              */
+/* ============================================================ */
+
+const SVG_CAFE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9v11h18V9"/><path d="M9 22V12h6v10"/></svg>`;
+
+const SVG_HOME = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 9v11h14V9"/><path d="M9 22v-7h6v7"/></svg>`;
+
+const SVG_SCOOTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="17.5" r="3"/><circle cx="18.5" cy="17.5" r="3"/><path d="M15 6h4l1 11.5"/><path d="M5.5 17.5l6-11.5h3.5"/></svg>`;
+
+function createCafeIcon(L: typeof import("leaflet")): DivIcon {
+  return L.divIcon({
+    html: `<div class="elm-pin elm-pin-cafe">${SVG_CAFE}</div>`,
+    className: "elm-pin-root",
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -22],
+  });
+}
+
+function createCustomerIcon(L: typeof import("leaflet")): DivIcon {
+  return L.divIcon({
+    html: `<div class="elm-pin elm-pin-customer">${SVG_HOME}</div>`,
+    className: "elm-pin-root",
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -22],
+  });
+}
+
+function createRiderIcon(L: typeof import("leaflet")): DivIcon {
+  return L.divIcon({
+    html: `
+      <div class="elm-rider">
+        <div class="elm-rider-ring" aria-hidden="true"></div>
+        <div class="elm-pin elm-pin-rider">${SVG_SCOOTER}</div>
+      </div>`,
+    className: "elm-pin-root",
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+    popupAnchor: [0, -26],
+  });
+}
+
+/* ============================================================ */
+/* Component                                                     */
+/* ============================================================ */
+
 export default function DeliveryLiveMap({
   riderLat,
   riderLng,
   customerLat,
   customerLng,
-  cafeLat = 25.3409769,
-  cafeLng = 81.9116436,
+  cafeLat = DEFAULT_CAFE.lat,
+  cafeLng = DEFAULT_CAFE.lng,
   customerName = "Customer",
   className = "",
   showHud = true,
+  theme,
   onRouteCalculated,
 }: DeliveryLiveMapProps) {
+  /* Refs ---------------------------------------------------- */
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const tileLayerRef = useRef<TileLayer | null>(null);
 
-  // Markers & Layers refs
-  const cafeMarkerRef = useRef<L.Marker | null>(null);
-  const customerMarkerRef = useRef<L.Marker | null>(null);
-  const riderMarkerRef = useRef<L.Marker | null>(null);
-  const riderPulseRef = useRef<L.Circle | null>(null);
-  const routePolylineRef = useRef<L.Polyline | null>(null);
-  const routeCasingRef = useRef<L.Polyline | null>(null);
-  const traveledLineRef = useRef<L.Polyline | null>(null);
+  const markersRef = useRef<{
+    cafe: LeafletMarker | null;
+    customer: LeafletMarker | null;
+    rider: LeafletMarker | null;
+  }>({ cafe: null, customer: null, rider: null });
 
-  // Track last fetched origin to prevent thrashing
-  const lastFetchedOriginRef = useRef<{ lat: number; lng: number } | null>(null);
-  const isFetchingRouteRef = useRef(false);
+  const routeLineRef = useRef<LeafletPolyline | null>(null);
+  const requestIdRef = useRef(0);
+  const routeDebounceRef = useRef<number | null>(null);
+  const lastFetchedOriginRef = useRef<LatLng | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const mountedRef = useRef(false);
+  const hasUserPannedRef = useRef(false);
+  const onRouteCalculatedRef = useRef(onRouteCalculated);
+  const fetchRouteRef = useRef<
+    (origin: LatLng, destination: LatLng, fitBounds: boolean) => void
+  >(() => {});
 
-  const [routeStats, setRouteStats] = useState<{
-    distanceKm: number;
-    durationMinutes: number;
-    isCalculating: boolean;
-  }>({
+  /* State -------------------------------------------------- */
+  const [isReady, setIsReady] = useState(false);
+  const [routeState, setRouteState] = useState<RouteState>("idle");
+  const [routeStats, setRouteStats] = useState<RouteStats>({
     distanceKm: 0,
     durationMinutes: 0,
-    isCalculating: true,
   });
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(
+    theme ?? "light"
+  );
 
-  // Helper to draw or update the road polyline on the map
-  const applyRoadPolyline = useCallback(
-    (coords: [number, number][], fitBounds = false) => {
+  /* Keep callback refs in sync (avoids re-running effects) */
+  useEffect(() => {
+    onRouteCalculatedRef.current = onRouteCalculated;
+  }, [onRouteCalculated]);
+
+  /* Memoized coordinates ---------------------------------- */
+  const cafe = useMemo<LatLng | null>(
+    () =>
+      isValidCoord(cafeLat, cafeLng) ? { lat: cafeLat, lng: cafeLng } : null,
+    [cafeLat, cafeLng]
+  );
+  const customer = useMemo<LatLng | null>(
+    () =>
+      isValidCoord(customerLat, customerLng)
+        ? { lat: customerLat, lng: customerLng }
+        : null,
+    [customerLat, customerLng]
+  );
+  const rider = useMemo<LatLng | null>(
+    () =>
+      isValidCoord(riderLat, riderLng)
+        ? { lat: riderLat as number, lng: riderLng as number }
+        : null,
+    [riderLat, riderLng]
+  );
+
+  const canInit = Boolean(cafe && customer);
+
+  /* ------------------------------------------------------- */
+  /* Theme                                                   */
+  /* ------------------------------------------------------- */
+
+  useEffect(() => {
+    if (theme) {
+      setResolvedTheme(theme);
+      return;
+    }
+    setResolvedTheme(prefersDark() ? "dark" : "light");
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setResolvedTheme(mq.matches ? "dark" : "light");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme]);
+
+  /* ------------------------------------------------------- */
+  /* Map initialization (once)                               */
+  /* ------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!canInit || !containerRef.current) return;
+    if (mapRef.current) return;
+
+    let cancelled = false;
+    mountedRef.current = true;
+
+    (async () => {
+      const L = (await import("leaflet")).default;
+      await import("leaflet/dist/leaflet.css");
+      if (cancelled || !containerRef.current) return;
+
+      leafletRef.current = L;
+
+      const initialCafe = cafe ?? DEFAULT_CAFE;
+      const initialCustomer = customer ?? DEFAULT_CAFE;
+
+      const map = L.map(containerRef.current, {
+        center: [
+          (initialCafe.lat + initialCustomer.lat) / 2,
+          (initialCafe.lng + initialCustomer.lng) / 2,
+        ],
+        zoom: 13,
+        zoomControl: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: true,
+        dragging: true,
+        touchZoom: true,
+        keyboard: true,
+        preferCanvas: true,
+      });
+
+      L.control.zoom({ position: "bottomright" }).addTo(map);
+
+      /* Manual pan detection — stops auto-fit from fighting the user */
+      map.on("dragstart", () => {
+        hasUserPannedRef.current = true;
+      });
+
+      mapRef.current = map;
+
+      const bootstrap = () => {
+        if (cancelled || !containerRef.current) return;
+        map.invalidateSize({ animate: false });
+        setIsReady(true);
+      };
+
+      const containerReady =
+        containerRef.current.clientWidth > 0 &&
+        containerRef.current.clientHeight > 0;
+
+      if (containerReady) {
+        bootstrap();
+      } else {
+        /* Wait for a real size — happens in modals, accordions, tabs */
+        const waitForSize = new ResizeObserver(() => {
+          if (
+            cancelled ||
+            !containerRef.current ||
+            containerRef.current.clientWidth === 0 ||
+            containerRef.current.clientHeight === 0
+          ) {
+            return;
+          }
+          waitForSize.disconnect();
+          resizeObserverRef.current = null;
+
+          const liveRO = new ResizeObserver(() => {
+            mapRef.current?.invalidateSize({ animate: false });
+          });
+          liveRO.observe(containerRef.current);
+          resizeObserverRef.current = liveRO;
+
+          bootstrap();
+        });
+        waitForSize.observe(containerRef.current);
+        resizeObserverRef.current = waitForSize;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      mountedRef.current = false;
+
+      if (routeDebounceRef.current != null) {
+        window.clearTimeout(routeDebounceRef.current);
+        routeDebounceRef.current = null;
+      }
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      leafletRef.current = null;
+      tileLayerRef.current = null;
+      markersRef.current = { cafe: null, customer: null, rider: null };
+      routeLineRef.current = null;
+      lastFetchedOriginRef.current = null;
+      hasUserPannedRef.current = false;
+
+      setIsReady(false);
+      setRouteState("idle");
+      setRouteStats({ distanceKm: 0, durationMinutes: 0 });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canInit]);
+
+  /* ------------------------------------------------------- */
+  /* Tile layer swap on theme change                         */
+  /* ------------------------------------------------------- */
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !isReady) return;
+
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+
+    const tile = TILES[resolvedTheme];
+    tileLayerRef.current = L.tileLayer(tile.url, {
+      attribution: tile.attribution,
+      maxZoom: 19,
+      detectRetina: true,
+      crossOrigin: true,
+    }).addTo(map);
+  }, [resolvedTheme, isReady]);
+
+  /* ------------------------------------------------------- */
+  /* Markers — created once, updated on prop change          */
+  /* ------------------------------------------------------- */
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !isReady) return;
+
+    const markers = markersRef.current;
+
+    /* Cafe */
+    if (cafe) {
+      if (!markers.cafe) {
+        markers.cafe = L.marker([cafe.lat, cafe.lng], {
+          icon: createCafeIcon(L),
+          keyboard: true,
+          title: "EL PRESTO — Pickup Hub",
+        })
+          .addTo(map)
+          .bindPopup("<strong>EL PRESTO</strong><br />Pickup Hub");
+      } else {
+        markers.cafe.setLatLng([cafe.lat, cafe.lng]);
+      }
+    } else if (markers.cafe) {
+      map.removeLayer(markers.cafe);
+      markers.cafe = null;
+    }
+
+    /* Customer */
+    if (customer) {
+      const safeName = escapeHtml(customerName);
+      const popupHtml = `<strong>${safeName}</strong><br />Delivery Destination`;
+      if (!markers.customer) {
+        markers.customer = L.marker([customer.lat, customer.lng], {
+          icon: createCustomerIcon(L),
+          keyboard: true,
+          title: `Delivery destination for ${customerName}`,
+        })
+          .addTo(map)
+          .bindPopup(popupHtml);
+      } else {
+        markers.customer.setLatLng([customer.lat, customer.lng]);
+        markers.customer.setPopupContent(popupHtml);
+      }
+    } else if (markers.customer) {
+      map.removeLayer(markers.customer);
+      markers.customer = null;
+    }
+
+    /* Rider */
+    if (rider) {
+      if (!markers.rider) {
+        markers.rider = L.marker([rider.lat, rider.lng], {
+          icon: createRiderIcon(L),
+          zIndexOffset: 1000,
+          keyboard: true,
+          title: "Delivery rider",
+        })
+          .addTo(map)
+          .bindPopup("<strong>Delivery Partner</strong><br />Live location");
+      } else {
+        markers.rider.setLatLng([rider.lat, rider.lng]);
+      }
+    } else if (markers.rider) {
+      map.removeLayer(markers.rider);
+      markers.rider = null;
+    }
+  }, [cafe, customer, rider, customerName, isReady]);
+
+  /* ------------------------------------------------------- */
+  /* Fit bounds when endpoints change                        */
+  /* ------------------------------------------------------- */
+
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !isReady || !cafe || !customer) return;
+    if (hasUserPannedRef.current) return;
+
+    const bounds = L.latLngBounds(
+      [cafe.lat, cafe.lng],
+      [customer.lat, customer.lng]
+    );
+
+    /* Same-location safety: extend by ~1 km so we don't zoom to maxZoom */
+    if (
+      Math.abs(cafe.lat - customer.lat) < 1e-4 &&
+      Math.abs(cafe.lng - customer.lng) < 1e-4
+    ) {
+      const pad = 0.01;
+      bounds.extend([cafe.lat - pad, cafe.lng - pad]);
+      bounds.extend([cafe.lat + pad, cafe.lng + pad]);
+    }
+
+    map.fitBounds(bounds, {
+      padding: [50, 50],
+      maxZoom: 16,
+      animate: false,
+    });
+  }, [cafe, customer, isReady]);
+
+  /* ------------------------------------------------------- */
+  /* Route drawing                                           */
+  /* ------------------------------------------------------- */
+
+  const drawRoute = useCallback(
+    (coords: [number, number][], fitBounds: boolean) => {
+      const L = leafletRef.current;
       const map = mapRef.current;
-      if (!map || coords.length < 2) return;
+      if (!L || !map || coords.length < 2) return;
 
-      // Clean existing route lines
-      if (routeCasingRef.current) {
-        map.removeLayer(routeCasingRef.current);
-        routeCasingRef.current = null;
-      }
-      if (routePolylineRef.current) {
-        map.removeLayer(routePolylineRef.current);
-        routePolylineRef.current = null;
+      if (routeLineRef.current) {
+        map.removeLayer(routeLineRef.current);
+        routeLineRef.current = null;
       }
 
-      // Outer glow / casing for high visibility over all map backgrounds
-      const casing = L.polyline(coords, {
-        color: "#1d4ed8",
-        weight: 8,
-        opacity: 0.35,
-        lineCap: "round",
-        lineJoin: "round",
-      }).addTo(map);
-      routeCasingRef.current = casing;
-
-      // Vibrant inner road line
       const polyline = L.polyline(coords, {
         color: "#2563eb",
         weight: 4.5,
@@ -106,295 +578,341 @@ export default function DeliveryLiveMap({
         lineCap: "round",
         lineJoin: "round",
       }).addTo(map);
-      routePolylineRef.current = polyline;
 
-      if (fitBounds) {
-        map.fitBounds(polyline.getBounds(), { padding: [45, 45], maxZoom: 16 });
+      routeLineRef.current = polyline;
+
+      if (fitBounds && !hasUserPannedRef.current) {
+        const bounds = polyline.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, {
+            padding: [50, 50],
+            maxZoom: 16,
+            animate: false,
+          });
+        }
       }
     },
     []
   );
 
-  // Main route calculation function
-  const updateRoute = useCallback(
-    async (
-      origin: { lat: number; lng: number },
-      destination: { lat: number; lng: number },
-      fitBounds = false
-    ) => {
-      if (isFetchingRouteRef.current) return;
-      isFetchingRouteRef.current = true;
+  /* ------------------------------------------------------- */
+  /* Route fetching — abort-stale via requestId              */
+  /* ------------------------------------------------------- */
 
-      setRouteStats((prev) => ({ ...prev, isCalculating: true }));
+  const fetchRoute = useCallback(
+    async (origin: LatLng, destination: LatLng, fitBounds: boolean) => {
+      const requestId = ++requestIdRef.current;
+      setRouteState("loading");
 
       try {
         const route = await getRoadRoute(origin, destination);
-        lastFetchedOriginRef.current = origin;
+        if (!mountedRef.current) return;
+        if (requestId !== requestIdRef.current) return; /* stale */
 
-        if (route.coordinates.length > 0) {
-          applyRoadPolyline(route.coordinates, fitBounds);
-
-          setRouteStats({
-            distanceKm: route.distanceKm,
-            durationMinutes: route.durationMinutes,
-            isCalculating: false,
-          });
-
-          onRouteCalculated?.({
-            distanceKm: route.distanceKm,
-            durationMinutes: route.durationMinutes,
-            coordinates: route.coordinates,
-          });
+        const coords = normalizeRouteCoordinates(route.coordinates);
+        if (coords.length < 2) {
+          setRouteState("error");
+          return;
         }
+
+        lastFetchedOriginRef.current = origin;
+        drawRoute(coords, fitBounds);
+
+        const km = Number(route.distanceKm) || 0;
+        const minutes = Number(route.durationMinutes) || 0;
+
+        setRouteStats({ distanceKm: km, durationMinutes: minutes });
+        setRouteState("ready");
+
+        onRouteCalculatedRef.current?.({
+          distanceKm: km,
+          durationMinutes: minutes,
+          coordinates: coords,
+        });
       } catch (err) {
-        console.error("Failed to render road route:", err);
-      } finally {
-        isFetchingRouteRef.current = false;
-        setRouteStats((prev) => ({ ...prev, isCalculating: false }));
+        if (!mountedRef.current) return;
+        if (requestId !== requestIdRef.current) return;
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("Route fetch failed:", err);
+        }
+        setRouteState("error");
       }
     },
-    [applyRoadPolyline, onRouteCalculated]
+    [drawRoute]
   );
 
-  // Initialize Map
+  /* Keep a stable ref so the debounce effect doesn't churn */
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    fetchRouteRef.current = fetchRoute;
+  }, [fetchRoute]);
 
-    const initialCenterLat = riderLat
-      ? (riderLat + customerLat) / 2
-      : (cafeLat + customerLat) / 2;
-    const initialCenterLng = riderLng
-      ? (riderLng + customerLng) / 2
-      : (cafeLng + customerLng) / 2;
+  /* ------------------------------------------------------- */
+  /* Debounced recalculation triggered by rider movement     */
+  /* ------------------------------------------------------- */
 
-    const map = L.map(containerRef.current, {
-      center: [initialCenterLat, initialCenterLng],
-      zoom: 14,
-      zoomControl: true,
-    });
+  useEffect(() => {
+    if (!isReady || !cafe || !customer) return;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-    }).addTo(map);
+    const origin = rider ?? cafe;
+    const destination = customer;
 
-    // 1. Restaurant Marker
-    const cafeIcon = L.divIcon({
-      html: `<div style="background:#ea580c;color:white;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 4px 14px rgba(234,88,12,0.45);border:2.5px solid white;">🏪</div>`,
-      className: "cafe-pin",
-      iconSize: [38, 38],
-      iconAnchor: [19, 19],
-    });
-
-    const cafeMarker = L.marker([cafeLat, cafeLng], { icon: cafeIcon })
-      .addTo(map)
-      .bindPopup("<strong>EL PRESTO PIZZA</strong><br/>Pickup Hub (UCER Campus)");
-    cafeMarkerRef.current = cafeMarker;
-
-    // 2. Customer Marker
-    const customerIcon = L.divIcon({
-      html: `<div style="background:#16a34a;color:white;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 4px 14px rgba(22,163,74,0.45);border:2.5px solid white;">🏠</div>`,
-      className: "customer-pin",
-      iconSize: [38, 38],
-      iconAnchor: [19, 19],
-    });
-
-    const customerMarker = L.marker([customerLat, customerLng], {
-      icon: customerIcon,
-    })
-      .addTo(map)
-      .bindPopup(`<strong>${customerName}</strong><br/>Delivery Destination`);
-    customerMarkerRef.current = customerMarker;
-
-    // 3. Delivery Partner Scooter Marker (always visible on map)
-    const effectiveInitRiderLat = riderLat ?? cafeLat;
-    const effectiveInitRiderLng = riderLng ?? cafeLng;
-
-    const riderIcon = L.divIcon({
-      html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
-        <div style="background:linear-gradient(135deg, #2563eb, #1d4ed8);color:white;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 8px 24px rgba(37,99,235,0.6);border:3px solid white;animation:scooterFloat 1.8s ease-in-out infinite;">🛵</div>
-        <div style="background:#0f172a;color:#93c5fd;font-size:10px;font-weight:900;padding:2px 8px;border-radius:9999px;margin-top:3px;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:1px solid rgba(147,197,253,0.35);letter-spacing:0.5px;">RIDER 🛵</div>
-      </div>`,
-      className: "scooter-pin",
-      iconSize: [60, 68],
-      iconAnchor: [30, 22],
-    });
-
-    const riderMarker = L.marker([effectiveInitRiderLat, effectiveInitRiderLng], {
-      icon: riderIcon,
-      zIndexOffset: 1000,
-    })
-      .addTo(map)
-      .bindPopup(
-        riderLat && riderLng
-          ? "<strong>🛵 Delivery Partner</strong><br/>Live GPS Location"
-          : "<strong>🛵 Delivery Partner</strong><br/>Pickup Hub (Ready to start)"
-      );
-    riderMarkerRef.current = riderMarker;
-
-    if (riderLat && riderLng) {
-      const pulse = L.circle([riderLat, riderLng], {
-        radius: 35,
-        color: "#3b82f6",
-        fillColor: "#93c5fd",
-        fillOpacity: 0.25,
-        weight: 1.5,
-      }).addTo(map);
-      riderPulseRef.current = pulse;
+    /* First fetch on mount — fire immediately */
+    if (!lastFetchedOriginRef.current) {
+      fetchRouteRef.current(origin, destination, true);
+      return;
     }
 
-    mapRef.current = map;
+    /* Skip if rider hasn't moved far enough */
+    const moved = haversineMeters(origin, lastFetchedOriginRef.current);
+    if (moved < MIN_REFETCH_METERS) return;
 
-    // Initial Road Route: From Rider if active, else from Cafe
-    const origin = riderLat && riderLng ? { lat: riderLat, lng: riderLng } : { lat: cafeLat, lng: cafeLng };
-    updateRoute(origin, { lat: customerLat, lng: customerLng }, true);
+    if (routeDebounceRef.current != null) {
+      window.clearTimeout(routeDebounceRef.current);
+    }
+
+    routeDebounceRef.current = window.setTimeout(() => {
+      routeDebounceRef.current = null;
+      fetchRouteRef.current(origin, destination, false);
+    }, DEBOUNCE_MS);
 
     return () => {
-      map.remove();
-      mapRef.current = null;
+      if (routeDebounceRef.current != null) {
+        window.clearTimeout(routeDebounceRef.current);
+        routeDebounceRef.current = null;
+      }
     };
-  }, [customerLat, customerLng, cafeLat, cafeLng]);
+  }, [rider, cafe, customer, isReady]);
 
-  // Handle Live Rider GPS movement & Road Route recalculation
-  useEffect(() => {
+  /* ------------------------------------------------------- */
+  /* Recenter                                                */
+  /* ------------------------------------------------------- */
+
+  const handleRecenter = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    if (riderLat && riderLng) {
-      // 1. Create or update Rider Marker
-      if (!riderMarkerRef.current) {
-        const riderIcon = L.divIcon({
-          html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
-            <div style="background:linear-gradient(135deg, #2563eb, #1d4ed8);color:white;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 8px 24px rgba(37,99,235,0.6);border:3px solid white;animation:scooterFloat 1.8s ease-in-out infinite;">🛵</div>
-            <div style="background:#0f172a;color:#93c5fd;font-size:10px;font-weight:900;padding:2px 8px;border-radius:9999px;margin-top:3px;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,0.4);border:1px solid rgba(147,197,253,0.35);letter-spacing:0.5px;">RIDER 🛵</div>
-          </div>`,
-          className: "scooter-pin",
-          iconSize: [60, 68],
-          iconAnchor: [30, 22],
-        });
-
-        const riderMarker = L.marker([riderLat, riderLng], { icon: riderIcon, zIndexOffset: 1000 })
-          .addTo(map)
-          .bindPopup("<strong>🛵 Delivery Partner</strong><br/>Live GPS Location");
-        riderMarkerRef.current = riderMarker;
-
-        // Pulsing accuracy halo
-        const pulse = L.circle([riderLat, riderLng], {
-          radius: 35,
-          color: "#3b82f6",
-          fillColor: "#93c5fd",
-          fillOpacity: 0.25,
-          weight: 1.5,
-        }).addTo(map);
-        riderPulseRef.current = pulse;
-      } else {
-        // Smoothly update positions
-        riderMarkerRef.current.setLatLng([riderLat, riderLng]);
-        riderMarkerRef.current.setPopupContent("<strong>🛵 Delivery Partner</strong><br/>Live GPS Location");
-        if (riderPulseRef.current) {
-          riderPulseRef.current.setLatLng([riderLat, riderLng]);
-        } else {
-          const pulse = L.circle([riderLat, riderLng], {
-            radius: 35,
-            color: "#3b82f6",
-            fillColor: "#93c5fd",
-            fillOpacity: 0.25,
-            weight: 1.5,
-          }).addTo(map);
-          riderPulseRef.current = pulse;
-        }
-      }
-
-      // 2. Draw subtle line from Cafe to Rider showing origin
-      if (cafeLat && cafeLng) {
-        if (!traveledLineRef.current) {
-          traveledLineRef.current = L.polyline(
-            [
-              [cafeLat, cafeLng],
-              [riderLat, riderLng],
-            ],
-            {
-              color: "#94a3b8",
-              weight: 3,
-              dashArray: "4, 6",
-              opacity: 0.7,
-            }
-          ).addTo(map);
-        } else {
-          traveledLineRef.current.setLatLngs([
-            [cafeLat, cafeLng],
-            [riderLat, riderLng],
-          ]);
-        }
-      }
-
-      // 3. Recalculate road route from current rider location to customer
-      // Only trigger recalculation if rider has moved > ~25 meters to avoid spamming
-      const last = lastFetchedOriginRef.current;
-      const movedDist = last
-        ? Math.hypot(riderLat - last.lat, riderLng - last.lng)
-        : 999;
-
-      if (movedDist > 0.00025) {
-        // ~25 meters
-        updateRoute({ lat: riderLat, lng: riderLng }, { lat: customerLat, lng: customerLng }, false);
-      }
-    } else {
-      // If rider is not active, remove rider marker and ensure route is Cafe -> Customer
-      if (riderMarkerRef.current) {
-        map.removeLayer(riderMarkerRef.current);
-        riderMarkerRef.current = null;
-      }
-      if (riderPulseRef.current) {
-        map.removeLayer(riderPulseRef.current);
-        riderPulseRef.current = null;
-      }
-      if (traveledLineRef.current) {
-        map.removeLayer(traveledLineRef.current);
-        traveledLineRef.current = null;
-      }
+    hasUserPannedRef.current = false;
+    const target = rider ?? cafe ?? customer;
+    if (target) {
+      map.setView([target.lat, target.lng], 15, { animate: true });
     }
-  }, [riderLat, riderLng, customerLat, customerLng, cafeLat, cafeLng, updateRoute]);
+  }, [rider, cafe, customer]);
+
+  /* ------------------------------------------------------- */
+  /* Invalid state — no coordinates                          */
+  /* ------------------------------------------------------- */
+
+  if (!canInit) {
+    return (
+      <div
+        role="img"
+        aria-label="Delivery location unavailable"
+        className={`flex h-full min-h-[280px] w-full items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 ${className}`}
+      >
+        <div className="flex flex-col items-center gap-2 px-6 text-center">
+          <AlertTriangle
+            size={22}
+            className="text-amber-500"
+            aria-hidden="true"
+          />
+          <p className="text-sm font-bold text-gray-600">
+            Delivery location unavailable
+          </p>
+          <p className="text-xs text-gray-400">
+            The rider will share their position shortly.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /* ------------------------------------------------------- */
+  /* Render                                                  */
+  /* ------------------------------------------------------- */
+
+  const distanceLabel = formatDistance(routeStats.distanceKm);
+  const statusLabel =
+    routeState === "loading" && routeStats.distanceKm === 0
+      ? "Calculating route…"
+      : routeState === "error"
+      ? "Route unavailable"
+      : routeState === "ready" && routeStats.distanceKm > 0
+      ? `${distanceLabel} via road`
+      : "Ready";
 
   return (
-    <div className={`relative w-full h-full min-h-0 overflow-hidden ${className}`}>
-      {/* Map Canvas */}
-      <div ref={containerRef} className="w-full h-full" />
+    <div
+      className={`relative h-full w-full min-h-0 overflow-hidden rounded-2xl ${className}`}
+    >
+      <div
+        ref={containerRef}
+        role="region"
+        aria-label="Live delivery route map"
+        className="h-full w-full"
+      />
 
-      {/* Floating HUD: Live Road Distance & ETA Chip */}
+      {/* HUD */}
       {showHud && (
-        <div className="absolute top-3 left-3 z-[400] flex flex-wrap items-center gap-2 pointer-events-none">
-          <div className="bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-lg border border-blue-100 flex items-center gap-2.5 text-xs text-gray-800 pointer-events-auto">
-            <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
-            <div className="flex items-center gap-1.5 font-bold">
-              <Navigation size={13} className="text-blue-600" />
-              <span>
-                {routeStats.distanceKm > 0
-                  ? `${routeStats.distanceKm} km via road`
-                  : "Calculating road route..."}
-              </span>
-            </div>
+        <div className="pointer-events-none absolute left-3 top-3 z-[400] flex max-w-[calc(100%-4.5rem)] flex-col gap-2 sm:left-4 sm:top-4">
+          <div className="pointer-events-auto inline-flex flex-wrap items-center gap-2.5 rounded-2xl border border-blue-100 bg-white px-3.5 py-2 shadow-md">
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                routeState === "loading"
+                  ? "bg-amber-500"
+                  : routeState === "error"
+                  ? "bg-red-500"
+                  : "bg-blue-600"
+              }`}
+            />
+            <span className="flex items-center gap-1.5 text-xs font-bold text-gray-800">
+              <Navigation
+                size={13}
+                aria-hidden="true"
+                className="text-blue-600"
+              />
+              {statusLabel}
+            </span>
 
-            {routeStats.durationMinutes > 0 && (
-              <div className="flex items-center gap-1 text-gray-600 font-semibold pl-2 border-l border-gray-200">
-                <Clock size={12} className="text-orange-500" />
-                <span>~{routeStats.durationMinutes} min drive</span>
-              </div>
+            {routeState === "ready" && routeStats.durationMinutes > 0 && (
+              <span className="flex items-center gap-1 border-l border-gray-200 pl-2 text-xs font-semibold text-gray-600">
+                <Clock
+                  size={12}
+                  aria-hidden="true"
+                  className="text-orange-500"
+                />
+                ~{routeStats.durationMinutes} min
+              </span>
             )}
           </div>
         </div>
       )}
 
-      {/* Bottom status badge */}
-      <div className="absolute bottom-3 left-3 z-[400] text-[11px] text-gray-700 bg-white/90 px-3 py-1 rounded-full backdrop-blur-md shadow-sm border border-gray-200/60 flex items-center gap-1.5">
-        <Compass size={12} className="text-blue-600 animate-spin" style={{ animationDuration: "8s" }} />
-        <span>
-          {riderLat
-            ? "Live GPS Navigation Synchronized"
-            : "Showing road route from El Presto"}
-        </span>
-      </div>
+      {/* Recenter button */}
+      <button
+        type="button"
+        onClick={handleRecenter}
+        aria-label="Recenter map on current position"
+        className="absolute right-4 top-4 z-[400] grid h-10 w-10 place-items-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-md transition-transform hover:-translate-y-0.5 hover:bg-orange-50 hover:text-[#D92312] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 active:scale-95"
+      >
+        <Locate size={16} aria-hidden="true" />
+      </button>
+
+      {/* Loading overlay for map bootstrap */}
+      {!isReady && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-white/70"
+        >
+          <div className="flex items-center gap-2 rounded-full border border-gray-100 bg-white px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-gray-700 shadow-md">
+            <span className="h-2 w-2 motion-safe:animate-pulse rounded-full bg-[#D92312]" />
+            Loading map…
+          </div>
+        </div>
+      )}
+
+      {/* Screen reader status announcements */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {routeState === "ready" && routeStats.distanceKm > 0
+          ? `${distanceLabel} remaining, approximately ${routeStats.durationMinutes} minutes.`
+          : routeState === "error"
+          ? "Route unavailable."
+          : ""}
+      </span>
+
+      {/* Scoped styles — keyed so React keeps a single instance */}
+      <style key="elm-delivery-map-styles">{`
+        .elm-pin-root {
+          background: transparent !important;
+          border: none !important;
+        }
+        .elm-pin {
+          width: 40px;
+          height: 40px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 2.5px solid #fff;
+          box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+          color: #fff;
+        }
+        .elm-pin svg {
+          width: 20px;
+          height: 20px;
+          display: block;
+        }
+        .elm-pin-cafe {
+          background: linear-gradient(135deg, #ea580c, #f59e0b);
+        }
+        .elm-pin-customer {
+          background: linear-gradient(135deg, #111827, #1f2937);
+        }
+        .elm-rider {
+          position: relative;
+          width: 48px;
+          height: 48px;
+          pointer-events: none;
+        }
+        .elm-rider-ring {
+          position: absolute;
+          inset: 6px;
+          border-radius: 50%;
+          background: rgba(59, 130, 246, 0.28);
+          animation: elmRiderPulse 2s ease-out infinite;
+          pointer-events: none;
+        }
+        .elm-pin-rider {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #2563eb, #1d4ed8);
+          box-shadow: 0 6px 18px rgba(37, 99, 235, 0.55);
+        }
+        .elm-pin-rider svg {
+          width: 18px;
+          height: 18px;
+        }
+        @keyframes elmRiderPulse {
+          0%   { transform: scale(0.7); opacity: 0.9; }
+          100% { transform: scale(1.55); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .elm-rider-ring {
+            animation: none;
+            opacity: 0;
+          }
+        }
+        .leaflet-container {
+          font-family: inherit;
+          background: #f3f4f6;
+          border-radius: inherit;
+        }
+        .leaflet-container a {
+          color: #d92312;
+        }
+        .leaflet-control-attribution {
+          font-size: 9px !important;
+          background: rgba(255, 255, 255, 0.9) !important;
+          backdrop-filter: none !important;
+        }
+        .leaflet-control-zoom a {
+          background: #fff !important;
+          color: #1f2937 !important;
+          border: 1px solid #e5e7eb !important;
+          width: 32px !important;
+          height: 32px !important;
+          line-height: 30px !important;
+          font-weight: 900 !important;
+        }
+        .leaflet-control-zoom a:hover {
+          background: #fef2f2 !important;
+          color: #d92312 !important;
+        }
+      `}</style>
     </div>
   );
 }
