@@ -715,7 +715,7 @@ export default function DeliveryLiveMap({
             aria-hidden="true"
           />
           <p className="text-sm font-bold text-gray-600">
-            Delivery location unavailable
+            Delivery location unavailable, Sorry
           </p>
           <p className="text-xs text-gray-400">
             The rider will share their position shortly.
@@ -892,7 +892,7 @@ export default function DeliveryLiveMap({
           border-radius: inherit;
         }
         .leaflet-container a {
-          color: #d92312;
+          color: #940c00;
         }
         .leaflet-control-attribution {
           font-size: 9px !important;
