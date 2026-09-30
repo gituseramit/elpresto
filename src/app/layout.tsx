@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
@@ -6,68 +7,69 @@ import Cart from "@/components/Cart";
 import { AuthProvider } from "@/contexts/AuthContext";
 import RouteAwareChrome from "@/components/RouteAwareChrome";
 
-/* ============================================================= */
-/* Fonts                                                         */
-/* ============================================================= */
-
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
   display: "swap",
+  fallback: ["system-ui", "arial"],
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
+  fallback: ["ui-monospace", "monospace"],
 });
-
-/* ============================================================= */
-/* Metadata                                                      */
-/* ============================================================= */
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://elpresto.co.in"),
   title: {
-    template: "%s | EL PRESTO Cafeteria",
-    default: "EL PRESTO Cafeteria | 100% Whole Wheat & Zero Palm Oil",
+    template: "%s | EL PRESTO",
+    default: "EL PRESTO | 100% Whole Wheat Pizza & Zero Palm Oil",
   },
   description:
-    "Experience modern, warm, and appetizing cafeteria ordering at EL PRESTO. We serve 100% whole wheat crusts with zero palm oil for a guilt-free indulgence.",
+    "100% whole wheat pizzas, zero palm oil, real mozzarella. Pickup at UCER or live GPS delivery in Naini, Prayagraj.",
   keywords: [
-    "cafeteria",
-    "whole wheat pizza",
-    "healthy food",
-    "zero palm oil",
-    "UCER hub",
-    "online food ordering",
+    "whole wheat pizza Prayagraj",
+    "healthy pizza Naini",
+    "EL PRESTO",
+    "pizza delivery UCER",
+    "zero palm oil food",
   ],
   applicationName: "EL PRESTO",
-  authors: [{ name: "EL PRESTO Cafeteria" }],
+  authors: [{ name: "EL PRESTO" }],
   creator: "EL PRESTO",
   publisher: "EL PRESTO",
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
-  },
-  alternates: {
-    canonical: "/",
-  },
+  formatDetection: { email: false, address: false, telephone: false },
+  alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     locale: "en_IN",
     url: "https://elpresto.co.in",
-    siteName: "EL PRESTO Cafeteria",
-    title: "EL PRESTO Cafeteria",
+    siteName: "EL PRESTO",
+    title: "EL PRESTO | 100% Whole Wheat & Zero Palm Oil",
     description:
-      "Modern, warm, and appetizing cafeteria ordering at EL PRESTO. Guilt-free, healthy, and delicious.",
+      "Hot, guilt-free pizzas baked on 100% whole wheat atta with real mozzarella and zero palm oil.",
+    images: [
+      {
+        url: "/og-image.jpg",
+        width: 1200,
+        height: 630,
+        alt: "EL PRESTO — whole-wheat pizza with melted mozzarella",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "EL PRESTO Cafeteria",
+    title: "EL PRESTO | 100% Whole Wheat & Zero Palm Oil",
     description:
-      "Modern, warm, and appetizing cafeteria ordering at EL PRESTO.",
+      "Hot, guilt-free pizzas baked on 100% whole wheat atta with real mozzarella.",
+    images: ["/og-image.jpg"],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "EL PRESTO",
+    statusBarStyle: "default",
   },
   icons: {
     icon: [
@@ -95,27 +97,29 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F59E0B" },
-    { media: "(prefers-color-scheme: dark)", color: "#0F172A" },
-  ],
+  themeColor: "#F59E0B",
   colorScheme: "light",
 };
 
-/* ============================================================= */
-/* Layout                                                        */
-/* ============================================================= */
-
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className="scroll-smooth motion-reduce:scroll-auto"
+      suppressHydrationWarning
+    >
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-dvh bg-amber-50 font-sans antialiased`}
       >
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-gray-900 focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-white"
+        >
+          Skip to content
+        </a>
+
         <AuthProvider>
           <div className="flex min-h-dvh flex-col">
             <RouteAwareChrome>

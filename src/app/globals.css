@@ -1,89 +1,138 @@
 @import "tailwindcss";
 
+/* ============================================================= */
+/* Design tokens                                                 */
+/* ============================================================= */
+
 :root {
-  /* Appetite-inducing Crimson & Rich Saffron Gold + Deep Truffle Slate */
-  --background: #FFFDF9; /* Warm gourmet pearl */
-  --foreground: #1A1615; /* Rich roasted espresso text */
-  --primary: #D92312; /* Sizzling Artisan Crimson (triggers immediate appetite & hunger) */
-  --primary-hover: #B8190B;
-  --primary-glow: rgba(217, 35, 18, 0.28);
-  --secondary: #D97706; /* Golden Amber Honey / Melted Cheddar */
-  --secondary-hover: #B45309;
-  --accent-gold: #F59E0B; /* Premium Golden Crust */
-  --trust-green: #059669; /* Farm-fresh Organic Green (trust, pure veg, certified) */
-  --surface: #FFFFFF;
-  --surface-warm: #FFF8EE;
-  --surface-card: #FFFFFF;
-  --border-warm: #FDE8D3;
+  --background: #fffdf9;
+  --foreground: #1a1615;
+
+  --primary: #d92312;
+  --primary-hover: #b8190b;
+
+  --secondary: #d97706;
+  --secondary-hover: #b45309;
+  --accent-gold: #f59e0b;
+
+  --trust-green: #047857;        /* darkened for AA contrast */
+  --trust-green-soft: #059669;   /* icons / borders only */
+
+  --surface: #ffffff;
+  --surface-warm: #fff8ee;
+  --border-warm: #fde8d3;
 }
 
 @theme inline {
+  /* colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-hover: var(--secondary-hover);
+  --color-accent-gold: var(--accent-gold);
+  --color-trust-green: var(--trust-green);
+  --color-trust-green-soft: var(--trust-green-soft);
   --color-surface: var(--surface);
-  
+  --color-surface-warm: var(--surface-warm);
+  --color-border-warm: var(--border-warm);
+
+  /* fonts */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* radii */
+  --radius-card: 1.5rem;
+  --radius-panel: 2rem;
+  --radius-hero: 2.5rem;
+
+  /* shadows */
+  --shadow-sizzle: 0 10px 30px -5px rgba(217, 35, 18, 0.28),
+                   0 4px 12px -2px rgba(217, 35, 18, 0.15);
+  --shadow-gold:   0 10px 25px -4px rgba(245, 158, 11, 0.30),
+                   0 4px 10px -2px rgba(245, 158, 11, 0.15);
+  --shadow-trust:  0 4px 20px -2px rgba(5, 150, 105, 0.12);
 }
+
+/* ============================================================= */
+/* Base                                                          */
+/* ============================================================= */
 
 body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  background-image: 
+  overflow-x: clip;                 /* was: hidden — breaks sticky */
+}
+
+/* Fixed background layer — off the scroll thread, no jank */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
     radial-gradient(at 10% 10%, rgba(254, 243, 199, 0.45) 0px, transparent 50%),
-    radial-gradient(at 90% 0%, rgba(254, 226, 226, 0.4) 0px, transparent 50%),
-    radial-gradient(at 50% 100%, rgba(254, 243, 199, 0.3) 0px, transparent 50%);
-  background-attachment: fixed;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+    radial-gradient(at 90% 0%, rgba(254, 226, 226, 0.40) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(254, 243, 199, 0.30) 0px, transparent 50%);
 }
 
-/* Sizzling Appetite Glow */
-.sizzle-shadow {
-  box-shadow: 0 10px 30px -5px rgba(217, 35, 18, 0.28), 0 4px 12px -2px rgba(217, 35, 18, 0.15);
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
-.gold-shadow {
-  box-shadow: 0 10px 25px -4px rgba(245, 158, 11, 0.3), 0 4px 10px -2px rgba(245, 158, 11, 0.15);
+::selection {
+  background: var(--primary);
+  color: #fff;
 }
 
-.trust-badge-shadow {
-  box-shadow: 0 4px 20px -2px rgba(5, 150, 105, 0.12);
+/* ============================================================= */
+/* Utilities                                                     */
+/* ============================================================= */
+
+@layer utilities {
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .deal-shimmer {
+    background: linear-gradient(90deg, #d92312 0%, #b8190b 50%, #d92312 100%);
+    background-size: 200% auto;
+    animation: goldShimmer 3s linear infinite;
+  }
+
+  .scooter-pin {
+    animation: scooterFloat 1.8s ease-in-out infinite;
+  }
 }
 
-/* Shimmer animation for deal tags */
+/* ============================================================= */
+/* Keyframes                                                     */
+/* ============================================================= */
+
 @keyframes goldShimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-.deal-shimmer {
-  background: linear-gradient(90deg, #D92312 0%, #F59E0B 50%, #D92312 100%);
-  background-size: 200% auto;
-  animation: goldShimmer 3s linear infinite;
-}
-
-/* Custom scrollbar for menu */
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 
 @keyframes scooterFloat {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-4px); }
-  100% { transform: translateY(0px); }
+  0%   { transform: translateY(0); }
+  50%  { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
 }
 
-.scooter-pin {
-  animation: scooterFloat 1.8s ease-in-out infinite;
-}
+/* ============================================================= */
+/* Reduced motion                                                */
+/* ============================================================= */
 
+@media (prefers-reduced-motion: reduce) {
+  .deal-shimmer,
+  .scooter-pin {
+    animation: none;
+  }
+}
