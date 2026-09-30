@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from "next";
-import type { ComponentType, CSSProperties } from "react";
+import type { ComponentType } from "react";
 import {
   ArrowRight,
   Flame,
@@ -26,7 +26,9 @@ import {
 /* ============================================================= */
 
 export const metadata: Metadata = {
-  title: "EL PRESTO | 100% Whole Wheat Pizza & Zero Palm Oil",
+  title: {
+    absolute: "EL PRESTO | 100% Whole Wheat Pizza & Zero Palm Oil",
+  },
   description:
     "Order hot, guilt-free pizzas, burgers, and cold coffee from EL PRESTO. 100% whole wheat atta, zero palm oil, real mozzarella. Pickup at UCER or live GPS delivery in Naini, Prayagraj.",
   keywords: [
@@ -36,12 +38,12 @@ export const metadata: Metadata = {
     "pizza delivery UCER",
     "zero palm oil food",
   ],
-  alternates: { canonical: "https://elpresto.co.in/" },
+  alternates: { canonical: "/" },
   openGraph: {
     title: "EL PRESTO | 100% Whole Wheat & Zero Palm Oil",
     description:
       "Hot, guilt-free pizzas baked on 100% whole wheat atta with real mozzarella and zero palm oil.",
-    url: "https://elpresto.co.in/",
+    url: "/",
     siteName: "EL PRESTO",
     type: "website",
   },
@@ -281,19 +283,12 @@ const storyMilestones: Milestone[] = [
 /* Backgrounds                                                   */
 /* ============================================================= */
 
-const heroBackgroundStyle: CSSProperties = {
+const heroBackgroundStyle = {
   background:
     "radial-gradient(500px circle at 25% 0%, rgba(217,35,18,0.10), transparent 60%)," +
     "radial-gradient(450px circle at 90% 33%, rgba(245,158,11,0.14), transparent 60%)," +
     "radial-gradient(420px circle at 0% 100%, rgba(217,35,18,0.08), transparent 60%)",
-};
-
-const pillarsBackgroundStyle: CSSProperties = {
-  backgroundColor: "#1a1008",
-  backgroundImage:
-    "radial-gradient(600px circle at 100% 0%, rgba(245,158,11,0.18), transparent 55%)," +
-    "radial-gradient(600px circle at 0% 100%, rgba(217,35,18,0.15), transparent 55%)",
-};
+} as const;
 
 /* ============================================================= */
 /* Page                                                          */
@@ -511,7 +506,6 @@ export default function Home() {
                 />
               </div>
 
-              {/* Stat badge */}
               <div className="absolute -bottom-5 -right-3 hidden items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4 shadow-xl sm:flex lg:-right-6">
                 <span
                   aria-hidden="true"
@@ -564,7 +558,6 @@ export default function Home() {
                 </p>
               </div>
 
-              {/* Milestones */}
               <ol className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {storyMilestones.map((m) => (
                   <li
@@ -584,7 +577,6 @@ export default function Home() {
                 ))}
               </ol>
 
-              {/* Signature CTA */}
               <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <Link
                   href="/menu"
@@ -874,56 +866,51 @@ export default function Home() {
       {/* ============================================================ */}
       {/* 7. PILLARS                                                    */}
       {/* ============================================================ */}
-      <section className="px-4 py-16 sm:py-20">
+      <section className="bg-[#1a1008] px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
-          <div
-            className="relative overflow-hidden rounded-3xl p-8 shadow-[0_25px_60px_-15px_rgba(26,16,8,0.35)] sm:p-10 md:rounded-[2.5rem] md:p-14"
-            style={pillarsBackgroundStyle}
-          >
-            <div className="mb-10 max-w-2xl sm:mb-12">
-              <p className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/10 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-amber-200">
-                <ShieldCheck size={12} aria-hidden="true" /> Our Promise
-              </p>
+          <div className="mb-12 max-w-2xl">
+            <p className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-amber-300">
+              <ShieldCheck size={12} aria-hidden="true" /> Our Promise
+            </p>
 
-              <h2 className="mt-4 text-3xl font-black leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl">
-                Why 1,200+ students
-                <br className="hidden sm:block" /> order from us every week
-              </h2>
+            <h2 className="mt-4 text-3xl font-black leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl">
+              Why 1,200+ students
+              <br className="hidden sm:block" /> order from us every week
+            </h2>
 
-              <p className="mt-3 max-w-lg text-sm leading-relaxed text-amber-100/75 sm:text-base">
-                Every pizza is baked on stone-ground whole wheat with real
-                mozzarella and zero palm oil. No shortcuts.
-              </p>
-            </div>
-
-            <ul
-              aria-label="Our quality commitments"
-              className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5"
-            >
-              {pillars.map((pillar) => {
-                const Icon = pillar.Icon;
-                return (
-                  <li
-                    key={pillar.id}
-                    className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-5 transition-colors duration-200 hover:border-amber-400/30 hover:bg-white/[0.07] motion-reduce:transition-none"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/15 text-amber-200"
-                    >
-                      <Icon size={18} />
-                    </span>
-                    <h3 className="text-[15px] font-black text-white">
-                      {pillar.title}
-                    </h3>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-amber-100/70">
-                      {pillar.description}
-                    </p>
-                  </li>
-                );
-              })}
-            </ul>
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-amber-100/80 sm:text-base">
+              Every pizza is baked on stone-ground whole wheat with real
+              mozzarella and zero palm oil. No shortcuts.
+            </p>
           </div>
+
+          <ul
+            aria-label="Our quality commitments"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5"
+          >
+            {pillars.map((pillar) => {
+              const Icon = pillar.Icon;
+              return (
+                <li
+                  key={pillar.id}
+                  className="group flex flex-col rounded-2xl border border-amber-400/15 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 transition-colors duration-200 hover:border-amber-400/40 hover:from-white/[0.09] hover:to-white/[0.04] motion-reduce:transition-none"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500/25 to-orange-500/15 text-amber-300 ring-1 ring-inset ring-amber-400/20 motion-safe:transition-transform motion-safe:group-hover:scale-105"
+                  >
+                    <Icon size={20} />
+                  </span>
+                  <h3 className="text-[15px] font-black text-white">
+                    {pillar.title}
+                  </h3>
+                  <p className="mt-2 text-[13px] leading-relaxed text-amber-100/70">
+                    {pillar.description}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </section>
 
@@ -982,7 +969,7 @@ export default function Home() {
       {/* ============================================================ */}
       {/* 9. FOOTER                                                     */}
       {/* ============================================================ */}
-      <footer className="mt-auto border-t border-gray-800 bg-gray-950 px-4 pb-8 pt-14 text-white">
+      <footer className="border-t border-gray-800 bg-gray-950 px-4 pb-8 pt-14 text-white">
         <div className="mx-auto max-w-6xl">
           <div className="mb-12 grid grid-cols-1 gap-8 md:grid-cols-4">
             {/* Brand */}
