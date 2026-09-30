@@ -764,10 +764,29 @@ export default function Home() {
       </section>
 
       {/* ============================ 7. PILLARS ============================ */}
-      <section className="bg-[#1a1008] px-4 py-16 sm:py-20">
+      {/* Plain <div role="region"> + inline styles on purpose: a global `section {}`
+          rule or a class conflict can no longer turn this dark band transparent. */}
+      <div
+        role="region"
+        aria-labelledby="promise-heading"
+        className="relative isolate px-4 py-16 sm:py-20"
+        style={{
+          backgroundColor: "#1a1008",
+          backgroundImage:
+            "radial-gradient(600px circle at 85% 0%, rgba(245,158,11,0.14), transparent 60%)," +
+            "radial-gradient(500px circle at 0% 100%, rgba(217,35,18,0.16), transparent 60%)",
+          color: "#ffffff",
+          borderRadius: 0,
+          boxShadow: "none",
+          backdropFilter: "none",
+        }}
+      >
         <div className="mx-auto max-w-6xl">
           <div className="mb-12 max-w-2xl">
-            <h2 className="text-balance text-3xl font-black leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl">
+            <h2
+              id="promise-heading"
+              className="text-balance text-3xl font-black leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl"
+            >
               Why Naini keeps ordering, week after week
             </h2>
             <p className="mt-3 max-w-lg text-sm leading-relaxed text-amber-100/80 sm:text-base">
@@ -791,7 +810,7 @@ export default function Home() {
             ))}
           </ul>
         </div>
-      </section>
+      </div>
 
       {/* =========================== 8. HOW IT WORKS ========================= */}
       <section className="border-t border-gray-100 bg-gray-50/70 px-4 py-16 sm:py-20">
