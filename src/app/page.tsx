@@ -688,7 +688,7 @@ export default function Home() {
             </Link>
           </div>
 
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+          <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 lg:grid-cols-4">
             {categories.map((cat) => (
               <li key={cat.slug}>
                 <Link
