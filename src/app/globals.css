@@ -281,6 +281,131 @@ html[data-ep-intro="skip"] .ep-presto-intro {
   }
 }
 
+/* Small, purposeful motion for storefront and customer sign-in actions. */
+.ep-home-cta {
+  position: relative;
+  transition: transform 180ms ease, box-shadow 220ms ease, filter 220ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.ep-home-cta--red:hover {
+  box-shadow: 0 14px 30px -14px rgba(143, 33, 25, 0.66);
+  filter: brightness(1.08);
+}
+
+.ep-home-cta--dark:hover {
+  box-shadow: 0 14px 28px -15px rgba(36, 25, 21, 0.75);
+}
+
+.ep-home-cta--light:hover {
+  box-shadow: 0 12px 26px -15px rgba(158, 64, 33, 0.38);
+}
+
+.ep-ride-button {
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.ep-ride-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+}
+
+.ep-ride-track {
+  position: absolute;
+  right: 0.8rem;
+  bottom: 2px;
+  left: 0.8rem;
+  height: 12px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.52;
+}
+
+.ep-ride-track::before {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  left: 0;
+  border-bottom: 1px dashed currentColor;
+  content: "";
+  opacity: 0.35;
+}
+
+.ep-ride-track svg {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  color: currentColor;
+  transform: translateY(-50%);
+  animation: ep-ride-across 6.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.ep-ride-button:hover .ep-ride-track svg,
+.ep-ride-button:focus-visible .ep-ride-track svg {
+  animation-duration: 2.4s;
+}
+
+@keyframes ep-ride-across {
+  0%, 4% { left: 0; opacity: 0.72; }
+  46% { left: 0; opacity: 0.72; }
+  50% { opacity: 1; }
+  82% { left: calc(100% - 14px); opacity: 1; }
+  89%, 100% { left: calc(100% - 14px); opacity: 0; }
+}
+
+.ep-auth-motion-button {
+  transition: transform 180ms ease, box-shadow 220ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.ep-auth-motion-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -16px rgba(125, 62, 22, 0.55);
+}
+
+.ep-auth-motion-button:active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+.ep-auth-arrow,
+.ep-auth-google-mark {
+  transition: transform 180ms ease;
+}
+
+.ep-auth-motion-button:hover:not(:disabled) .ep-auth-arrow {
+  transform: translateX(3px);
+}
+
+.ep-auth-google-button:hover:not(:disabled) .ep-auth-google-mark {
+  transform: scale(1.08) rotate(-4deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ep-home-cta,
+  .ep-auth-motion-button,
+  .ep-auth-arrow,
+  .ep-auth-google-mark {
+    transition: none;
+  }
+
+  .ep-home-cta,
+  .ep-home-cta:hover,
+  .ep-auth-motion-button:hover:not(:disabled),
+  .ep-auth-motion-button:active:not(:disabled),
+  .ep-auth-motion-button:hover:not(:disabled) .ep-auth-arrow,
+  .ep-auth-google-button:hover:not(:disabled) .ep-auth-google-mark {
+    transform: none;
+    filter: none;
+  }
+
+  .ep-ride-track {
+    display: none;
+  }
+}
+
 /* ============================================================= */
 /* Shared portal theme palettes                                  */
 /* ============================================================= */

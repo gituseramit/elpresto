@@ -21,6 +21,7 @@ import {
   User,
   Phone,
   ArrowLeft,
+  ArrowRight,
   AlertCircle,
   CheckCircle2,
   Loader2,
@@ -632,7 +633,7 @@ function AuthForm() {
                     type="submit"
                     disabled={isSubmitting}
                     aria-busy={isSubmitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+                    className="ep-auth-motion-button flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
                   >
                     {isSubmitting && (
                       <Loader2
@@ -642,6 +643,7 @@ function AuthForm() {
                       />
                     )}
                     {isSubmitting ? "Sending…" : "Send Reset Link"}
+                    {!isSubmitting && <ArrowRight size={16} aria-hidden="true" className="ep-auth-arrow" />}
                   </button>
                   <button
                     type="button"
@@ -687,10 +689,10 @@ function AuthForm() {
                   onClick={handleGoogle}
                   disabled={isSubmitting}
                   aria-busy={isSubmitting}
-                  className="mb-5 flex w-full items-center justify-center gap-3 rounded-xl border-2 border-gray-200 bg-white/70 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-orange-300 hover:bg-orange-50/50 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                  className="ep-auth-motion-button ep-auth-google-button mb-5 flex w-full items-center justify-center gap-3 rounded-xl border-2 border-gray-200 bg-white/70 py-3 text-sm font-semibold text-gray-700 hover:border-orange-300 hover:bg-orange-50/50 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                 >
                   <svg
-                    className="h-5 w-5"
+                    className="ep-auth-google-mark h-5 w-5"
                     viewBox="0 0 24 24"
                     aria-hidden="true"
                   >
@@ -781,7 +783,7 @@ function AuthForm() {
                       type="submit"
                       disabled={isSubmitting}
                       aria-busy={isSubmitting}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+                      className="ep-auth-motion-button flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
                     >
                       {isSubmitting && (
                         <Loader2
@@ -791,6 +793,7 @@ function AuthForm() {
                         />
                       )}
                       {isSubmitting ? "Signing in…" : "Login to Account"}
+                      {!isSubmitting && <ArrowRight size={16} aria-hidden="true" className="ep-auth-arrow" />}
                     </button>
 
                     <p className="text-center text-sm text-gray-500">
@@ -924,7 +927,7 @@ function AuthForm() {
                       type="submit"
                       disabled={isSubmitting}
                       aria-busy={isSubmitting}
-                      className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white transition-colors hover:bg-orange-600 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+                      className="ep-auth-motion-button mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
                     >
                       {isSubmitting && (
                         <Loader2
@@ -936,6 +939,7 @@ function AuthForm() {
                       {isSubmitting
                         ? "Creating account…"
                         : "Create My Account"}
+                      {!isSubmitting && <ArrowRight size={16} aria-hidden="true" className="ep-auth-arrow" />}
                     </button>
 
                     <p className="text-center text-[11px] text-gray-400">

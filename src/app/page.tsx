@@ -255,8 +255,8 @@ const focusRing =
   "focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-300";
 const lift =
   "transition-transform hover:-translate-y-0.5 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0";
-const btnRed = `inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#8F2119] to-[#651C18] font-bold text-white shadow-md shadow-[#651C18]/20 ${lift} ${focusRing}`;
-const btnDark = `inline-flex items-center justify-center gap-2 rounded-xl bg-[#241915] font-bold text-white shadow-md hover:bg-[#3A2821] ${lift} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gray-400`;
+const btnRed = `inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#8F2119] to-[#651C18] font-bold text-white shadow-md shadow-[#651C18]/20 ep-home-cta ep-home-cta--red ${lift} ${focusRing}`;
+const btnDark = `inline-flex items-center justify-center gap-2 rounded-xl bg-[#241915] font-bold text-white shadow-md hover:bg-[#3A2821] ep-home-cta ep-home-cta--dark ${lift} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gray-400`;
 const arrow =
   "transition-transform group-hover:translate-x-1 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0";
 const footLink =
@@ -371,10 +371,15 @@ export default function Home() {
                 </Link>
                 <Link
                   href="/menu?mode=delivery"
-                  className="group flex w-full items-center justify-center gap-2.5 rounded-xl border-2 border-orange-200 bg-white px-6 py-4 text-base font-bold text-gray-900 shadow-sm transition-colors hover:border-orange-300 hover:bg-orange-50/60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 sm:w-auto"
+                  className="group ep-home-cta ep-home-cta--light ep-ride-button flex w-full items-center justify-center gap-2.5 rounded-xl border-2 border-orange-200 bg-white px-6 py-4 text-base font-bold text-gray-900 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 sm:w-auto"
                 >
-                  <Truck size={20} aria-hidden="true" className="text-[#D92312]" />
-                  Get it delivered
+                  <span className="ep-ride-content">
+                    <Truck size={20} aria-hidden="true" className="text-[#D92312]" />
+                    Get it delivered
+                  </span>
+                  <span className="ep-ride-track" aria-hidden="true">
+                    <Truck size={14} strokeWidth={2.5} />
+                  </span>
                 </Link>
               </div>
 
@@ -566,9 +571,14 @@ export default function Home() {
                 <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-800">
                   <MapPin size={14} aria-hidden="true" /> 7 km delivery radius
                 </span>
-                <Link href="/menu?mode=delivery" className={`group/btn px-6 py-3 text-sm ${btnRed}`}>
-                  Order delivery
-                  <ChevronRight size={15} aria-hidden="true" className="transition-transform group-hover/btn:translate-x-1 motion-reduce:transition-none" />
+                <Link href="/menu?mode=delivery" className={`group/btn ep-ride-button px-6 py-3 text-sm ${btnRed}`}>
+                  <span className="ep-ride-content">
+                    Order delivery
+                    <ChevronRight size={15} aria-hidden="true" className="transition-transform group-hover/btn:translate-x-1 motion-reduce:transition-none" />
+                  </span>
+                  <span className="ep-ride-track" aria-hidden="true">
+                    <Truck size={14} strokeWidth={2.5} />
+                  </span>
                 </Link>
               </div>
             </div>
