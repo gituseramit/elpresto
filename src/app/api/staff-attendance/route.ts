@@ -26,6 +26,17 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) 
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function getISTDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 export async function POST(req: NextRequest) {
   const staff = await getStaff(req);
   if (!staff) return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
@@ -51,7 +62,7 @@ export async function POST(req: NextRequest) {
     const record = {
       staffId: String(staff.staffId), staffName: String(staff.profile.name || staff.name || staff.staffId), role,
       branchId, branchName: String(branch.name || branchId), action, timestamp: serverTimestamp(),
-      createdAtISO: new Date().toISOString(), attendanceDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }), latitude, longitude, accuracy: Number.isFinite(accuracy) ? accuracy : null,
+      createdAtISO: new Date().toISOString(), attendanceDate: getISTDateKey(), latitude, longitude, accuracy: Number.isFinite(accuracy) ? accuracy : null,
       distanceMeters: Math.round(distance), radiusMeters: radius, status,
     };
     await addDoc(collection(db, "staffAttendance"), record);
@@ -75,7 +86,7 @@ export async function GET(req: NextRequest) {
   const branchId = isGlobal ? requestedBranch : ownBranch;
   if (!isGlobal && ownBranch === "ALL") return NextResponse.json({ error: "Your staff account is missing a branch assignment." }, { status: 403 });
   if (!isGlobal && requestedBranch && requestedBranch !== ownBranch) return NextResponse.json({ error: "You can only view attendance for your assigned branch." }, { status: 403 });
-  const date = req.nextUrl.searchParams.get("date") || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const date = req.nextUrl.searchParams.get("date") || getISTDateKey();
   try {
     const result = await getDocs(query(collection(db, "staffAttendance"), where("attendanceDate", "==", date), limit(1000)));
     const records = result.docs.map((item) => ({ id: item.id, ...item.data() })).filter((row: any) => (!branchId || row.branchId === branchId)).sort((a: any, b: any) => String(b.createdAtISO).localeCompare(String(a.createdAtISO)));

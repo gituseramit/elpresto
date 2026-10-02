@@ -325,15 +325,30 @@ export default function DeveloperDashboardPage() {
     [branches]
   );
 
-  const activeRidersCount = useMemo(
-    () => deliveryPartners.filter(isRiderActive).length,
-    [deliveryPartners]
-  );
-
   const activeBranchObj = useMemo(
     () =>
       selectedBranchId === "ALL" ? undefined : branchMap.get(selectedBranchId),
     [branchMap, selectedBranchId]
+  );
+
+  const scopedActiveOutletsCount = useMemo(
+    () =>
+      selectedBranchId === "ALL"
+        ? activeOutletsCount
+        : Number(Boolean(activeBranchObj && isBranchActive(activeBranchObj))),
+    [activeBranchObj, activeOutletsCount, selectedBranchId]
+  );
+
+  const scopedActiveRidersCount = useMemo(
+    () =>
+      deliveryPartners.filter(
+        (partner) =>
+          partner.active &&
+          isRiderActive(partner) &&
+          (selectedBranchId === "ALL" ||
+            partner.assignedBranchId === selectedBranchId)
+      ).length,
+    [deliveryPartners, selectedBranchId]
   );
 
   /* ============================================================
@@ -738,6 +753,46 @@ export default function DeveloperDashboardPage() {
     },
   ] as const;
 
+  const sectionDetails: Record<SectionId, { title: string; description: string }> = {
+    dashboard: {
+      title: "Platform overview",
+      description: "A live view of revenue, outlets, incoming orders, and delivery capacity.",
+    },
+    branches: {
+      title: "Outlets & branches",
+      description: "Configure locations, service areas, and branch-level settings.",
+    },
+    operations: {
+      title: "Kitchens & operations",
+      description: "Manage kitchen stations, counter registers, and order flow by outlet.",
+    },
+    users: {
+      title: "Staff & access control",
+      description: "Manage staff accounts, roles, and permissions across the platform.",
+    },
+    menu: {
+      title: "Menu availability",
+      description: "Control which items are available at each outlet.",
+    },
+    fleet: {
+      title: "Fleet telemetry",
+      description: "Review delivery partner availability and location signals.",
+    },
+    payments: {
+      title: "Payments & revenue",
+      description: "Review recent paid orders and revenue across your selected scope.",
+    },
+    infrastructure: {
+      title: "Printers & hardware",
+      description: "Check receipt printer setup for every configured outlet.",
+    },
+    audit: {
+      title: "Security & audit logs",
+      description: "Review administrative events and changes across the platform.",
+    },
+  };
+  const activeSectionDetails = sectionDetails[activeSection];
+
   const renderNav = () => (
     <>
       {navGroups.map((group) => (
@@ -759,7 +814,7 @@ export default function DeveloperDashboardPage() {
                 aria-current={active ? "page" : undefined}
                 className={`group flex w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-xs font-bold transition-all ${
                   active
-                    ? "bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30"
+                    ? "bg-indigo-500/10 text-indigo-700 ring-1 ring-inset ring-indigo-500/15 dark:bg-indigo-500/15 dark:text-indigo-200 dark:ring-indigo-400/20"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white"
                 }`}
               >
@@ -767,7 +822,7 @@ export default function DeveloperDashboardPage() {
                   size={16}
                   className={
                     active
-                      ? "text-white"
+                      ? "text-indigo-700 dark:text-indigo-200"
                       : "text-slate-400 group-hover:text-indigo-500 dark:text-slate-500"
                   }
                 />
@@ -786,7 +841,7 @@ export default function DeveloperDashboardPage() {
      ============================================================ */
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-indigo-200/60 dark:bg-slate-950 dark:text-white dark:selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-[#f5f7fb] text-slate-900 selection:bg-indigo-200/60 dark:bg-[#090d15] dark:text-white dark:selection:bg-indigo-500/30">
       {/* ---- Delegation Banner ---- */}
       {activeSession && (
         <div className="relative z-40 flex items-center justify-between gap-3 bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-[11px] font-black text-white shadow-md sm:px-6">
@@ -829,7 +884,7 @@ export default function DeveloperDashboardPage() {
       {/* ---- Header ---- */}
       <header
         ref={headerRef}
-        className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/80"
+        className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-2xl dark:border-white/[0.07] dark:bg-[#0c111b]/90"
       >
         <div className="flex flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -842,7 +897,7 @@ export default function DeveloperDashboardPage() {
               <Menu size={16} />
             </button>
 
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 ring-1 ring-white/20">
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-950/25 ring-1 ring-white/20">
               <Server size={20} />
             </div>
             <div className="min-w-0">
@@ -857,9 +912,9 @@ export default function DeveloperDashboardPage() {
                 <span className="hidden items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[9px] font-mono font-bold text-emerald-700 sm:inline-flex dark:border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-400">
                   <Sparkles size={9} /> v2.0 Multi-Outlet
                 </span>
-                <span className="hidden items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-bold text-slate-500 lg:inline-flex dark:border-white/10 dark:bg-slate-800 dark:text-slate-400">
-                  <Radio size={9} className="animate-pulse text-emerald-500" />
-                  Live
+                <span className={`hidden items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold lg:inline-flex ${dataError ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300" : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"}`}>
+                  <Radio size={9} className={isBooting ? "animate-pulse text-amber-500" : "animate-pulse text-emerald-500"} />
+                  {isBooting ? "Syncing" : dataError ? "Sync issue" : "Live sync"}
                 </span>
               </div>
               <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">
@@ -906,6 +961,11 @@ export default function DeveloperDashboardPage() {
             {/* Theme */}
             <ThemeToggle themeMode={themeMode} setThemeMode={setThemeMode} />
 
+            <div className="hidden items-center gap-2 border-l border-slate-200 pl-3 2xl:flex dark:border-white/10">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-indigo-100 text-xs font-black uppercase text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">{staffSession?.name?.trim().charAt(0) || "D"}</span>
+              <div className="max-w-36 min-w-0"><p className="truncate text-[11px] font-bold text-slate-800 dark:text-slate-200">{staffSession?.name || "Developer"}</p><p className="text-[9px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-500">Platform access</p></div>
+            </div>
+
             {/* Logout */}
             <button
               type="button"
@@ -942,7 +1002,8 @@ export default function DeveloperDashboardPage() {
       <div className="flex">
         {/* Desktop Sidebar */}
         <aside
-          className="sticky hidden w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white/70 p-3 backdrop-blur-xl md:block dark:border-white/10 dark:bg-slate-900/40"
+          aria-label="Developer platform navigation"
+          className="sticky hidden w-[17rem] shrink-0 overflow-y-auto border-r border-slate-200/80 bg-white/75 p-4 backdrop-blur-2xl md:block dark:border-white/[0.07] dark:bg-[#0d131e]/80"
           style={{
             top: headerHeight,
             height: `calc(100vh - ${headerHeight}px)`,
@@ -999,19 +1060,30 @@ export default function DeveloperDashboardPage() {
         )}
 
         {/* Content viewport */}
-        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8">
           <div className="mx-auto max-w-7xl">
+            <section className="mb-6 flex flex-col gap-4 rounded-[1.6rem] border border-slate-200/80 bg-white p-5 shadow-[0_20px_55px_-40px_rgba(15,23,42,0.4)] sm:flex-row sm:items-end sm:justify-between sm:p-6 dark:border-white/[0.07] dark:bg-[radial-gradient(ellipse_at_top_right,_rgba(99,102,241,0.14),_transparent_45%),linear-gradient(120deg,#141c2b_0%,#101621_70%,#141723_100%)] dark:shadow-[0_22px_60px_-38px_rgba(0,0,0,0.9)]">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-300">Developer control plane <span className="mx-1 text-slate-300 dark:text-slate-600">/</span> {activeSection}</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl dark:text-white">{activeSectionDetails.title}</h2>
+                <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">{activeSectionDetails.description}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2 self-start rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 sm:self-auto dark:border-white/10 dark:bg-white/[0.035] dark:text-slate-300">
+                <Building2 size={14} className="text-indigo-500 dark:text-indigo-300" />
+                <span className="max-w-[180px] truncate">{selectedBranchId === "ALL" ? "All outlets" : activeBranchObj?.name || "Selected outlet"}</span>
+              </div>
+            </section>
             {/* ===================== 1. DASHBOARD ===================== */}
             {activeSection === "dashboard" && (
               <div className="space-y-6">
                 {/* Metric Hero Cards */}
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
                   {/* Revenue */}
-                  <div className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg sm:p-5 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none dark:hover:border-emerald-500/30">
+                  <div className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_14px_35px_-28px_rgba(15,23,42,0.45)] transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg sm:p-5 dark:border-white/[0.07] dark:bg-[#111827] dark:shadow-[0_18px_40px_-32px_rgba(0,0,0,0.9)] dark:hover:border-emerald-500/30">
                     <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Paid Revenue
+                        Paid revenue · recent
                       </span>
                       <div className="grid h-8 w-8 place-items-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
                         <IndianRupee size={15} />
@@ -1021,42 +1093,40 @@ export default function DeveloperDashboardPage() {
                       ₹{Math.round(totalRevenue).toLocaleString("en-IN")}
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 size={10} /> From latest {orders.length}{" "}
-                      orders
+                      <CheckCircle2 size={10} /> From latest {filteredOrders.length} orders in scope
                     </span>
                   </div>
 
                   {/* Outlets */}
-                  <div className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-lg sm:p-5 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none dark:hover:border-indigo-500/30">
+                  <div className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_14px_35px_-28px_rgba(15,23,42,0.45)] transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-lg sm:p-5 dark:border-white/[0.07] dark:bg-[#111827] dark:shadow-[0_18px_40px_-32px_rgba(0,0,0,0.9)] dark:hover:border-indigo-500/30">
                     <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-indigo-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Active Outlets
+                        Outlets online
                       </span>
                       <div className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
                         <Building2 size={15} />
                       </div>
                     </div>
                     <p className="relative mt-3 font-mono text-xl font-black text-slate-900 sm:text-2xl dark:text-white">
-                      {activeOutletsCount}
+                      {scopedActiveOutletsCount}
                       <span className="text-sm font-normal text-slate-400">
-                        {" "}
-                        / {branches.length}
+                        {selectedBranchId === "ALL" ? ` / ${branches.length}` : " / 1"}
                       </span>
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
                       {selectedBranchId === "ALL"
-                        ? "Platform total"
-                        : activeBranchObj?.code || "—"}
+                        ? "Across all locations"
+                        : activeBranchObj?.name || "Selected outlet"}
                     </span>
                   </div>
 
                   {/* Orders */}
-                  <div className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-lg sm:p-5 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none dark:hover:border-orange-500/30">
+                  <div className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_14px_35px_-28px_rgba(15,23,42,0.45)] transition-all hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-lg sm:p-5 dark:border-white/[0.07] dark:bg-[#111827] dark:shadow-[0_18px_40px_-32px_rgba(0,0,0,0.9)] dark:hover:border-orange-500/30">
                     <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Recent Orders
+                        Recent orders
                       </span>
                       <div className="grid h-8 w-8 place-items-center rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
                         <ShoppingBag size={15} />
@@ -1073,23 +1143,23 @@ export default function DeveloperDashboardPage() {
                       )}
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-orange-600 dark:text-orange-400">
-                      Across selected scope
+                      Within the latest {ORDERS_LIMIT} platform orders
                     </span>
                   </div>
 
                   {/* Riders */}
-                  <div className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-lg sm:p-5 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none dark:hover:border-cyan-500/30">
+                  <div className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_14px_35px_-28px_rgba(15,23,42,0.45)] transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-lg sm:p-5 dark:border-white/[0.07] dark:bg-[#111827] dark:shadow-[0_18px_40px_-32px_rgba(0,0,0,0.9)] dark:hover:border-cyan-500/30">
                     <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Active Riders
+                        On-duty riders
                       </span>
                       <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-100 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-400">
                         <Bike size={15} />
                       </div>
                     </div>
                     <p className="relative mt-3 font-mono text-xl font-black text-slate-900 sm:text-2xl dark:text-white">
-                      {activeRidersCount}
+                      {scopedActiveRidersCount}
                     </p>
                     <span className="relative mt-1 flex items-center gap-1 text-[10px] font-bold text-cyan-600 dark:text-cyan-400">
                       On duty right now

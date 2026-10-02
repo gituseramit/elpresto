@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock3, MapPin, Loader2 } from "lucide-react";
+import { CheckCircle2, Clock3, MapPin, Loader2 } from "lucide-react";
 import { getActiveBranches } from "@/lib/branchService";
 
 export default function StaffAttendanceAction({ token, branchId, compact = false }: { token?: string; branchId?: string; compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [marked, setMarked] = useState(false);
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
   const [selectedBranch, setSelectedBranch] = useState("");
   useEffect(() => {
@@ -17,6 +18,7 @@ export default function StaffAttendanceAction({ token, branchId, compact = false
 
   const mark = (action: "CHECK_IN" | "CHECK_OUT") => {
     if (!navigator.geolocation) { setMessage("Location is not available in this browser."); return; }
+    setMarked(false);
     setBusy(true); setMessage("Waiting for a precise location…");
     navigator.geolocation.getCurrentPosition(async (position) => {
       try {
@@ -26,7 +28,8 @@ export default function StaffAttendanceAction({ token, branchId, compact = false
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Attendance could not be recorded.");
-        setMessage(`${action === "CHECK_IN" ? "Checked in" : "Checked out"} at ${data.branchName}. ${data.lowConfidence ? "GPS accuracy is low; ask a manager to review." : ""}`);
+        setMarked(true);
+        setMessage(`Attendance marked — ${action === "CHECK_IN" ? "check-in" : "check-out"} recorded at ${data.branchName}${data.lowConfidence ? ". GPS accuracy is low; ask a manager to review." : "."}`);
       } catch (error) { setMessage(error instanceof Error ? error.message : "Attendance could not be recorded."); }
       finally { setBusy(false); }
     }, (error) => {
@@ -42,6 +45,6 @@ export default function StaffAttendanceAction({ token, branchId, compact = false
       <button disabled={busy || (branchId === "ALL" && !selectedBranch)} onClick={() => mark("CHECK_IN")} className="rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-60">{busy ? <Loader2 size={14} className="mx-auto animate-spin" /> : "Check in"}</button>
       <button disabled={busy || (branchId === "ALL" && !selectedBranch)} onClick={() => mark("CHECK_OUT")} className="rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-60"><span className="inline-flex items-center gap-1"><Clock3 size={13} /> Check out</span></button>
     </div>
-    {message && <p role="status" className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{message}</p>}
+    {message && <p role="status" aria-live="polite" className={`mt-3 flex items-start gap-2 rounded-xl border p-3 text-xs font-semibold leading-relaxed ${marked ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-slate-800/70 dark:text-slate-300"}`}>{marked && <CheckCircle2 size={16} className="mt-0.5 shrink-0" />}{message}</p>}
   </section>;
 }
