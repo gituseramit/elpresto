@@ -15,7 +15,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     "branches.view", "branches.manage",
     "promos.manage",
     "payments.view", "payments.manage",
-    "reports.view",
+    "reports.view", "attendance.view", "attendance.mark",
     "system.manage",
   ],
   SUPER_ADMIN: [
@@ -28,7 +28,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     "branches.view", "branches.manage",
     "promos.manage",
     "payments.view", "payments.manage",
-    "reports.view",
+    "reports.view", "attendance.view", "attendance.mark",
   ],
   ADMIN: [
     "orders.view", "orders.create", "orders.edit", "orders.cancel", "orders.assign",
@@ -40,7 +40,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     "branches.view",
     "promos.manage",
     "payments.view",
-    "reports.view",
+    "reports.view", "attendance.view", "attendance.mark",
   ],
   BRANCH_MANAGER: [
     "orders.view", "orders.create", "orders.edit", "orders.cancel", "orders.assign",
@@ -49,29 +49,33 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, Permission[]> = {
     "counter.view", "counter.manage",
     "delivery.view", "delivery.assign", "delivery.track",
     "branches.view",
-    "reports.view",
+    "reports.view", "attendance.view", "attendance.mark",
   ],
   KITCHEN_MANAGER: [
     "orders.view", "orders.edit",
     "kitchen.view", "kitchen.manage",
-    "menu.view",
+    "menu.view", "attendance.mark",
   ],
   KITCHEN_STAFF: [
     "orders.view", "orders.edit",
-    "kitchen.view",
+    "kitchen.view", "attendance.mark",
   ],
   COUNTER_MANAGER: [
     "orders.view", "orders.create", "orders.edit",
     "counter.view", "counter.manage",
-    "menu.view",
+    "menu.view", "attendance.mark",
+  ],
+  COUNTER_STAFF: [
+    "orders.view", "orders.create",
+    "counter.view", "attendance.mark",
   ],
   DELIVERY_MANAGER: [
     "orders.view", "orders.assign",
-    "delivery.view", "delivery.assign", "delivery.track",
+    "delivery.view", "delivery.assign", "delivery.track", "attendance.mark",
   ],
   DELIVERY_PARTNER: [
     "orders.view", "orders.deliver",
-    "delivery.track",
+    "delivery.track", "attendance.mark",
   ],
   CUSTOMER: [
     "orders.create", "orders.view",

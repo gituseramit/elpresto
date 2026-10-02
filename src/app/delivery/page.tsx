@@ -51,6 +51,7 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 
 /* ============================================================= */
 /* Types                                                         */
@@ -850,6 +851,7 @@ export default function DeliveryPortal() {
                 deliveryStatus: "out_for_delivery",
                 deliveryPersonLatitude: latitude,
                 deliveryPersonLongitude: longitude,
+                deliveryPersonLocation: { lat: latitude, lng: longitude, updatedAt: Timestamp.now() },
                 deliveryPersonName: rider.name,
                 deliveryPersonId: rider.id,
                 deliveryLocationUpdatedAt: Timestamp.now(),
@@ -1167,6 +1169,7 @@ export default function DeliveryPortal() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-20 text-white">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <StaffAttendanceAction token={staffSession?.token as string | undefined} branchId={staffSession?.branchId as string | undefined} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
       {/* HEADER */}

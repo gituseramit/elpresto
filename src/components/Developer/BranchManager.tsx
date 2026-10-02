@@ -54,6 +54,7 @@ export default function BranchManager({
     },
     active: true,
     deliveryRadiusKm: 7,
+    attendanceRadiusMeters: 1000,
     baseDeliveryFee: 30,
     freeDeliveryThreshold: 499,
     printerConfig: {
@@ -346,7 +347,7 @@ export default function BranchManager({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <div>
                   <label className="text-[11px] font-bold text-slate-400 uppercase">Latitude</label>
                   <input
@@ -376,6 +377,18 @@ export default function BranchManager({
                     required
                     value={formData.deliveryRadiusKm || 7}
                     onChange={(e) => setFormData({ ...formData, deliveryRadiusKm: parseFloat(e.target.value) || 7 })}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase">Attendance Radius (m)</label>
+                  <input
+                    type="number"
+                    min={50}
+                    max={10000}
+                    required
+                    value={formData.attendanceRadiusMeters ?? 1000}
+                    onChange={(e) => setFormData({ ...formData, attendanceRadiusMeters: Math.max(50, Math.min(10000, parseInt(e.target.value, 10) || 1000)) })}
                     className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white font-mono"
                   />
                 </div>

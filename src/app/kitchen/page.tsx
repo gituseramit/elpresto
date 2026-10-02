@@ -53,6 +53,7 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 
 /* ============================================================
    TYPES
@@ -1536,6 +1537,7 @@ export default function KitchenSystem() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 selection:bg-orange-200/60 lg:flex-row dark:bg-slate-950 dark:text-slate-100 dark:selection:bg-orange-500/30">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <StaffAttendanceAction token={staffSession?.token as string | undefined} branchId={staffSession?.branchId} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
       {/* ===================================================== */}

@@ -19,6 +19,20 @@ export interface CustomerProfile {
   createdAt: any;
   updatedAt: any;
   savedAddresses?: SavedAddress[];
+  loyaltyPoints?: number;
+}
+
+export interface LoyaltyReward {
+  id: string;
+  name: string;
+  type: "discount" | "item";
+  pointsCost: number;
+  discountAmount?: number;
+  discountType?: "flat" | "percentage";
+  itemName?: string;
+  itemId?: string;
+  active: boolean;
+  createdAt?: any;
 }
 
 export interface Subcategory {
@@ -111,6 +125,7 @@ export interface Order {
     fullAddress?: string;
   };
   location?: any;
+  orderLocation?: { lat: number; lng: number; address?: string; branchId?: string; kind?: "delivery" | "pickup" };
   deliveryLatitude?: number;
   deliveryLongitude?: number;
   deliveryDistance?: number;
@@ -118,6 +133,7 @@ export interface Order {
   deliveryPersonId?: string;
   deliveryPersonLatitude?: number;
   deliveryPersonLongitude?: number;
+  deliveryPersonLocation?: { lat: number; lng: number; updatedAt?: any };
   deliveryLocationUpdatedAt?: any;
   cancelReason?: string;
   customerId?: string;
@@ -126,6 +142,13 @@ export interface Order {
   otpVerified?: boolean;
   promoCode?: string;
   discountAmount?: number;
+  packingCharge?: number;
+  packingChargeBreakdown?: Record<string, number>;
+  loyaltyDiscount?: number;
+  loyaltyRewardId?: string | null;
+  loyaltyRewardName?: string | null;
+  loyaltyPointsRedeemed?: number;
+  loyaltyPointsEarned?: number;
   razorpayOrderId?: string | null;
   razorpayPaymentId?: string | null;
   // Multi-outlet platform extensions
@@ -200,6 +223,7 @@ export interface Branch {
   };
   active: boolean;
   deliveryRadiusKm: number;
+  attendanceRadiusMeters?: number;
   baseDeliveryFee: number;
   freeDeliveryThreshold: number;
   printerConfig?: BranchPrinterConfig;
@@ -270,6 +294,7 @@ export type UserRole =
   | "KITCHEN_MANAGER"
   | "KITCHEN_STAFF"
   | "COUNTER_MANAGER"
+  | "COUNTER_STAFF"
   | "DELIVERY_MANAGER"
   | "DELIVERY_PARTNER"
   | "CUSTOMER";
@@ -300,6 +325,8 @@ export type Permission =
   | "payments.view"
   | "payments.manage"
   | "reports.view"
+  | "attendance.view"
+  | "attendance.mark"
   | "system.manage";
 
 export interface StaffProfile {

@@ -44,6 +44,7 @@ import {
   AlertTriangle,
   Check,
   Printer,
+  Receipt,
   Truck,
   ExternalLink,
   Lock,
@@ -74,6 +75,9 @@ import Modern3DBarChart from "@/components/Admin/Charts/Modern3DBarChart";
 import Modern3DDonutChart from "@/components/Admin/Charts/Modern3DDonutChart";
 import Modern3DCategoryChart from "@/components/Admin/Charts/Modern3DCategoryChart";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
+import AttendancePanel from "@/components/Admin/AttendancePanel";
+import LoyaltyRewardsManager from "@/components/Admin/LoyaltyRewardsManager";
+import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 import type { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
 
@@ -114,6 +118,8 @@ interface StaffSession {
   name?: string;
   role?: string;
   staffId?: string;
+  token?: string;
+  branchId?: string;
   [key: string]: unknown;
 }
 
@@ -208,6 +214,10 @@ interface GeneralSettings {
   baseDeliveryFee: number;
   freeDeliveryThreshold: number;
   deliveryEnabled: boolean;
+  packingChargesEnabled: boolean;
+  packingChargeByCategory: Record<string, number>;
+  loyaltyEnabled: boolean;
+  loyaltyPointsPerCurrency: number;
   [key: string]: unknown;
 }
 
@@ -1031,6 +1041,10 @@ export default function AdminPage() {
     baseDeliveryFee: 30,
     freeDeliveryThreshold: 499,
     deliveryEnabled: true,
+    packingChargesEnabled: false,
+    packingChargeByCategory: {},
+    loyaltyEnabled: false,
+    loyaltyPointsPerCurrency: 1,
   });
 
   /* ---- Feedback ---- */
@@ -1043,6 +1057,7 @@ export default function AdminPage() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const soundEnabledRef = useRef(settings.soundEnabled);
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
+  const ordersSnapshotReadyRef = useRef(false);
   const notificationTimeoutRef = useRef<number | null>(null);
   const trendingDebounceRef = useRef<number | null>(null);
   const assignRiderInputRef = useRef<HTMLInputElement>(null);
@@ -1218,17 +1233,19 @@ export default function AdminPage() {
         setOrders(data);
         setLoading((prev) => ({ ...prev, orders: false }));
 
-        const newPreparing = data.filter(
+        const newOrders = data.filter(
           (o) =>
-            o.status === "preparing" &&
+            (o.status === "pending" || o.status === "preparing") &&
             !seenOrderIdsRef.current.has(o.id)
         );
+        const shouldNotify = ordersSnapshotReadyRef.current && newOrders.length > 0;
+        ordersSnapshotReadyRef.current = true;
         data.forEach((o) => seenOrderIdsRef.current.add(o.id));
         if (seenOrderIdsRef.current.size > 2000) {
           const trimmed = Array.from(seenOrderIdsRef.current).slice(-2000);
           seenOrderIdsRef.current = new Set(trimmed);
         }
-        if (newPreparing.length > 0 && soundEnabledRef.current) {
+        if (shouldNotify && soundEnabledRef.current) {
           playNotificationSound();
           if (notificationTimeoutRef.current != null) {
             window.clearTimeout(notificationTimeoutRef.current);
@@ -4563,6 +4580,29 @@ export default function AdminPage() {
         </div>
 
         <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+          <SectionHeader icon={<Receipt size={18} />} title="Packing Charges" subtitle="Set an optional per-item packing charge by product category" />
+          <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 p-4">
+            <div><p className="text-xs font-black text-white">Enable packing charges</p><p className="mt-0.5 text-[11px] text-slate-400">Charges are calculated from each product's category.</p></div>
+            <button type="button" onClick={() => handleChange("packingChargesEnabled", !settings.packingChargesEnabled)} aria-pressed={settings.packingChargesEnabled}>{settings.packingChargesEnabled ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-500" size={32} />}</button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {categories.filter((category) => category.enabled).map((category) => <label key={category.id} className="text-xs font-bold text-slate-300">{category.name}<div className="mt-1 flex items-center gap-2"><span className="text-slate-500">₹</span><input type="number" min="0" step="0.5" disabled={!settings.packingChargesEnabled} value={settings.packingChargeByCategory?.[category.name] ?? 0} onChange={(event) => handleChange("packingChargeByCategory", { ...(settings.packingChargeByCategory || {}), [category.name]: Math.max(0, safeNumber(event.target.value)) })} className={inputCls} /></div></label>)}
+            {categories.filter((category) => category.enabled).length === 0 && <p className="text-xs text-slate-500">Add enabled product categories to configure charges.</p>}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+          <SectionHeader icon={<Sparkles size={18} />} title="Loyalty Rewards" subtitle="Configure points and reward offers for customers" />
+          <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 p-4">
+            <div><p className="text-xs font-black text-white">Enable loyalty points</p><p className="mt-0.5 text-[11px] text-slate-400">Customers earn points on paid online orders and can redeem active offers.</p></div>
+            <button type="button" onClick={() => handleChange("loyaltyEnabled", !settings.loyaltyEnabled)} aria-pressed={settings.loyaltyEnabled}>{settings.loyaltyEnabled ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-500" size={32} />}</button>
+          </div>
+          <label className="block max-w-sm text-xs font-bold text-slate-300">Points earned per ₹1 paid<input type="number" min="0" step="0.1" disabled={!settings.loyaltyEnabled} value={settings.loyaltyPointsPerCurrency ?? 1} onChange={(event) => handleChange("loyaltyPointsPerCurrency", Math.max(0, safeNumber(event.target.value)))} className={`${inputCls} mt-1`} /></label>
+          <p className="mt-3 text-xs text-slate-400">Customers earn points when they place paid online orders and redeem active offers at checkout.</p>
+          <LoyaltyRewardsManager />
+        </div>
+
+        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Truck size={18} />}
             title="Delivery Hub & Radius"
@@ -5071,6 +5111,7 @@ export default function AdminPage() {
       { id: "menu", label: "Menu Items", icon: Utensils, badge: 0 },
       { id: "categories", label: "Categories", icon: Layers, badge: 0 },
       { id: "history", label: "Order History", icon: History, badge: 0 },
+      { id: "attendance", label: "Staff Attendance", icon: Clock, badge: 0 },
       { id: "sales", label: "Sales Analytics", icon: BarChart3, badge: 0 },
       { id: "promoCodes", label: "Promo Codes", icon: Tag, badge: 0 },
       {
@@ -5097,6 +5138,7 @@ export default function AdminPage() {
     menu: "Menu Management",
     categories: "Categories & Subcategories",
     history: "Order History Archive",
+    attendance: "Staff Attendance",
     sales: "Sales & Revenue Analytics",
     promoCodes: "Discounts & Promo Codes",
     panelAccess: "Panel Access & Security",
@@ -5142,6 +5184,7 @@ export default function AdminPage() {
     <div className="flex min-h-screen flex-col overflow-hidden bg-slate-950 text-slate-100 lg:flex-row">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+      <StaffAttendanceAction token={staffSession?.token} branchId={staffSession?.branchId} />
 
       {/* SIDEBAR */}
       <aside
@@ -5341,6 +5384,7 @@ export default function AdminPage() {
           {activeTab === "menu" && renderMenuManagement()}
           {activeTab === "categories" && renderCategoryManagement()}
           {activeTab === "history" && renderOrderHistory()}
+          {activeTab === "attendance" && <AttendancePanel token={staffSession?.token} role={staffSession?.role} />}
           {activeTab === "sales" && renderSalesReports()}
           {activeTab === "panelAccess" && renderPanelAccess()}
           {activeTab === "promoCodes" && renderPromoCodes()}

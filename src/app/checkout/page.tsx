@@ -47,6 +47,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { validatePromoCode, recordPromoUsage } from "@/lib/promoService";
 import { PromoCode, Order } from "@/lib/types";
+import type { LoyaltyReward } from "@/lib/types";
+import { getPackingCharge } from "@/lib/commerce";
 import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
@@ -63,6 +65,7 @@ import {
   doc,
   onSnapshot,
   Timestamp,
+  runTransaction,
 } from "firebase/firestore";
 
 /* ================================================================ */
@@ -296,6 +299,13 @@ export default function CheckoutPage() {
   const [settings, setSettings] = useState<DeliverySettings>(
     DEFAULT_DELIVERY_SETTINGS
   );
+  const [packingEnabled, setPackingEnabled] = useState(false);
+  const [packingRates, setPackingRates] = useState<Record<string, number>>({});
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
+  const [pointsPerCurrency, setPointsPerCurrency] = useState(1);
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [loyaltyRewards, setLoyaltyRewards] = useState<LoyaltyReward[]>([]);
+  const [selectedRewardId, setSelectedRewardId] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -383,6 +393,28 @@ export default function CheckoutPage() {
   useEffect(() => {
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    const unsubscribeSettings = onSnapshot(doc(db, "settings", "general"), (snapshot) => {
+      const data = snapshot.data();
+      if (!data) return;
+      setPackingEnabled(data.packingChargesEnabled === true);
+      setPackingRates(data.packingChargeByCategory || {});
+      setLoyaltyEnabled(data.loyaltyEnabled === true);
+      setPointsPerCurrency(Math.max(0, Number(data.loyaltyPointsPerCurrency ?? 1)));
+    });
+    const unsubscribeRewards = onSnapshot(collection(db, "loyaltyRewards"), (snapshot) => {
+      setLoyaltyRewards(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as LoyaltyReward)).filter((reward) => reward.active));
+    });
+    return () => { unsubscribeSettings(); unsubscribeRewards(); };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) { setLoyaltyPoints(0); return; }
+    return onSnapshot(doc(db, "customers", user.uid), (snapshot) => {
+      setLoyaltyPoints(Math.max(0, Number(snapshot.data()?.loyaltyPoints || 0)));
+    });
+  }, [user?.uid]);
 
   /* Cleanup toast timer on unmount */
   useEffect(() => {
@@ -683,6 +715,8 @@ export default function CheckoutPage() {
   /* -------------------------------------------------------------- */
 
   const subtotal = useMemo(() => getTotal(), [getTotal, items]);
+  const packing = useMemo(() => getPackingCharge(items, packingEnabled, packingRates), [items, packingEnabled, packingRates]);
+  const selectedReward = useMemo(() => loyaltyRewards.find((reward) => reward.id === selectedRewardId) || null, [loyaltyRewards, selectedRewardId]);
   const isDelivery = formData.type === "delivery";
 
   const deliveryFee = useMemo(
@@ -703,9 +737,17 @@ export default function CheckoutPage() {
     [subtotal, clampedPromoDiscount]
   );
 
+  const loyaltyDiscount = useMemo(() => {
+    if (!loyaltyEnabled || !selectedReward || selectedReward.type !== "discount" || loyaltyPoints < selectedReward.pointsCost) return 0;
+    const amount = Math.max(0, Number(selectedReward.discountAmount || 0));
+    return Math.min(discountedSubtotal, selectedReward.discountType === "percentage" ? discountedSubtotal * Math.min(100, amount) / 100 : amount);
+  }, [loyaltyEnabled, selectedReward, loyaltyPoints, discountedSubtotal]);
+
+  const loyaltyPointsEarned = useMemo(() => loyaltyEnabled ? Math.floor(Math.max(0, subtotal - clampedPromoDiscount - loyaltyDiscount) * pointsPerCurrency) : 0, [loyaltyEnabled, subtotal, clampedPromoDiscount, loyaltyDiscount, pointsPerCurrency]);
+
   const finalTotal = useMemo(
-    () => discountedSubtotal + deliveryFee,
-    [discountedSubtotal, deliveryFee]
+    () => Math.max(0, discountedSubtotal - loyaltyDiscount) + packing.total + deliveryFee,
+    [discountedSubtotal, loyaltyDiscount, packing.total, deliveryFee]
   );
 
   /* -------------------------------------------------------------- */
@@ -793,15 +835,20 @@ export default function CheckoutPage() {
         type: formData.type,
         orderType: formData.type,
         instructions: formData.instructions.trim(),
-        items: items.map((it) => ({
-          id: it.id,
-          name: it.name,
-          quantity: it.quantity,
-          price: it.price,
-        })),
+        items: [
+          ...items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity, price: it.price })),
+          ...(loyaltyEnabled && selectedReward?.type === "item" && loyaltyPoints >= selectedReward.pointsCost ? [{ id: selectedReward.itemId || `reward-${selectedReward.id}`, name: selectedReward.itemName || selectedReward.name, quantity: 1, price: 0, isLoyaltyReward: true }] : []),
+        ],
         subtotal,
-        discount: clampedPromoDiscount,
+        discount: clampedPromoDiscount + loyaltyDiscount,
         discountAmount: clampedPromoDiscount,
+        loyaltyDiscount,
+        loyaltyRewardId: selectedReward && loyaltyPoints >= selectedReward.pointsCost ? selectedReward.id : null,
+        loyaltyRewardName: selectedReward && loyaltyPoints >= selectedReward.pointsCost ? selectedReward.name : null,
+        loyaltyPointsRedeemed: loyaltyEnabled && selectedReward && loyaltyPoints >= selectedReward.pointsCost ? selectedReward.pointsCost : 0,
+        loyaltyPointsEarned,
+        packingCharge: packing.total,
+        packingChargeBreakdown: packing.breakdown,
         promoCode: appliedPromo?.code || null,
         deliveryFee: isDelivery ? deliveryFee : 0,
         total: finalTotal,
@@ -813,6 +860,7 @@ export default function CheckoutPage() {
         branchId: resolvedBranch.id,
         branchName: resolvedBranch.name,
         branchCode: resolvedBranch.code || "BR-01",
+        orderLocation: isDelivery ? { lat: deliveryCoords.lat, lng: deliveryCoords.lng, address: fullAddressString, branchId: resolvedBranch.id, kind: "delivery" } : { lat: resolvedBranch.lat, lng: resolvedBranch.lng, address: resolvedBranch.address, branchId: resolvedBranch.id, kind: "pickup" },
         createdBy: user.uid,
         updatedBy: user.uid,
         createdAt: Timestamp.now(),
@@ -852,7 +900,22 @@ export default function CheckoutPage() {
       }
 
       // Firestore write — fail loudly; do not clear the cart on failure.
-      const docRef = await addDoc(collection(db, "orders"), orderPayload);
+      let createdOrderId: string;
+      if (loyaltyEnabled) {
+        const orderRef = doc(collection(db, "orders"));
+        const customerRef = doc(db, "customers", user.uid);
+        await runTransaction(db, async (transaction) => {
+          const customerSnapshot = await transaction.get(customerRef);
+          const currentPoints = Math.max(0, Number(customerSnapshot.data()?.loyaltyPoints || 0));
+          const redeemCost = Number(orderPayload.loyaltyPointsRedeemed || 0);
+          if (redeemCost > currentPoints) throw new Error("Your points balance changed. Refresh checkout and choose the reward again.");
+          transaction.set(orderRef, orderPayload);
+          transaction.set(customerRef, { uid: user.uid, loyaltyPoints: currentPoints - redeemCost + loyaltyPointsEarned, updatedAt: Timestamp.now() }, { merge: true });
+        });
+        createdOrderId = orderRef.id;
+      } else {
+        createdOrderId = (await addDoc(collection(db, "orders"), orderPayload)).id;
+      }
       orderCreatedRef.current = true;
 
       // Record promo usage (best-effort, but do not fail the order).
@@ -869,16 +932,16 @@ export default function CheckoutPage() {
         }
       }
 
-      setOrderId(docRef.id);
+      setOrderId(createdOrderId);
       setOrderNumber(newOrderNum);
       setCreatedDeliveryOtp(otp || null);
       setPlacedOrderSummary({
         ...(orderPayload as unknown as Order),
-        id: docRef.id,
+        id: createdOrderId,
       });
 
       try {
-        window.localStorage.setItem("activeOrderId", docRef.id);
+        window.localStorage.setItem("activeOrderId", createdOrderId);
       } catch {
         /* ignore */
       }
@@ -896,6 +959,12 @@ export default function CheckoutPage() {
       appliedPromo,
       deliveryFee,
       finalTotal,
+      loyaltyEnabled,
+      loyaltyPoints,
+      loyaltyPointsEarned,
+      loyaltyDiscount,
+      selectedReward,
+      packing,
       deliveryCoords,
       clearCart,
     ]
@@ -1230,7 +1299,7 @@ export default function CheckoutPage() {
                     ₹{Math.round(placedOrderSummary?.subtotal || 0)}
                   </span>
                 </div>
-                {(placedOrderSummary?.discount || 0) > 0 && (
+                {(placedOrderSummary?.discountAmount || 0) > 0 && (
                   <div className="flex justify-between font-bold text-emerald-600">
                     <span>
                       Promo
@@ -1239,10 +1308,12 @@ export default function CheckoutPage() {
                         : ""}
                     </span>
                     <span>
-                      -₹{Math.round(placedOrderSummary?.discount || 0)}
+                      -₹{Math.round(placedOrderSummary?.discountAmount || 0)}
                     </span>
                   </div>
                 )}
+                {(placedOrderSummary?.loyaltyDiscount || 0) > 0 && <div className="flex justify-between font-bold text-amber-700"><span>Loyalty reward</span><span>−₹{Math.round(placedOrderSummary?.loyaltyDiscount || 0)}</span></div>}
+                {(placedOrderSummary?.packingCharge || 0) > 0 && <div className="flex justify-between text-gray-600"><span>Packing charge</span><span className="font-bold">₹{Math.round(placedOrderSummary?.packingCharge || 0)}</span></div>}
                 {isDelivery && (
                   <div className="flex justify-between text-gray-600">
                     <span>Delivery Fee</span>
@@ -1253,6 +1324,7 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
+                {(placedOrderSummary?.loyaltyPointsEarned || 0) > 0 && <div className="flex justify-between font-bold text-amber-700"><span>Loyalty points earned</span><span>+{placedOrderSummary?.loyaltyPointsEarned}</span></div>}
                 <div className="flex items-center justify-between border-t border-gray-200/70 pt-3">
                   <span className="text-sm font-black text-gray-900">
                     Paid Total
@@ -2031,6 +2103,12 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
+                  {loyaltyEnabled && <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 shadow-sm">
+                    <div className="mb-2 flex items-center justify-between"><span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-amber-900"><Sparkles size={14} /> Loyalty rewards</span><span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-amber-800">{loyaltyPoints} pts</span></div>
+                    {loyaltyRewards.length === 0 ? <p className="text-[11px] font-semibold text-amber-800">No rewards are available right now.</p> : <select value={selectedRewardId} onChange={(event) => setSelectedRewardId(event.target.value)} className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800"><option value="">Earn points on this order</option>{loyaltyRewards.map((reward) => <option key={reward.id} value={reward.id} disabled={loyaltyPoints < reward.pointsCost}>{reward.name} · {reward.pointsCost} pts{loyaltyPoints < reward.pointsCost ? " (not enough points)" : ""}</option>)}</select>}
+                    {selectedReward && loyaltyPoints >= selectedReward.pointsCost && <p className="mt-2 text-[10px] font-bold text-amber-800">{selectedReward.type === "discount" ? `Redeeming saves ₹${Math.round(loyaltyDiscount)}.` : `Free item: ${selectedReward.itemName || selectedReward.name}.`} You will earn {loyaltyPointsEarned} points on this order.</p>}
+                  </div>}
+
                   {/* Totals */}
                   <div className="space-y-2 rounded-2xl border border-white/70 bg-white/60 p-4 text-sm">
                     <div className="flex justify-between text-gray-600">
@@ -2046,6 +2124,10 @@ export default function CheckoutPage() {
                         <span>−₹{Math.round(clampedPromoDiscount)}</span>
                       </div>
                     )}
+
+                    {loyaltyDiscount > 0 && <div className="flex justify-between font-black text-amber-700"><span>Loyalty reward</span><span>−₹{Math.round(loyaltyDiscount)}</span></div>}
+
+                    {packing.total > 0 && <div className="flex justify-between text-gray-600"><span className="font-semibold">Packing charge</span><span className="font-black text-gray-900">₹{Math.round(packing.total)}</span></div>}
 
                     {isDelivery && (
                       <div className="flex items-center justify-between text-gray-600">
@@ -2073,6 +2155,7 @@ export default function CheckoutPage() {
                         ₹{Math.round(finalTotal)}
                       </span>
                     </div>
+                    {loyaltyEnabled && <p className="text-right text-[10px] font-bold text-amber-700">Earn {loyaltyPointsEarned} loyalty points with this order</p>}
                   </div>
 
                   <button

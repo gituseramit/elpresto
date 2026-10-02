@@ -62,12 +62,14 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
   getCountersForBranch,
 } from "@/lib/branchService";
 import type { Branch, Counter } from "@/lib/types";
+import { getPackingCharge } from "@/lib/commerce";
 
 /* ============================================================ */
 /* Types                                                        */
@@ -445,6 +447,8 @@ export default function CounterPOSPage() {
       return true;
     }
   });
+  const [packingEnabled, setPackingEnabled] = useState(false);
+  const [packingRates, setPackingRates] = useState<Record<string, number>>({});
   const [ordersSearch, setOrdersSearch] = useState("");
   const [showAllOrders, setShowAllOrders] = useState(false);
 
@@ -473,6 +477,8 @@ export default function CounterPOSPage() {
   const activeBranchIdRef = useRef(activeBranchId);
   const activeCounterRef = useRef(activeCounter);
   const soundEnabledRef = useRef(soundEnabled);
+  const packingEnabledRef = useRef(packingEnabled);
+  const packingRatesRef = useRef(packingRates);
 
   useEffect(() => {
     cartItemsRef.current = cartItems;
@@ -519,6 +525,15 @@ export default function CounterPOSPage() {
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+  useEffect(() => { packingEnabledRef.current = packingEnabled; }, [packingEnabled]);
+  useEffect(() => { packingRatesRef.current = packingRates; }, [packingRates]);
+
+  useEffect(() => onSnapshot(doc(db, "settings", "general"), (snapshot) => {
+    const data = snapshot.data();
+    if (!data) return;
+    setPackingEnabled(data.packingChargesEnabled === true);
+    setPackingRates(data.packingChargeByCategory || {});
+  }), []);
 
   /* ============================================================ */
   /* Toast helper                                                 */
@@ -1041,6 +1056,7 @@ export default function CounterPOSPage() {
     () => cartItems.reduce((sum, ci) => sum + ci.item.price * ci.quantity, 0),
     [cartItems]
   );
+  const packing = useMemo(() => getPackingCharge(cartItems.map((ci) => ({ category: ci.item.category, quantity: ci.quantity })), packingEnabled, packingRates), [cartItems, packingEnabled, packingRates]);
 
   const computedDiscount = useMemo(() => {
     const v = Math.max(0, safeNumber(discountValue));
@@ -1052,8 +1068,8 @@ export default function CounterPOSPage() {
   }, [discountMode, discountValue, subtotal]);
 
   const finalTotal = useMemo(
-    () => Math.max(0, subtotal - computedDiscount),
-    [subtotal, computedDiscount]
+    () => Math.max(0, subtotal - computedDiscount) + packing.total,
+    [subtotal, computedDiscount, packing.total]
   );
   const cartCount = useMemo(
     () => cartItems.reduce((s, ci) => s + ci.quantity, 0),
@@ -1416,7 +1432,8 @@ export default function CounterPOSPage() {
             ? Math.round((sub * Math.min(100, discountVal)) / 100)
             : Math.min(discountVal, sub);
         const deliveryFee = oType === "delivery" ? DELIVERY_FEE : 0;
-        const total = Math.max(0, sub - computed + deliveryFee);
+        const packingCharge = getPackingCharge(items.map((ci) => ({ category: ci.item.category, quantity: ci.quantity })), packingEnabledRef.current, packingRatesRef.current);
+        const total = Math.max(0, sub - computed + packingCharge.total + deliveryFee);
 
         const editingId = editingOrderIdRef.current;
         const orderNumber =
@@ -1427,6 +1444,7 @@ export default function CounterPOSPage() {
         const rider = getStaffIdentity(staffSessionRef.current);
         const counter = activeCounterRef.current;
         const branchId = activeBranchIdRef.current;
+        const branch = branches.find((candidate) => candidate.id === branchId);
 
         const itemsPayload = items.map((ci) => ({
           id: ci.item.id,
@@ -1452,11 +1470,14 @@ export default function CounterPOSPage() {
             : `Created at Counter POS (${oType.toUpperCase()})`,
           items: itemsPayload,
           subtotal: sub,
+          packingCharge: packingCharge.total,
+          packingChargeBreakdown: packingCharge.breakdown,
           discount: computed,
           discountMode: discountModeRef.current,
           discountValue: discountVal,
           deliveryFee,
           total,
+          orderLocation: branch ? { lat: branch.lat, lng: branch.lng, address: branch.address, branchId, kind: "pickup" } : undefined,
           paymentMethod: paymentMethodRef.current,
           paymentStatus: counterPaymentStatusRef.current,
           source: "counter",
@@ -1507,7 +1528,7 @@ export default function CounterPOSPage() {
         setIsSubmitting(false);
       }
     },
-    [editingOrderNumber, handlePrintReceipt, showToast, clearAllFields]
+    [editingOrderNumber, handlePrintReceipt, showToast, clearAllFields, branches]
   );
 
   /* ============================================================ */
@@ -2253,6 +2274,7 @@ export default function CounterPOSPage() {
               ₹{subtotal.toFixed(2)}
             </span>
           </div>
+          {packing.total > 0 && <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Packing charge</span><span className="font-semibold text-slate-800">₹{packing.total.toFixed(2)}</span></div>}
 
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5">
@@ -2454,6 +2476,7 @@ export default function CounterPOSPage() {
     <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900">
       <Toast state={toast} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+      <StaffAttendanceAction token={staffSession?.token as string | undefined} branchId={staffSession?.branchId} />
 
       {/* Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import {
@@ -71,12 +72,15 @@ interface OrderData {
   customerPhone?: string;
   type?: string;
   orderType?: string;
+  branchId?: string;
   location?: OrderLocation | string;
+  orderLocation?: OrderLocation & { branchId?: string; kind?: "delivery" | "pickup" };
   deliveryAddress?: DeliveryAddress | string;
   deliveryLatitude?: number;
   deliveryLongitude?: number;
   deliveryPersonLatitude?: number;
   deliveryPersonLongitude?: number;
+  deliveryPersonLocation?: { lat?: number; lng?: number };
   deliveryPersonName?: string;
   deliveryStatus?: string;
   deliveryLocationUpdatedAt?: unknown;
@@ -252,6 +256,7 @@ function getCustomerLat(order: OrderData | null): number | undefined {
   if (loc && typeof loc === "object" && typeof loc.lat === "number") {
     return loc.lat;
   }
+  if (typeof order.orderLocation?.lat === "number") return order.orderLocation.lat;
   return undefined;
 }
 
@@ -262,6 +267,7 @@ function getCustomerLng(order: OrderData | null): number | undefined {
   if (loc && typeof loc === "object" && typeof loc.lng === "number") {
     return loc.lng;
   }
+  if (typeof order.orderLocation?.lng === "number") return order.orderLocation.lng;
   return undefined;
 }
 
@@ -549,10 +555,39 @@ export default function TrackOrderPage() {
   );
   const [lastStatusKey, setLastStatusKey] = useState<string>("");
   const [statusChangePulse, setStatusChangePulse] = useState(false);
+  const [lookupOrderNumber, setLookupOrderNumber] = useState("");
+  const [lookupPhone, setLookupPhone] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [phoneVerifiedOrderId, setPhoneVerifiedOrderId] = useState<string | null>(null);
 
   const reducedMotion = usePrefersReducedMotion();
   const statusAnnounceRef = useRef<HTMLParagraphElement>(null);
   const statusPulseTimerRef = useRef<number | null>(null);
+
+  const lookupOrder = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLookupBusy(true);
+    setLookupError("");
+    try {
+      const response = await fetch("/api/order-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNumber: lookupOrderNumber, phone: lookupPhone }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Order not found.");
+      window.localStorage.setItem("activeOrderId", result.orderId);
+      setPhoneVerifiedOrderId(result.orderId);
+      setOrderData(null);
+      setOrderId(result.orderId);
+      setLoading(true);
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : "Order lookup failed.");
+    } finally {
+      setLookupBusy(false);
+    }
+  }, [lookupOrderNumber, lookupPhone]);
 
   /* Load order id from storage */
   useEffect(() => {
@@ -601,6 +636,15 @@ export default function TrackOrderPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!orderData?.branchId) return;
+    return onSnapshot(doc(db, "branches", orderData.branchId), (snapshot) => {
+      const branch = snapshot.data();
+      if (!branch || !Number.isFinite(branch.lat) || !Number.isFinite(branch.lng)) return;
+      setSettings((previous) => ({ ...previous, cafeName: branch.name || previous.cafeName, cafeLat: branch.lat, cafeLng: branch.lng }));
+    });
+  }, [orderData?.branchId]);
+
   /* Realtime listener */
   useEffect(() => {
     if (!orderId) {
@@ -634,7 +678,7 @@ export default function TrackOrderPage() {
         if (
           data.customerId &&
           user?.uid &&
-          data.customerId !== user.uid
+          data.customerId !== user.uid && data.id !== phoneVerifiedOrderId
         ) {
           setOrderData(null);
           setError(
@@ -667,7 +711,7 @@ export default function TrackOrderPage() {
     );
 
     return () => unsub();
-  }, [orderId, user?.uid, authLoading]);
+  }, [orderId, user?.uid, authLoading, phoneVerifiedOrderId]);
 
   /* Derived stage */
   const derivedStage = useMemo(() => deriveStageKey(orderData), [orderData]);
@@ -797,8 +841,14 @@ export default function TrackOrderPage() {
               No Active Orders
             </h2>
             <p className="mb-8 text-sm text-gray-600">
-              You don&apos;t have any recent orders to track on this device.
+              Look up an order from any device using its number and checkout phone.
             </p>
+            <form onSubmit={lookupOrder} className="mb-5 space-y-3 text-left">
+              <label className="block text-xs font-bold text-gray-700">Order number<input autoComplete="off" required value={lookupOrderNumber} onChange={(event) => setLookupOrderNumber(event.target.value)} placeholder="e.g. #ELP-AB12CD" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
+              <label className="block text-xs font-bold text-gray-700">Phone used at checkout<input autoComplete="tel" inputMode="tel" required value={lookupPhone} onChange={(event) => setLookupPhone(event.target.value)} placeholder="10 digit phone number" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
+              {lookupError && <p role="alert" className="text-xs font-semibold text-red-600">{lookupError}</p>}
+              <button disabled={lookupBusy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:opacity-60">{lookupBusy ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />} Track order</button>
+            </form>
             <div className="flex flex-col gap-3">
               <Link
                 href="/menu"
@@ -856,8 +906,8 @@ export default function TrackOrderPage() {
 
     const customerLat = getCustomerLat(orderData);
     const customerLng = getCustomerLng(orderData);
-    const riderLat = orderData.deliveryPersonLatitude;
-    const riderLng = orderData.deliveryPersonLongitude;
+    const riderLat = orderData.deliveryPersonLatitude ?? orderData.deliveryPersonLocation?.lat;
+    const riderLng = orderData.deliveryPersonLongitude ?? orderData.deliveryPersonLocation?.lng;
 
     const fullAddress = getFullAddress(orderData) || "Delivery Address";
 
@@ -1302,6 +1352,8 @@ export default function TrackOrderPage() {
   const totalText = `₹${Math.round(safeNumber(orderData.total)).toLocaleString(
     "en-IN"
   )}`;
+  const pickupLat = getCustomerLat(orderData) ?? settings.cafeLat;
+  const pickupLng = getCustomerLng(orderData) ?? settings.cafeLng;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
@@ -1359,6 +1411,8 @@ export default function TrackOrderPage() {
             isDelivery={false}
             reducedMotion={reducedMotion}
           />
+
+          {typeof pickupLat === "number" && typeof pickupLng === "number" && <section className="overflow-hidden rounded-3xl border border-white/60 bg-white/50 shadow-lg backdrop-blur-xl"><div className="border-b border-white/60 px-4 py-3"><p className="text-xs font-black text-gray-800">{orderData.orderLocation?.kind === "pickup" ? "Pickup outlet location" : "Order location"}</p><p className="mt-0.5 text-[10px] font-semibold text-gray-500">{orderData.orderLocation?.address || getFullAddress(orderData)}</p></div><LiveMap riderLat={pickupLat} riderLng={pickupLng} customerLat={pickupLat} customerLng={pickupLng} cafeLat={pickupLat} cafeLng={pickupLng} customerName={orderData.orderLocation?.kind === "pickup" ? "Pickup outlet" : orderData.customerName} className="h-[260px] w-full" showHud={false} /></section>}
 
           {/* STATUS MESSAGES */}
           {isReady && (
