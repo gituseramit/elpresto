@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useCartStore, MenuItem } from "@/store/useCartStore";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 
 export interface ShowcaseDish {
   id: string;
@@ -123,16 +124,27 @@ const SHOWCASE_DISHES: ShowcaseDish[] = [
 export default function Circular3DHero() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [liveMenuItems, setLiveMenuItems] = useState<MenuItem[]>([]);
 
   const addItem = useCartStore((s) => s.addItem);
   const cartItems = useCartStore((s) => s.items);
 
-  const activeDish = SHOWCASE_DISHES[activeIndex];
-  const total = SHOWCASE_DISHES.length;
+  useEffect(() => subscribeMenuCatalog(setLiveMenuItems, (err) => {
+    console.warn("Featured menu subscription failed:", err);
+    setLiveMenuItems([]);
+  }), []);
 
-  // Auto-rotate every 5s while not hovered
+  const featuredDishes = SHOWCASE_DISHES.flatMap((dish) => {
+    const current = liveMenuItems.find((item) => item.id === dish.id);
+    if (!current || current.available === false) return [];
+    return [{ ...dish, ...current, tagline: dish.tagline, badge: dish.badge, rating: dish.rating, reviewsCount: dish.reviewsCount }];
+  });
+  const total = featuredDishes.length;
+  const activeDish = featuredDishes[total ? activeIndex % total : 0];
+
+  // Auto-rotate available featured catalog items every 5s while not hovered.
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || total < 2) return;
     const id = setInterval(
       () => setActiveIndex((p) => (p + 1) % total),
       5000
@@ -144,6 +156,7 @@ export default function Circular3DHero() {
   const handleNext = () => setActiveIndex((p) => (p + 1) % total);
 
   const handleAddToCart = () => {
+    if (!activeDish) return;
     const menuItem: MenuItem = {
       id: activeDish.id,
       name: activeDish.name,
@@ -156,7 +169,9 @@ export default function Circular3DHero() {
     addItem(menuItem);
   };
 
-  const isItemInCart = cartItems.some((i) => i.id === activeDish.id);
+  const isItemInCart = activeDish && cartItems.some((i) => i.id === activeDish.id);
+
+  if (!activeDish) return null;
 
   return (
     <section
@@ -416,7 +431,7 @@ export default function Circular3DHero() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
-            {SHOWCASE_DISHES.map((dish, i) => {
+            {featuredDishes.map((dish, i) => {
               const isActive = i === activeIndex;
               return (
                 <button

@@ -66,6 +66,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { DUMMY_MENU } from "@/data/menu";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 import {
   DEFAULT_CATEGORIES,
   initializeCategoriesIfEmpty,
@@ -76,6 +77,7 @@ import Modern3DDonutChart from "@/components/Admin/Charts/Modern3DDonutChart";
 import Modern3DCategoryChart from "@/components/Admin/Charts/Modern3DCategoryChart";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import AttendancePanel from "@/components/Admin/AttendancePanel";
+import ThemeControl from "@/components/ThemeControl";
 import LoyaltyRewardsManager from "@/components/Admin/LoyaltyRewardsManager";
 import type { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
@@ -993,6 +995,7 @@ export default function AdminPage() {
   const [showEditCategoryModal, setShowEditCategoryModal] =
     useState<Category | null>(null);
   const [showAddMenuItemModal, setShowAddMenuItemModal] = useState(false);
+  const [isSavingMenuItem, setIsSavingMenuItem] = useState(false);
   const [showEditMenuItemModal, setShowEditMenuItemModal] =
     useState<EnrichedMenuItem | null>(null);
   const [showOrderDetailsModal, setShowOrderDetailsModal] =
@@ -1199,22 +1202,19 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const q = query(collection(db, "menuItems"), orderBy("order", "asc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setMenuItems(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() } as MenuItemRecord))
-        );
+    const unsub = subscribeMenuCatalog(
+      (items) => {
+        setMenuItems(items as MenuItemRecord[]);
         setLoading((prev) => ({ ...prev, menu: false }));
       },
       (err) => {
         console.warn("Menu items error:", err);
         setLoading((prev) => ({ ...prev, menu: false }));
+        pushToast("error", "Could not load the live menu. Check your connection and retry.");
       }
     );
     return unsub;
-  }, [isAuthenticated]);
+  }, [isAuthenticated, pushToast]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1734,7 +1734,8 @@ export default function AdminPage() {
   /* ============================================================= */
 
   const addMenuItem = useCallback(
-    async (item: Partial<MenuItemRecord>) => {
+    async (item: Partial<MenuItemRecord>): Promise<boolean> => {
+      setIsSavingMenuItem(true);
       try {
         const maxOrder = menuItems.reduce((m, i) => Math.max(m, i.order || 0), 0);
         await addDoc(collection(db, "menuItems"), {
@@ -1745,20 +1746,31 @@ export default function AdminPage() {
           createdBy: currentActor().id,
         });
         pushToast("success", `"${item.name}" added.`);
+        return true;
       } catch (err) {
-        pushToast("error", "Failed to add menu item.");
+        console.error("Failed to add menu item:", err);
+        pushToast("error", "Could not save the product. Your entries are still here; retry after checking the connection.");
+        return false;
+      } finally {
+        setIsSavingMenuItem(false);
       }
     },
     [menuItems, pushToast, currentActor]
   );
 
   const editMenuItem = useCallback(
-    async (id: string, updated: Partial<MenuItemRecord>) => {
+    async (id: string, updated: Partial<MenuItemRecord>): Promise<boolean> => {
+      setIsSavingMenuItem(true);
       try {
         await writeWithAudit(doc(db, "menuItems", id), updated);
         pushToast("success", "Product updated.");
+        return true;
       } catch (err) {
-        pushToast("error", "Failed to update product.");
+        console.error("Failed to update menu item:", err);
+        pushToast("error", "Could not update the product. Your edits are still here; retry after checking the connection.");
+        return false;
+      } finally {
+        setIsSavingMenuItem(false);
       }
     },
     [writeWithAudit, pushToast]
@@ -1795,10 +1807,11 @@ export default function AdminPage() {
       if (!item) return;
       try {
         await writeWithAudit(doc(db, "menuItems", id), {
-          available: !item.available,
+          available: item.available === false,
         });
       } catch (err) {
-        pushToast("error", "Failed to toggle availability.");
+        console.error("Failed to toggle menu availability:", err);
+        pushToast("error", "Could not update product availability.");
       }
     },
     [menuItems, writeWithAudit, pushToast]
@@ -5192,7 +5205,7 @@ export default function AdminPage() {
   /* ============================================================= */
 
   return (
-    <div className="flex min-h-screen flex-col overflow-hidden bg-[#090d15] text-slate-100 lg:flex-row">
+    <div className="admin-portal flex min-h-screen flex-col overflow-hidden bg-[#090d15] text-slate-100 lg:flex-row">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
@@ -5350,6 +5363,7 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <ThemeControl />
             <button
               type="button"
               onClick={() => {
@@ -5737,7 +5751,7 @@ export default function AdminPage() {
               pushToast("error", "Select category & subcategory.");
               return;
             }
-            await addMenuItem({
+            const saved = await addMenuItem({
               name,
               category,
               subcategory,
@@ -5749,7 +5763,7 @@ export default function AdminPage() {
               available: true,
               isVeg: fd.get("isVeg") === "on",
             });
-            setShowAddMenuItemModal(false);
+            if (saved) setShowAddMenuItemModal(false);
           }}
           className="space-y-4"
         >
@@ -5914,9 +5928,10 @@ export default function AdminPage() {
             </button>
             <button
               type="submit"
-              className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.02] active:scale-95"
+              disabled={isSavingMenuItem}
+              className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.02] active:scale-95 disabled:cursor-wait disabled:opacity-60"
             >
-              Save Product
+              {isSavingMenuItem ? "Saving…" : "Save Product"}
             </button>
           </div>
         </form>
@@ -5942,7 +5957,7 @@ export default function AdminPage() {
                 pushToast("error", "Product name is required.");
                 return;
               }
-              await editMenuItem(showEditMenuItemModal.id, {
+              const saved = await editMenuItem(showEditMenuItemModal.id, {
                 name,
                 category,
                 subcategory,
@@ -5955,7 +5970,7 @@ export default function AdminPage() {
                 available: fd.get("available") === "on",
                 isVeg: fd.get("isVeg") === "on",
               });
-              setShowEditMenuItemModal(null);
+              if (saved) setShowEditMenuItemModal(null);
             }}
             className="space-y-4"
           >
@@ -6133,9 +6148,10 @@ export default function AdminPage() {
               </button>
               <button
                 type="submit"
-                className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.02] active:scale-95"
+                disabled={isSavingMenuItem}
+                className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.02] active:scale-95 disabled:cursor-wait disabled:opacity-60"
               >
-                Update Product
+                {isSavingMenuItem ? "Saving…" : "Update Product"}
               </button>
             </div>
           </form>

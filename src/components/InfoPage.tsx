@@ -18,7 +18,7 @@ export default function InfoPage({
   sections: InfoSection[];
 }) {
   return (
-    <main className="min-h-[70vh] bg-[#fbf7f1] px-4 py-10 sm:py-16">
+    <main className="storefront-theme min-h-[70vh] bg-[#fbf7f1] px-4 py-10 sm:py-16">
       <article className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-[0_20px_60px_-35px_rgba(55,34,21,0.28)]">
         <div className="bg-[#211712] px-6 py-8 text-white sm:px-10 sm:py-11">
           <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-white/70 transition hover:text-white">

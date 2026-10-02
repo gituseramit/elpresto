@@ -51,6 +51,7 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import ThemeControl from "@/components/ThemeControl";
 
 /* ============================================================= */
 /* Types                                                         */
@@ -1166,7 +1167,7 @@ export default function DeliveryPortal() {
   /* ============================================================= */
 
   return (
-    <div className="min-h-screen bg-[#090d15] pb-24 text-white sm:pb-6">
+    <div className="delivery-portal min-h-screen bg-[#090d15] pb-24 text-white sm:pb-6">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
@@ -1191,6 +1192,7 @@ export default function DeliveryPortal() {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <ThemeControl className="[&>button]:h-11 [&>button]:w-11" />
             <div
               role="status"
               aria-live="off"

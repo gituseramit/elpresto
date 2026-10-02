@@ -313,7 +313,7 @@ export default function Home() {
   };
 
   return (
-    <>
+    <div className="storefront-theme">
       <BrandIntro />
       {/* ============================ 1. HERO ============================ */}
       <section className="relative isolate overflow-x-clip px-4 pb-16 pt-8 md:pb-24 md:pt-14">
@@ -901,6 +901,6 @@ export default function Home() {
           __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
         }}
       />
-    </>
+    </div>
   );
 }

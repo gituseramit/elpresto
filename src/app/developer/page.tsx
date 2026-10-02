@@ -26,9 +26,6 @@ import {
   Printer,
   FileText,
   CheckCircle2,
-  Sun,
-  Moon,
-  Monitor,
   Menu,
   X,
   Sparkles,
@@ -40,6 +37,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
+import ThemeControl from "@/components/ThemeControl";
 import {
   Branch,
   Kitchen,
@@ -78,8 +76,6 @@ import {
    TYPES
    ============================================================ */
 
-type ThemeMode = "light" | "dark" | "system";
-
 type StaffSessionLike = {
   email?: string;
   name?: string;
@@ -99,7 +95,6 @@ type SectionId =
   | "audit";
 
 const DEFAULT_DEVELOPER_EMAIL = "developer@elpresto.co.in";
-const THEME_STORAGE_KEY = "elpestro_dev_theme";
 const ORDERS_LIMIT = 100;
 
 const useIsoLayoutEffect =
@@ -168,55 +163,6 @@ function isDelegationSessionActive(session: DelegationSession | null): boolean {
 }
 
 /* ============================================================
-   THEME TOGGLE
-   ============================================================ */
-
-function ThemeToggle({
-  themeMode,
-  setThemeMode,
-}: {
-  themeMode: ThemeMode;
-  setThemeMode: (t: ThemeMode) => void;
-}) {
-  // Avoid hydration mismatch: only show theme-specific icon after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const cycle: Record<ThemeMode, ThemeMode> = {
-    light: "dark",
-    dark: "system",
-    system: "light",
-  };
-
-  const Icon = !mounted
-    ? Monitor
-    : themeMode === "light"
-    ? Sun
-    : themeMode === "dark"
-    ? Moon
-    : Monitor;
-
-  const label =
-    themeMode === "light"
-      ? "Light theme"
-      : themeMode === "dark"
-      ? "Dark theme"
-      : "System theme";
-
-  return (
-    <button
-      type="button"
-      onClick={() => setThemeMode(cycle[themeMode])}
-      title={`${label} (click to cycle)`}
-      aria-label={`${label}. Click to cycle theme.`}
-      className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 hover:shadow-md dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
-    >
-      <Icon size={15} />
-    </button>
-  );
-}
-
-/* ============================================================
    STATUS STYLES
    ============================================================ */
 
@@ -268,20 +214,6 @@ export default function DeveloperDashboardPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
   const [headerHeight, setHeaderHeight] = useState(73);
-
-  /* ---- Theme (lazy init from storage to reduce flash) ---- */
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "light";
-    try {
-      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-      if (saved === "light" || saved === "dark" || saved === "system") {
-        return saved;
-      }
-    } catch {
-      /* ignore */
-    }
-    return "light";
-  });
 
   /* ============================================================
      DERIVED
@@ -350,43 +282,6 @@ export default function DeveloperDashboardPage() {
       ).length,
     [deliveryPartners, selectedBranchId]
   );
-
-  /* ============================================================
-     THEME APPLICATION
-     ============================================================ */
-
-  useIsoLayoutEffect(() => {
-    if (typeof window === "undefined") return;
-    const root = document.documentElement;
-    const resolved: "light" | "dark" =
-      themeMode === "system"
-        ? window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light"
-        : themeMode;
-
-    if (resolved === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
-
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-    } catch {
-      /* ignore */
-    }
-  }, [themeMode]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (themeMode !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      const root = document.documentElement;
-      if (mq.matches) root.classList.add("dark");
-      else root.classList.remove("dark");
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [themeMode]);
 
   /* ============================================================
      SESSION BOOTSTRAP
@@ -959,7 +854,7 @@ export default function DeveloperDashboardPage() {
             </button>
 
             {/* Theme */}
-            <ThemeToggle themeMode={themeMode} setThemeMode={setThemeMode} />
+            <ThemeControl />
 
             <div className="hidden items-center gap-2 border-l border-slate-200 pl-3 2xl:flex dark:border-white/10">
               <span className="grid h-8 w-8 place-items-center rounded-full bg-indigo-100 text-xs font-black uppercase text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">{staffSession?.name?.trim().charAt(0) || "D"}</span>

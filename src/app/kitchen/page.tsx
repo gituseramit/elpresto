@@ -40,11 +40,11 @@ import {
   doc,
   updateDoc,
   addDoc,
-  getDocs,
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
+import { CATEGORIES } from "@/data/menu";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 import { subscribePanelStatus } from "@/lib/panelAuth";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import {
@@ -53,6 +53,8 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import ThemeControl from "@/components/ThemeControl";
+import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
 
 /* ============================================================
    TYPES
@@ -63,6 +65,7 @@ interface MenuItem {
   name: string;
   price: number;
   category?: string;
+  available?: boolean;
 }
 
 interface OrderItem {
@@ -117,8 +120,6 @@ interface KitchenSettings {
   defaultSort: "oldest" | "newest";
 }
 
-type ThemeMode = "light" | "dark" | "system";
-
 type ToastKind = "success" | "error" | "info";
 
 interface Toast {
@@ -139,7 +140,6 @@ interface ConfirmState {
    CONSTANTS
    ============================================================ */
 
-const THEME_STORAGE_KEY = "elpestro_kitchen_theme";
 const SETTINGS_STORAGE_KEY = "elpestro_kitchen_settings";
 const SEEN_ORDER_IDS_MAX = 2000;
 const ORDERS_LIMIT_HINT = 500;
@@ -272,54 +272,6 @@ function StatusPill({
 }
 
 /* ============================================================
-   THEME TOGGLE
-   ============================================================ */
-
-function ThemeQuickToggle({
-  themeMode,
-  setThemeMode,
-}: {
-  themeMode: ThemeMode;
-  setThemeMode: (t: ThemeMode) => void;
-}) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  const cycle: Record<ThemeMode, ThemeMode> = {
-    light: "dark",
-    dark: "system",
-    system: "light",
-  };
-
-  const Icon = !mounted
-    ? Monitor
-    : themeMode === "light"
-    ? Sun
-    : themeMode === "dark"
-    ? Moon
-    : Monitor;
-
-  const label =
-    themeMode === "light"
-      ? "Light theme"
-      : themeMode === "dark"
-      ? "Dark theme"
-      : "System theme";
-
-  return (
-    <button
-      type="button"
-      onClick={() => setThemeMode(cycle[themeMode])}
-      title={`${label} (click to cycle)`}
-      aria-label={`${label}. Click to cycle theme.`}
-      className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 hover:shadow-md dark:border-white/5 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
-    >
-      <Icon size={15} />
-    </button>
-  );
-}
-
-/* ============================================================
    TOASTS
    ============================================================ */
 
@@ -445,27 +397,13 @@ function ConfirmDialog({
    ============================================================ */
 
 export default function KitchenSystem() {
+  const { preference: themeMode, resolvedTheme, setPreference: setThemeMode } = useTheme();
   /* ---- Auth ---- */
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [staffSession, setStaffSession] = useState<StaffSession | null>(null);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
   const [activeBranchId, setActiveBranchId] = useState<string>("");
   const [activeBranchName, setActiveBranchName] = useState<string>("");
-
-  /* ---- Theme ---- */
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "light";
-    try {
-      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-      if (saved === "light" || saved === "dark" || saved === "system") {
-        return saved;
-      }
-    } catch {
-      /* ignore */
-    }
-    return "light";
-  });
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
 
   /* ---- Layout ---- */
   const [activeTab, setActiveTab] = useState<
@@ -520,10 +458,8 @@ export default function KitchenSystem() {
 
   /* ---- POS create order ---- */
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [availableMenuItems, setAvailableMenuItems] = useState<MenuItem[]>(
-    () => DUMMY_MENU as MenuItem[]
-  );
-  const [menuLoading, setMenuLoading] = useState(false);
+  const [availableMenuItems, setAvailableMenuItems] = useState<MenuItem[]>([]);
+  const [menuLoading, setMenuLoading] = useState(true);
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
   const [selectedQuantity, setSelectedQuantity] = useState<number>(1);
   const [menuSearchFilter, setMenuSearchFilter] = useState<string>("");
@@ -639,40 +575,6 @@ export default function KitchenSystem() {
     // We don't have a branches collection subscription; show the ID as fallback.
     setActiveBranchName((prev) => prev || activeBranchId);
   }, [activeBranchId]);
-
-  /* ============================================================
-     THEME APPLICATION
-     ============================================================ */
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const root = document.documentElement;
-
-    const apply = () => {
-      const resolved: "light" | "dark" =
-        themeMode === "system"
-          ? window.matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light"
-          : themeMode;
-      setResolvedTheme(resolved);
-      if (resolved === "dark") root.classList.add("dark");
-      else root.classList.remove("dark");
-    };
-
-    apply();
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-    } catch {
-      /* ignore */
-    }
-
-    if (themeMode !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => apply();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [themeMode]);
 
   /* ============================================================
      FULLSCREEN SYNC
@@ -855,37 +757,17 @@ export default function KitchenSystem() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    let cancelled = false;
-    setMenuLoading(true);
-
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, "menuItems"));
-        if (cancelled) return;
-        if (!snap.empty) {
-          const map = new Map<string, MenuItem>();
-          (DUMMY_MENU as MenuItem[]).forEach((item) => map.set(item.id, item));
-          snap.docs.forEach((d) => {
-            const data = d.data() as Partial<MenuItem>;
-            map.set(d.id, {
-              id: d.id,
-              name: String(data.name || "Unnamed item"),
-              price: safeNumber(data.price),
-              category: data.category,
-            });
-          });
-          setAvailableMenuItems(Array.from(map.values()));
-        }
-      } catch (e) {
-        console.warn("Using default menu items:", e);
-      } finally {
-        if (!cancelled) setMenuLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    return subscribeMenuCatalog(
+      (items) => {
+        setAvailableMenuItems(items);
+        setMenuLoading(false);
+      },
+      (err) => {
+        console.warn("Kitchen menu subscription failed:", err);
+        setAvailableMenuItems([]);
+        setMenuLoading(false);
+      },
+    );
   }, [isAuthenticated]);
 
   /* ============================================================
@@ -1073,6 +955,7 @@ export default function KitchenSystem() {
   const filteredDropdownMenuItems = useMemo(() => {
     const q = menuSearchFilter.trim().toLowerCase();
     return availableMenuItems.filter((item) => {
+      if (item.available === false) return false;
       const matchesCategory =
         menuCategoryFilter === "All" || item.category === menuCategoryFilter;
       if (!matchesCategory) return false;
@@ -1090,7 +973,7 @@ export default function KitchenSystem() {
   const handleAddItemToOrder = useCallback(() => {
     if (!selectedMenuItemId) return;
     const menuItem = availableMenuItems.find((i) => i.id === selectedMenuItemId);
-    if (!menuItem) return;
+    if (!menuItem || menuItem.available === false) return;
     setNewOrderItems((prev) => {
       const existingIndex = prev.findIndex((i) => i.id === menuItem.id);
       if (existingIndex > -1) {
@@ -1859,10 +1742,7 @@ export default function KitchenSystem() {
                 )}
               </button>
 
-              <ThemeQuickToggle
-                themeMode={themeMode}
-                setThemeMode={setThemeMode}
-              />
+              <ThemeControl />
 
               <button
                 type="button"
@@ -2064,17 +1944,17 @@ export default function KitchenSystem() {
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         {
-                          id: "light" as ThemeMode,
+                          id: "light" as ThemePreference,
                           label: "Light",
                           icon: Sun,
                         },
                         {
-                          id: "dark" as ThemeMode,
+                          id: "dark" as ThemePreference,
                           label: "Dark",
                           icon: Moon,
                         },
                         {
-                          id: "system" as ThemeMode,
+                          id: "system" as ThemePreference,
                           label: "System",
                           icon: Monitor,
                         },
@@ -2909,7 +2789,7 @@ export default function KitchenSystem() {
                         className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-white/5 dark:bg-slate-800 dark:text-white"
                       >
                         <option value="">— Choose item —</option>
-                        {availableMenuItems.map((item) => (
+                        {availableMenuItems.filter((item) => item.available !== false).map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.name} • ₹{item.price} ({item.category})
                           </option>
@@ -3537,7 +3417,7 @@ export default function KitchenSystem() {
                     className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none dark:border-white/5 dark:bg-slate-900 dark:text-white"
                   >
                     <option value="">— Choose item —</option>
-                    {availableMenuItems.map((item) => (
+                    {availableMenuItems.filter((item) => item.available !== false).map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} • ₹{item.price}
                       </option>

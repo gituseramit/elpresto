@@ -59,6 +59,7 @@ import {
 } from "@/lib/branchService";
 import type { Branch } from "@/lib/types";
 import { db } from "@/lib/firebase";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 import {
   addDoc,
   collection,
@@ -291,10 +292,12 @@ function normalisePincode(raw: string): string {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, getTotal, clearCart } = useCartStore();
+  const { items, getTotal, clearCart, removeItem, syncMenuCatalog } = useCartStore();
   const { user, userProfile, loading: authLoading } = useAuth();
 
   const [hydrated, setHydrated] = useState(false);
+  const [menuCatalogReady, setMenuCatalogReady] = useState(false);
+  const [menuCatalogError, setMenuCatalogError] = useState("");
 
   const [settings, setSettings] = useState<DeliverySettings>(
     DEFAULT_DELIVERY_SETTINGS
@@ -393,6 +396,22 @@ export default function CheckoutPage() {
   useEffect(() => {
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    return subscribeMenuCatalog(
+      (catalog) => {
+        syncMenuCatalog(catalog);
+        setMenuCatalogError("");
+        setMenuCatalogReady(true);
+      },
+      (err) => {
+        console.warn("Checkout menu validation failed:", err);
+        setMenuCatalogReady(false);
+        setMenuCatalogError("We couldn’t verify current menu prices. Please retry when your connection is restored.");
+      },
+    );
+  }, [hydrated, syncMenuCatalog]);
 
   useEffect(() => {
     const unsubscribeSettings = onSnapshot(doc(db, "settings", "general"), (snapshot) => {
@@ -715,6 +734,10 @@ export default function CheckoutPage() {
   /* -------------------------------------------------------------- */
 
   const subtotal = useMemo(() => getTotal(), [getTotal, items]);
+  const unavailableCartItems = useMemo(
+    () => items.filter((item) => item.catalogMissing || item.available === false),
+    [items],
+  );
   const packing = useMemo(() => getPackingCharge(items, packingEnabled, packingRates), [items, packingEnabled, packingRates]);
   const selectedReward = useMemo(() => loyaltyRewards.find((reward) => reward.id === selectedRewardId) || null, [loyaltyRewards, selectedRewardId]);
   const isDelivery = formData.type === "delivery";
@@ -810,6 +833,13 @@ export default function CheckoutPage() {
       }
     ) => {
       if (orderCreatedRef.current) return;
+
+      if (!menuCatalogReady || menuCatalogError) {
+        throw new Error("The current menu could not be verified. Please wait for the menu check and try again.");
+      }
+      if (unavailableCartItems.length > 0) {
+        throw new Error("Remove unavailable menu items from your cart before placing the order.");
+      }
 
       if (!resolvedBranch) {
         throw new Error("No outlet resolved for this order.");
@@ -967,11 +997,23 @@ export default function CheckoutPage() {
       packing,
       deliveryCoords,
       clearCart,
+      menuCatalogReady,
+      menuCatalogError,
+      unavailableCartItems,
     ]
   );
 
   const initiateRazorpayCheckout = useCallback(async () => {
     if (submitInFlightRef.current) return;
+
+    if (!menuCatalogReady || menuCatalogError) {
+      setPaymentError(menuCatalogError || "Checking the current menu. Please wait a moment and try again.");
+      return;
+    }
+    if (unavailableCartItems.length > 0) {
+      setPaymentError("Your cart has unavailable items. Remove them before continuing.");
+      return;
+    }
 
     const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
     if (!razorpayKey) {
@@ -1002,27 +1044,23 @@ export default function CheckoutPage() {
 
     try {
       const receiptId = `rcpt_${Date.now()}`;
-      let orderIdFromBackend: string | undefined;
 
-      try {
-        const res = await fetch("/api/create-order/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            // NOTE: The server MUST recompute this from the cart/order
-            // context. This is a hint only.
-            amount: amountInPaise,
-            currency: "INR",
-            receipt: receiptId,
-          }),
-        });
-        if (res.ok) {
-          const orderData = await res.json();
-          orderIdFromBackend = orderData.order_id;
-        }
-      } catch (apiErr) {
-        console.warn("Backend unavailable, using standard checkout.", apiErr);
+      const res = await fetch("/api/create-order/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          subtotal,
+          items: items.map((item) => ({ id: item.id, quantity: item.quantity })),
+          currency: "INR",
+          receipt: receiptId,
+        }),
+      });
+      const orderData = await res.json().catch(() => ({}));
+      if (!res.ok || !orderData.order_id) {
+        throw new Error(orderData.error || "Could not verify the latest menu price. Please review your cart and retry.");
       }
+      const orderIdFromBackend = String(orderData.order_id);
 
       const options: RazorpayOptions = {
         key: razorpayKey,
@@ -1135,7 +1173,7 @@ export default function CheckoutPage() {
       setIsSubmitting(false);
       submitInFlightRef.current = false;
     }
-  }, [finalTotal, formData, user, submitOrderWithPayment]);
+  }, [finalTotal, subtotal, items, formData, user, submitOrderWithPayment, menuCatalogReady, menuCatalogError, unavailableCartItems]);
 
   const handleFormSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -1364,7 +1402,7 @@ export default function CheckoutPage() {
     <>
       <Toast state={toast} onDismiss={dismissToast} />
 
-      <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
+      <div className="storefront-theme min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
         <div className="container mx-auto max-w-6xl">
           {/* Header */}
           <div className="mb-6 flex items-center gap-3">
@@ -1728,6 +1766,37 @@ export default function CheckoutPage() {
                     </div>
                   )}
 
+                  {!menuCatalogReady && !menuCatalogError && (
+                    <div role="status" className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3.5 text-xs font-bold text-blue-900">
+                      Checking the latest menu and prices…
+                    </div>
+                  )}
+
+                  {menuCatalogError && (
+                    <div role="alert" className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs font-bold text-red-800">
+                      {menuCatalogError} Checkout is paused until the menu can be verified.
+                    </div>
+                  )}
+
+                  {menuCatalogReady && unavailableCartItems.length > 0 && (
+                    <div role="alert" className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/95 p-3.5 text-xs text-amber-950">
+                      <p className="font-black">Some cart items are no longer available.</p>
+                      <p className="mt-1">Remove them to continue. Updated prices for available items have been applied.</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {unavailableCartItems.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 font-black text-amber-900 hover:bg-amber-100"
+                          >
+                            <X size={12} aria-hidden="true" /> Remove {item.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {cartAvailabilityWarning.length > 0 && (
                     <div
                       role="alert"
@@ -2018,6 +2087,16 @@ export default function CheckoutPage() {
                         <span className="shrink-0 font-black text-gray-900">
                           ₹{item.price * item.quantity}
                         </span>
+                        {(item.catalogMissing || item.available === false) && (
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            aria-label={`Remove unavailable ${item.name} from cart`}
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-red-600 hover:bg-red-50"
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -2164,6 +2243,9 @@ export default function CheckoutPage() {
                     disabled={
                       isSubmitting ||
                       items.length === 0 ||
+                      !menuCatalogReady ||
+                      Boolean(menuCatalogError) ||
+                      unavailableCartItems.length > 0 ||
                       (isDelivery && !deliveryCoords.isWithinRadius)
                     }
                     className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-[#D92312] to-[#B8190B] py-4 text-sm font-black text-white shadow-lg shadow-red-500/30 transition-all hover:scale-[1.02] hover:shadow-red-500/50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"

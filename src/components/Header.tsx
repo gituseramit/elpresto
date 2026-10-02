@@ -14,6 +14,7 @@ import { useCartStore } from "@/store/useCartStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import ThemeControl from "@/components/ThemeControl";
 
 /* ============================================================= */
 /* Helpers                                                       */
@@ -156,7 +157,7 @@ export default function Header() {
     href === "/" ? pathname === "/" : pathname?.startsWith(href) ?? false;
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-orange-100 bg-white shadow-[0_4px_25px_-5px_rgba(217,35,18,0.06)]">
+    <header className="customer-header sticky top-0 z-40 w-full border-b border-orange-100 bg-white shadow-[0_4px_25px_-5px_rgba(217,35,18,0.06)] dark:border-white/10 dark:bg-slate-950">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4">
         {/* Logo */}
         <Link
@@ -217,6 +218,7 @@ export default function Header() {
 
         {/* Right cluster */}
         <div className="flex items-center gap-2 md:gap-3">
+          <ThemeControl />
           <Link
             href="/menu"
             aria-current={isActive("/menu") ? "page" : undefined}

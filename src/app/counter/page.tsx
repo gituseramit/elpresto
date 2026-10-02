@@ -50,7 +50,7 @@ import {
   addDoc,
   Timestamp,
 } from "firebase/firestore";
-import { DUMMY_MENU } from "@/data/menu";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 import { Order, MenuItem, Category } from "@/lib/types";
 import { printThermalReceipt, printKOT } from "@/lib/printer";
 import { initializeCategoriesIfEmpty } from "@/lib/categories";
@@ -62,6 +62,7 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
+import ThemeControl from "@/components/ThemeControl";
 import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
@@ -868,30 +869,9 @@ export default function CounterPOSPage() {
       }
     })();
 
-    const unsubMenu = onSnapshot(
-      collection(db, "menuItems"),
-      (snap) => {
-        const map = new Map<string, MenuItem>();
-        (DUMMY_MENU as MenuItem[]).forEach((item) => map.set(item.id, item));
-        snap.docs.forEach((d) => {
-          const data = d.data() as Partial<MenuItem>;
-          map.set(d.id, {
-            id: d.id,
-            name: String(data.name || "Unnamed"),
-            price: safeNumber(data.price),
-            category: String(data.category || ""),
-            subcategory: data.subcategory ? String(data.subcategory) : undefined,
-            description: data.description
-              ? String(data.description)
-              : undefined,
-            available: data.available !== false,
-          } as MenuItem);
-        });
-        setMenuItems(Array.from(map.values()));
-      },
-      (err) => {
-        console.error("Menu subscription error:", err);
-      }
+    const unsubMenu = subscribeMenuCatalog(
+      (items) => setMenuItems(items),
+      (err) => console.error("Menu subscription error:", err),
     );
 
     return () => {
@@ -2472,7 +2452,7 @@ export default function CounterPOSPage() {
   /* ============================================================ */
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900">
+    <div className="counter-portal flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900">
       <Toast state={toast} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
@@ -2504,6 +2484,7 @@ export default function CounterPOSPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ThemeControl />
           {isElevatedUser && branches.length > 1 && (
             <div className="hidden items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 sm:flex">
               <label htmlFor="branch-select" className="sr-only">

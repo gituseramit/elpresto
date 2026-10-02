@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Drive Tailwind's dark: utilities from the shared app theme preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ============================================================= */
 /* Design tokens                                                 */
 /* ============================================================= */
@@ -64,6 +67,16 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   overflow-x: clip;                 /* was: hidden — breaks sticky */
+}
+
+html.dark body {
+  --background: #090d15;
+  --foreground: #f8fafc;
+  --surface: #111827;
+  --surface-warm: #171b24;
+  --border-warm: #293244;
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 /* Keep the promise band readable if a page-level stylesheet changes generic
@@ -266,4 +279,296 @@ html[data-ep-intro="skip"] .ep-presto-intro {
   .ep-presto-intro {
     display: none !important;
   }
+}
+
+/* ============================================================= */
+/* Shared portal theme palettes                                  */
+/* ============================================================= */
+
+/* Portals that were originally designed dark also get a complete light
+   palette. The overrides are scoped to those portal roots so status colors,
+   the marketing site, and unrelated dialogs keep their existing styling. */
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal) {
+  background-color: #f3f5f9 !important;
+  color: #1e293b !important;
+}
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="bg-[#090d15]"], [class~="bg-[#0b101a]"], [class~="bg-[#0c111b]/90"], [class~="bg-[#0e1420]"], [class~="bg-[#111827]"], [class~="bg-[#151e2e]"], [class~="bg-slate-950"], [class~="bg-slate-900"], [class~="bg-slate-900/95"], [class~="bg-slate-900/80"], [class~="bg-slate-900/70"], [class~="bg-slate-900/60"], [class~="bg-slate-900/50"], [class~="bg-slate-900/40"]) {
+  background-color: #ffffff !important;
+  background-image: none !important;
+}
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="bg-slate-800"], [class~="bg-slate-800/90"], [class~="bg-slate-800/80"], [class~="bg-slate-800/70"], [class~="bg-slate-800/60"], [class~="bg-slate-800/40"], [class~="bg-slate-700"], [class~="bg-slate-700/60"]) {
+  background-color: #f1f5f9 !important;
+  background-image: none !important;
+}
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="bg-white/5"], [class~="bg-white/10"], [class~="bg-white/20"], [class~="bg-white/25"]) {
+  background-color: rgba(15, 23, 42, 0.035) !important;
+}
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-white"], [class~="text-slate-100"], [class~="text-slate-200"], [class~="text-slate-300"]) {
+  color: #1e293b !important;
+}
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-slate-400"], [class~="text-slate-500"]) {
+  color: #64748b !important;
+}
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-emerald-300"], [class~="text-emerald-400"]) { color: #047857 !important; }
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-orange-300"], [class~="text-orange-400"]) { color: #c2410c !important; }
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-red-300"], [class~="text-red-400"]) { color: #b91c1c !important; }
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-amber-300"], [class~="text-amber-400"]) { color: #b45309 !important; }
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="text-blue-300"], [class~="text-blue-400"]) { color: #1d4ed8 !important; }
+
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  :is([class~="border-white/5"], [class~="border-white/10"], [class~="border-white/[0.07]"], [class~="border-white/[0.08]"]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Keep white lettering on the primary colored actions and brand tiles. */
+html:not(.dark) :is(.admin-portal, .delivery-portal, .attendance-portal)
+  [class~="text-white"]:is([class*="bg-gradient"], [class*="bg-orange-"], [class*="bg-red-"], [class*="bg-[#D92312]"]) {
+  color: #ffffff !important;
+}
+
+/* The counter starts light; remap its neutral surfaces in dark mode. */
+html.dark .counter-portal {
+  background-color: #090d15 !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .counter-portal
+  :is([class~="bg-white"], [class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-white/60"], [class~="bg-slate-50"], [class~="bg-slate-50/80"]) {
+  background-color: #111827 !important;
+  background-image: none !important;
+}
+
+html.dark .counter-portal
+  :is([class~="bg-slate-100"], [class~="bg-slate-200"], [class~="bg-slate-100/80"]) {
+  background-color: #1e293b !important;
+}
+
+html.dark .counter-portal
+  :is([class~="text-slate-900"], [class~="text-slate-800"], [class~="text-slate-700"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark .counter-portal
+  :is([class~="text-slate-600"], [class~="text-slate-500"], [class~="text-slate-400"]) {
+  color: #94a3b8 !important;
+}
+
+html.dark .counter-portal
+  :is([class~="border-slate-100"], [class~="border-slate-200"], [class~="border-slate-300"]) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Customer profile is deliberately scoped so the public menu design is not
+   changed as part of a portal appearance preference. */
+html.dark .profile-portal {
+  background-color: #090d15 !important;
+  color: #e2e8f0;
+}
+
+html.dark .profile-portal
+  :is([class~="bg-white"], [class~="bg-white/60"], [class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-[#f7f4ef]"], [class~="bg-[#efe9e2]"], [class~="bg-[#fff8f6]"], [class~="bg-[#fff0ec]"]) {
+  background-color: #111827 !important;
+  background-image: none !important;
+}
+
+html.dark .profile-portal
+  :is([class~="text-gray-900"], [class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark .profile-portal
+  :is([class~="text-gray-500"], [class~="text-gray-400"]) {
+  color: #94a3b8 !important;
+}
+
+html.dark .profile-portal
+  :is([class~="border-gray-100"], [class~="border-gray-200"], [class~="border-[#e9e1d8]"], [class~="border-[#eee5dc]"]) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .profile-portal input,
+html.dark .profile-portal select,
+html.dark .profile-portal textarea {
+  background-color: #0b1220;
+  color: #f8fafc;
+  border-color: #334155;
+  color-scheme: dark;
+}
+
+/* Customer sign-in uses its own chrome instead of the shared site header. */
+html.dark .auth-portal {
+  background: linear-gradient(135deg, #090d15, #111827) !important;
+  color: #f8fafc;
+}
+
+html.dark .staff-login-portal {
+  background: linear-gradient(135deg, #090d15, #111827) !important;
+  color: #f8fafc;
+}
+
+html.dark .auth-portal
+  :is([class*="bg-white"], [class*="bg-gray-50"], [class*="bg-gray-100"], [class*="bg-gray-200"], [class*="bg-amber-50"], [class*="bg-orange-50"]) {
+  background-color: #111827 !important;
+  background-image: none !important;
+}
+
+html.dark .auth-portal
+  :is([class~="text-gray-900"], [class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark .auth-portal
+  :is([class~="border-gray-100"], [class~="border-gray-200"], [class~="border-orange-100"], [class~="border-orange-200"], [class~="border-white/50"]) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.dark .auth-portal input {
+  background-color: #0b1220 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+  color-scheme: dark;
+}
+
+/* Staff sign-in screens support both their original dark and light variants. */
+html:not(.dark) .staff-login-portal {
+  background: linear-gradient(135deg, #fffaf2, #f5f7fb) !important;
+  color: #1e293b;
+}
+
+html:not(.dark) .staff-login-portal
+  :is([class~="bg-slate-950"], [class~="bg-slate-900"], [class~="bg-slate-900/80"], [class~="bg-slate-800/80"]) {
+  background-color: #ffffff !important;
+  background-image: none !important;
+}
+
+html:not(.dark) .staff-login-portal
+  :is([class~="text-white"], [class~="text-slate-100"], [class~="text-slate-200"], [class~="text-slate-300"]) {
+  color: #1e293b !important;
+}
+
+html:not(.dark) .staff-login-portal [class~="text-white"][class*="bg-gradient"] {
+  color: #ffffff !important;
+}
+
+html:not(.dark) .staff-login-portal input {
+  background-color: #f8fafc !important;
+  color: #1e293b !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.dark .staff-login-portal
+  :is([class~="bg-white"], [class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-gray-100"], [class~="bg-slate-50"]) {
+  background-color: #111827 !important;
+  background-image: none !important;
+}
+
+html.dark .staff-login-portal
+  :is([class~="text-gray-900"], [class~="text-gray-800"], [class~="text-gray-700"], [class~="text-slate-900"], [class~="text-slate-800"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark .staff-login-portal input {
+  background-color: #0b1220 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+/* Shared storefront navigation adapts while retaining its familiar layout. */
+html.dark header.customer-header,
+html.dark .customer-header {
+  border-color: rgba(255, 255, 255, 0.1);
+  background-color: #090d15;
+}
+
+html.dark .customer-header nav {
+  color: #e2e8f0;
+}
+
+html.dark .customer-header nav a:not([aria-current="page"]),
+html.dark .customer-header button:not([class*="bg-gradient"]):not([class*="bg-[#D92312]"]) {
+  color: #e2e8f0;
+}
+
+html.dark .customer-header
+  :is([class~="bg-white"], [class~="bg-orange-50/40"], [class~="bg-red-50"]) {
+  background-color: #111827 !important;
+}
+
+html.dark .customer-header
+  :is([class~="border-orange-100"], [class~="border-gray-100"], [class~="border-gray-50"], [class~="border-transparent"]) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .customer-header
+  :is([class~="text-gray-900"], [class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark .customer-header [class*="bg-gradient"] .text-white,
+html.dark .customer-header [class*="bg-[#D92312]"].text-white {
+  color: #ffffff !important;
+}
+
+/* Storefront, menu, checkout, order tracking, and info pages share the same
+   preference as the staff portals. */
+html.dark .storefront-theme {
+  background-color: #090d15 !important;
+  background-image: none !important;
+  color: #e2e8f0;
+}
+
+html.dark .storefront-theme
+  :is([class*="bg-white"], [class*="bg-amber-50"], [class*="bg-orange-50"], [class*="bg-rose-50"], [class*="bg-gray-50"], [class*="bg-[#fbf7f1]"], [class*="bg-[#f7f4ef]"], [class*="bg-[#fff8f6]"], [class*="bg-[#fff0ec]"]) {
+  background-color: #111827 !important;
+  background-image: none !important;
+}
+
+html.dark .storefront-theme
+  :is([class~="text-gray-950"], [class~="text-gray-900"], [class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-slate-900"], [class~="text-slate-800"]) {
+  color: #e2e8f0 !important;
+}
+
+html.dark .storefront-theme
+  :is([class~="text-gray-500"], [class~="text-gray-400"], [class~="text-slate-600"], [class~="text-slate-500"], [class~="text-slate-400"]) {
+  color: #94a3b8 !important;
+}
+
+html.dark .storefront-theme
+  :is([class~="border-white/60"], [class~="border-gray-100"], [class~="border-gray-200"], [class~="border-orange-100"], [class~="border-orange-200"]) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .storefront-theme input,
+html.dark .storefront-theme select,
+html.dark .storefront-theme textarea {
+  background-color: #0b1220;
+  border-color: #334155;
+  color: #f8fafc;
+  color-scheme: dark;
+}
+
+html.dark .storefront-theme [class*="bg-gradient"] .text-white,
+html.dark .storefront-theme [class*="bg-[#D92312]"].text-white,
+html.dark .storefront-theme [class*="bg-[#B8190B]"].text-white {
+  color: #ffffff !important;
 }

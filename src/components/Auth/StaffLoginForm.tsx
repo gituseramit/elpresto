@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Lock, User, Eye, EyeOff, Loader2, ShieldAlert, Key, AlertCircle } from "lucide-react";
 import {
   verifyStaffLogin,
@@ -8,6 +8,7 @@ import {
   StaffSession,
   changePassword,
 } from "@/lib/staffAuth";
+import ThemeControl from "@/components/ThemeControl";
 
 interface StaffLoginFormProps {
   panel: string;
@@ -107,7 +108,8 @@ export default function StaffLoginForm({
 
   if (showChangePassword && pendingSession) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+      <div className="staff-login-portal flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+        <ThemeControl fixed />
         <div className="w-full max-w-sm">
           <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl backdrop-blur-2xl">
             <div className="bg-gradient-to-r from-orange-600 to-amber-500 p-6 text-center">
@@ -175,7 +177,8 @@ export default function StaffLoginForm({
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+    <div className="staff-login-portal flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+      <ThemeControl fixed />
       {/* Ambient glow */}
       <span className="pointer-events-none fixed left-1/4 top-1/4 h-80 w-80 rounded-full bg-orange-500/5 blur-3xl" />
       <span className="pointer-events-none fixed bottom-1/4 right-1/4 h-80 w-80 rounded-full bg-amber-500/5 blur-3xl" />

@@ -1356,7 +1356,7 @@ export default function TrackOrderPage() {
   const pickupLng = getCustomerLng(orderData) ?? settings.cafeLng;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
+    <div className="storefront-theme min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
       <div className="container mx-auto max-w-2xl">
         {BackLink}
 

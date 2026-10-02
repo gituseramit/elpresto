@@ -5,6 +5,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Cart from "@/components/Cart";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import RouteAwareChrome from "@/components/RouteAwareChrome";
 
 const geistSans = Geist({
@@ -110,39 +111,8 @@ export default function RootLayout({
       className="scroll-smooth motion-reduce:scroll-auto"
       suppressHydrationWarning
     >
-      <head>
-        <script
-          id="el-presto-intro-bootstrap"
-          dangerouslySetInnerHTML={{
-            __html: `(() => {
-              const root = document.documentElement;
-              const key = "elpresto:brand-intro:v1";
-              const isHome = window.location.pathname === "/";
-              const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-
-              if (!isHome || reduceMotion) {
-                if (isHome && reduceMotion) {
-                  try { window.sessionStorage.setItem(key, "done"); } catch {}
-                }
-                root.setAttribute("data-ep-intro", "skip");
-                return;
-              }
-
-              try {
-                if (window.sessionStorage.getItem(key)) {
-                  root.setAttribute("data-ep-intro", "skip");
-                  return;
-                }
-                window.sessionStorage.setItem(key, "playing");
-              } catch {}
-
-              root.setAttribute("data-ep-intro", "play");
-            })();`,
-          }}
-        />
-      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-dvh bg-amber-50 font-sans antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-dvh bg-background font-sans text-foreground antialiased`}
       >
         <a
           href="#main-content"
@@ -151,21 +121,23 @@ export default function RootLayout({
           Skip to content
         </a>
 
-        <AuthProvider>
-          <div className="flex min-h-dvh flex-col">
-            <RouteAwareChrome>
-              <Header />
-            </RouteAwareChrome>
+        <ThemeProvider>
+          <AuthProvider>
+            <div className="flex min-h-dvh flex-col">
+              <RouteAwareChrome>
+                <Header />
+              </RouteAwareChrome>
 
-            <main id="main-content" className="flex flex-1 flex-col">
-              {children}
-            </main>
+              <main id="main-content" className="flex flex-1 flex-col">
+                {children}
+              </main>
 
-            <RouteAwareChrome>
-              <Cart />
-            </RouteAwareChrome>
-          </div>
-        </AuthProvider>
+              <RouteAwareChrome>
+                <Cart />
+              </RouteAwareChrome>
+            </div>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

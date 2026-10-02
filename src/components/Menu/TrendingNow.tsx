@@ -22,12 +22,12 @@ import {
   query,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 import {
   subscribeTrendingSettings,
   DEFAULT_TRENDING_SETTINGS,
   type TrendingSettings,
 } from "@/lib/trendingService";
-import { DUMMY_MENU } from "@/data/menu";
 
 /* ============================================================= */
 /* Types                                                         */
@@ -70,6 +70,7 @@ export default function TrendingNow({
     DEFAULT_TRENDING_SETTINGS
   );
   const [liveOrders, setLiveOrders] = useState<OrderRecord[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const addItem = useCartStore((state) => state.addItem);
@@ -88,6 +89,13 @@ export default function TrendingNow({
     return subscribeTrendingSettings((settings) => {
       setTrendingSettings(settings);
     });
+  }, []);
+
+  useEffect(() => {
+    return subscribeMenuCatalog(
+      setMenuItems,
+      (err) => console.warn("Trending menu subscription error:", err),
+    );
   }, []);
 
   /* Only subscribe to recent orders when we actually need them.
@@ -133,8 +141,8 @@ export default function TrendingNow({
       trendingSettings.manualItemIds.length > 0
     ) {
       return trendingSettings.manualItemIds
-        .map((id) => DUMMY_MENU.find((m) => m.id === id))
-        .filter((x): x is MenuItem => Boolean(x))
+        .map((id) => menuItems.find((item) => item.id === id))
+        .filter((item): item is MenuItem => Boolean(item && item.available !== false))
         .slice(0, max)
         .map((item, idx) => ({
           ...item,
@@ -171,10 +179,10 @@ export default function TrendingNow({
     );
 
     for (const [key, data] of sorted) {
-      const found = DUMMY_MENU.find(
-        (m) =>
-          m.id === key ||
-          m.name.toLowerCase() === data.name.toLowerCase()
+      const found = menuItems.find(
+        (item) =>
+          item.available !== false &&
+          (item.id === key || item.name.toLowerCase() === data.name.toLowerCase())
       );
       if (!found || rankedIds.has(found.id)) continue;
       rankedIds.add(found.id);
@@ -190,7 +198,7 @@ export default function TrendingNow({
       ...item,
       trendingRank: idx + 1,
     }));
-  }, [liveOrders, trendingSettings, productRatings]);
+  }, [liveOrders, menuItems, trendingSettings, productRatings]);
 
   /* ---------- Carousel scroll ---------- */
   const scrollContainer = (dir: "left" | "right") => {

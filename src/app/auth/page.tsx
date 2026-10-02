@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import ThemeControl from "@/components/ThemeControl";
 import {
   Eye,
   EyeOff,
@@ -488,7 +489,7 @@ function AuthForm() {
     : "Join us for a delicious experience";
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50/60 to-orange-50/40 px-4 py-10 sm:py-12">
+    <main className="auth-portal flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50/60 to-orange-50/40 px-4 py-10 sm:py-12">
       <div className="w-full max-w-md">
         {/* Top bar */}
         <div className="mb-6 flex items-center justify-between sm:mb-8">
@@ -498,13 +499,16 @@ function AuthForm() {
           >
             <ArrowLeft size={15} aria-hidden="true" /> {redirect === "/checkout" ? "Back to menu" : "Back to Home"}
           </Link>
-          <div className="text-right">
-            <div className="text-lg font-black leading-none text-gray-900">
-              EL PRESTO <span className="text-orange-600">PIZZA</span>
+          <div className="flex items-center gap-3 text-right">
+            <div>
+              <div className="text-lg font-black leading-none text-gray-900">
+                EL PRESTO <span className="text-orange-600">PIZZA</span>
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                100% Whole Wheat
+              </div>
             </div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              100% Whole Wheat
-            </div>
+            <ThemeControl />
           </div>
         </div>
 

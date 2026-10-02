@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useDeferredValue, useRef } from "react";
-import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
+import { CATEGORIES } from "@/data/menu";
 import TrendingNow from "@/components/Menu/TrendingNow";
 import {
   subscribeAllProductRatings,
@@ -26,8 +26,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { collection, onSnapshot, query } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 
 const FREE_DELIVERY_THRESHOLD = 499;
 
@@ -45,42 +44,37 @@ export default function MenuPage() {
   const [searchInput, setSearchInput] = useState<string>("");
   /* useDeferredValue keeps typing responsive without blocking scroll. */
   const searchQuery = useDeferredValue(searchInput);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(DUMMY_MENU);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuError, setMenuError] = useState("");
   const [productRatings, setProductRatings] = useState<
     Record<string, ProductRatingSummary>
   >({});
 
   const addItem = useCartStore((state) => state.addItem);
   const updateQuantity = useCartStore((state) => state.updateQuantity);
+  const syncMenuCatalog = useCartStore((state) => state.syncMenuCatalog);
   const cartItems = useCartStore((state) => state.items);
   const getTotal = useCartStore((state) => state.getTotal);
 
   /* ---------- Live Firestore menu ---------- */
   useEffect(() => {
-    let cancelled = false;
-
-    const q = query(collection(db, "menuItems"));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        if (cancelled || snapshot.empty) return;
-        const map = new Map<string, MenuItem>();
-        DUMMY_MENU.forEach((item) => map.set(item.id, item));
-        snapshot.docs.forEach((doc) => {
-          const data = doc.data();
-          const item = { ...data, id: String(data.id || doc.id) } as MenuItem;
-          map.set(item.id, item);
-        });
-        setMenuItems(Array.from(map.values()));
+    const unsubscribe = subscribeMenuCatalog(
+      (items) => {
+        setMenuItems(items);
+        syncMenuCatalog(items);
+        setMenuError("");
+        setMenuLoading(false);
       },
-      (err) => console.warn("Firestore menu fallback to local:", err)
+      (err) => {
+        console.warn("Live menu subscription failed:", err);
+        setMenuError("We couldn’t load the live menu. Please check your connection and try again.");
+        setMenuLoading(false);
+      }
     );
 
-    return () => {
-      cancelled = true;
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
+    return unsubscribe;
+  }, [syncMenuCatalog]);
 
   /* ---------- Ratings ---------- */
   useEffect(() => {
@@ -143,6 +137,7 @@ export default function MenuPage() {
   // the live menu category once the menu has mounted, then scroll to the section.
   useEffect(() => {
     if (categoryLinkHandled.current || typeof window === "undefined") return;
+    if (menuLoading) return;
     const params = new URLSearchParams(window.location.search);
     const slug = params.get("category");
     const itemId = params.get("item");
@@ -175,7 +170,7 @@ export default function MenuPage() {
       const id = "category-" + category.toLowerCase().replace(/[^a-z0-9]/g, "-");
       document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
-  }, [categoriesList]);
+  }, [categoriesList, menuLoading]);
 
   const totalCartCount = useMemo(
     () => cartItems.reduce((acc, i) => acc + i.quantity, 0),
@@ -203,7 +198,7 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="flex-1 bg-amber-50 pb-32">
+    <div className="storefront-theme flex-1 bg-amber-50 pb-32">
       {/* ============================================================ */}
       {/* 1. RESTAURANT HEADER BANNER                                    */}
       {/* ============================================================ */}
@@ -391,7 +386,15 @@ export default function MenuPage() {
       {/* 4. MENU SECTIONS                                               */}
       {/* ============================================================ */}
       <div className="mx-auto max-w-6xl px-4 pt-6">
-        {Object.keys(categorizedMenu).length === 0 ? (
+        {menuLoading ? (
+          <div role="status" className="rounded-3xl border border-white/60 bg-white py-20 text-center text-sm font-bold text-gray-600 shadow-sm">
+            Loading the latest menu…
+          </div>
+        ) : menuError ? (
+          <div role="alert" className="rounded-3xl border border-red-200 bg-red-50 px-6 py-12 text-center text-sm font-bold text-red-800 shadow-sm">
+            {menuError}
+          </div>
+        ) : Object.keys(categorizedMenu).length === 0 ? (
           <div className="flex flex-col items-center rounded-3xl border border-white/60 bg-white py-20 text-center shadow-sm">
             <div
               aria-hidden="true"
@@ -400,18 +403,18 @@ export default function MenuPage() {
               <Search size={32} className="text-orange-400" />
             </div>
             <p className="mt-4 text-base font-black text-gray-800">
-              No dishes found
+              {searchQuery ? "No dishes found" : "Our menu is being updated"}
             </p>
             <p className="mt-1 text-xs font-semibold text-gray-500">
-              Try a different keyword or clear the search
+              {searchQuery ? "Try a different keyword or clear the search" : "Please check back shortly."}
             </p>
-            <button
+            {searchQuery && <button
               type="button"
               onClick={() => setSearchInput("")}
               className="mt-5 flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-xs font-black text-white shadow-md shadow-orange-500/25 transition-transform hover:-translate-y-0.5 active:scale-95"
             >
               <X size={13} aria-hidden="true" /> Clear Search
-            </button>
+            </button>}
           </div>
         ) : (
           Object.entries(categorizedMenu).map(([categoryName, items]) => {
@@ -542,7 +545,7 @@ export default function MenuPage() {
                           </div>
 
                           {/* Add / stepper */}
-                          {item.available && (
+                          {item.available ? (
                             <div className="w-full max-w-[112px]">
                               {qty === 0 ? (
                                 <button
@@ -585,7 +588,15 @@ export default function MenuPage() {
                                 </div>
                               )}
                             </div>
-                          )}
+                          ) : qty > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.id, 0)}
+                              className="rounded-xl border border-red-200 bg-white px-2.5 py-2 text-[10px] font-black uppercase tracking-wide text-red-700 hover:bg-red-50"
+                            >
+                              Remove from cart
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     );

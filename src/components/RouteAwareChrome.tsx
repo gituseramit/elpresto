@@ -14,6 +14,7 @@ const DASHBOARD_PREFIXES = [
   "/delivery",
   "/developer",
   "/auth",
+  "/staff-attendance",
 ] as const;
 
 function isDashboardRoute(pathname: string | null): boolean {

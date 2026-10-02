@@ -1012,7 +1012,7 @@ export default function ProfilePage() {
   /* ============================================================= */
 
   return (
-    <div className="min-h-screen bg-[#f7f4ef] px-3 py-6 sm:px-5 sm:py-10">
+    <div className="profile-portal min-h-screen bg-[#f7f4ef] px-3 py-6 sm:px-5 sm:py-10">
       <Toast state={toast} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 

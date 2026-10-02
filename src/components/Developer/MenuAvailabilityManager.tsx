@@ -6,14 +6,7 @@ import {
   Search,
   CheckCircle2,
   XCircle,
-  Building,
-  DollarSign,
-  Tag,
-  Save,
   Loader2,
-  Sparkles,
-  ToggleLeft,
-  ToggleRight,
 } from "lucide-react";
 import { Branch, MenuItem } from "@/lib/types";
 import {
@@ -21,7 +14,7 @@ import {
   setBranchItemAvailability,
 } from "@/lib/branchService";
 import { logAuditEvent } from "@/lib/rbac";
-import { DUMMY_MENU } from "@/data/menu";
+import { subscribeMenuCatalog } from "@/lib/menuCatalog";
 
 interface MenuAvailabilityManagerProps {
   branches: Branch[];
@@ -44,27 +37,15 @@ export default function MenuAvailabilityManager({
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
 
-  // Load menu items from Firestore (with DUMMY_MENU fallback)
+  // Keep branch controls aligned with the live Admin catalog.
   useEffect(() => {
-    const loadItems = async () => {
-      try {
-        const { collection, getDocs } = await import("firebase/firestore");
-        const { db } = await import("@/lib/firebase");
-        const snap = await getDocs(collection(db, "menuItems"));
-        if (!snap.empty) {
-          const list = snap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-          })) as MenuItem[];
-          setMenuItems(list);
-        } else {
-          setMenuItems(DUMMY_MENU);
-        }
-      } catch (err) {
-        setMenuItems(DUMMY_MENU);
-      }
-    };
-    loadItems();
+    return subscribeMenuCatalog(
+      (items) => setMenuItems(items),
+      (err) => {
+        console.warn("Branch menu catalog subscription failed:", err);
+        setMenuItems([]);
+      },
+    );
   }, []);
 
   // Load availability map whenever selected branch changes
@@ -127,8 +108,8 @@ export default function MenuAvailabilityManager({
           available: nextAvail,
         },
       });
-    } catch (err: any) {
-      alert("Failed to update availability: " + err.message);
+    } catch (err: unknown) {
+      alert("Failed to update availability: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSavingItemId(null);
     }
@@ -150,14 +131,12 @@ export default function MenuAvailabilityManager({
           priceOverride: newPrice,
         },
       }));
-    } catch (err: any) {
-      alert("Error setting price override: " + err.message);
+    } catch (err: unknown) {
+      alert("Error setting price override: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSavingItemId(null);
     }
   };
-
-  const currentBranch = branches.find((b) => b.id === selectedBranchId);
 
   return (
     <div className="space-y-6">

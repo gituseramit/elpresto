@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock3, LogOut, MapPin } from "lucide-react";
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
+import ThemeControl from "@/components/ThemeControl";
 import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 import { clearStaffSession, getStaffSession, isSessionValid, type StaffSession } from "@/lib/staffAuth";
 
@@ -22,7 +23,7 @@ export default function StaffAttendancePage() {
     setSession(null);
   };
 
-  if (checkingSession) return <main className="grid min-h-screen place-items-center bg-slate-950 text-sm font-bold text-slate-300">Loading staff attendance…</main>;
+  if (checkingSession) return <main className="attendance-portal grid min-h-screen place-items-center bg-slate-950 text-sm font-bold text-slate-300">Loading staff attendance…</main>;
 
   if (!session) return <StaffLoginForm
     panel="attendance"
@@ -32,7 +33,7 @@ export default function StaffAttendancePage() {
     isDark
   />;
 
-  return <main className="min-h-screen bg-slate-950 px-4 py-10 text-white">
+  return <main className="attendance-portal min-h-screen bg-slate-950 px-4 py-10 text-white">
     <div className="mx-auto max-w-xl">
       <header className="mb-8 flex items-start justify-between gap-4">
         <div>
@@ -40,7 +41,7 @@ export default function StaffAttendancePage() {
           <h1 className="mt-2 text-3xl font-black">Hello, {session.name}</h1>
           <p className="mt-1 text-sm text-slate-400">{session.role.replaceAll("_", " ")}</p>
         </div>
-        <button type="button" onClick={logOut} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 transition hover:bg-white/5"><LogOut size={14} /> Sign out</button>
+        <div className="flex items-center gap-2"><ThemeControl /><button type="button" onClick={logOut} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-slate-300 transition hover:bg-white/5"><LogOut size={14} /> Sign out</button></div>
       </header>
 
       <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-5 shadow-2xl shadow-black/20 sm:p-7">
