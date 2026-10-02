@@ -665,28 +665,63 @@ export default function KitchenSystem() {
         audioContextRef.current = new Ctor();
       }
       const ctx = audioContextRef.current;
-      if (ctx.state === "suspended") ctx.resume().catch(() => {});
-      const start = ctx.currentTime;
-      // A short, two-tone double ring distinct from the immediate order chime.
-      [0, 0.58].forEach((offset) => {
-        [784, 1046].forEach((frequency, index) => {
-          const oscillator = ctx.createOscillator();
-          const gain = ctx.createGain();
-          const noteStart = start + offset + index * 0.19;
-          oscillator.type = "sine";
-          oscillator.frequency.value = frequency;
-          oscillator.connect(gain);
-          gain.connect(ctx.destination);
-          gain.gain.setValueAtTime(0.001, noteStart);
-          gain.gain.linearRampToValueAtTime(0.24, noteStart + 0.025);
-          gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.18);
-          oscillator.start(noteStart);
-          oscillator.stop(noteStart + 0.19);
+      const play = () => {
+        if (!soundEnabledRef.current || ctx.state !== "running") return;
+        const start = ctx.currentTime;
+        // A short, two-tone double ring distinct from the immediate order chime.
+        [0, 0.58].forEach((offset) => {
+          [784, 1046].forEach((frequency, index) => {
+            const oscillator = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const noteStart = start + offset + index * 0.19;
+            oscillator.type = "sine";
+            oscillator.frequency.value = frequency;
+            oscillator.connect(gain);
+            gain.connect(ctx.destination);
+            gain.gain.setValueAtTime(0.001, noteStart);
+            gain.gain.linearRampToValueAtTime(0.24, noteStart + 0.025);
+            gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.18);
+            oscillator.start(noteStart);
+            oscillator.stop(noteStart + 0.19);
+          });
         });
-      });
+      };
+      if (ctx.state === "suspended") {
+        ctx.resume().then(play).catch(() => {});
+      } else {
+        play();
+      }
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (!soundEnabledRef.current) return;
+      try {
+        if (!audioContextRef.current) {
+          const Ctor =
+            window.AudioContext ||
+            (window as unknown as { webkitAudioContext?: typeof AudioContext })
+              .webkitAudioContext;
+          if (!Ctor) return;
+          audioContextRef.current = new Ctor();
+        }
+        if (audioContextRef.current.state === "suspended") {
+          audioContextRef.current.resume().catch(() => {});
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    window.addEventListener("pointerdown", unlockAudio);
+    window.addEventListener("keydown", unlockAudio);
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
   }, []);
 
   const pendingOrderReminder = usePendingOrderReminder(
