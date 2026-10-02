@@ -767,6 +767,7 @@ export default function Home() {
       {/* Plain <div role="region"> + inline styles on purpose: a global `section {}`
           rule or a class conflict can no longer turn this dark band transparent. */}
       <div
+        id="promise-section"
         role="region"
         aria-labelledby="promise-heading"
         className="relative isolate px-4 py-16 sm:py-20"

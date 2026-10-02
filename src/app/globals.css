@@ -66,6 +66,25 @@ body {
   overflow-x: clip;                 /* was: hidden — breaks sticky */
 }
 
+/* Keep the promise band readable if a page-level stylesheet changes generic
+   region backgrounds or text colors. The ID specificity protects this surface. */
+#promise-section {
+  background-color: #1a1008 !important;
+  background-image:
+    radial-gradient(600px circle at 85% 0%, rgba(245, 158, 11, 0.14), transparent 60%),
+    radial-gradient(500px circle at 0% 100%, rgba(217, 35, 18, 0.16), transparent 60%) !important;
+  color: #fff !important;
+}
+
+#promise-section h2,
+#promise-section h3 {
+  color: #fff !important;
+}
+
+#promise-section p {
+  color: #fef3c7 !important;
+}
+
 /* Fixed background layer — off the scroll thread, no jank */
 body::before {
   content: "";
