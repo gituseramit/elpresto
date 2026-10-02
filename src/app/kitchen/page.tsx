@@ -477,6 +477,7 @@ export default function KitchenSystem() {
 
   /* ---- Data ---- */
   const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersRetryKey, setOrdersRetryKey] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string>(() =>
     getISTDateString(0)
   );
@@ -840,6 +841,7 @@ export default function KitchenSystem() {
     selectedDate,
     activeBranchId,
     playNotificationSound,
+    ordersRetryKey,
   ]);
 
   /* Reset seen IDs on branch/date change */
@@ -1534,7 +1536,7 @@ export default function KitchenSystem() {
      ============================================================ */
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 selection:bg-orange-200/60 lg:flex-row dark:bg-slate-950 dark:text-slate-100 dark:selection:bg-orange-500/30">
+    <div className="flex min-h-screen flex-col bg-[#f5f7fb] text-slate-900 selection:bg-orange-200/60 lg:flex-row dark:bg-[#090d15] dark:text-slate-100 dark:selection:bg-orange-500/30">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
@@ -1542,11 +1544,11 @@ export default function KitchenSystem() {
       {/* SIDEBAR                                                 */}
       {/* ===================================================== */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col justify-between border-r border-slate-200 bg-white p-4 shadow-sm transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 dark:border-white/5 dark:bg-slate-900/95 dark:shadow-none dark:backdrop-blur-xl ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col justify-between border-r border-slate-200/80 bg-white/95 p-4 shadow-sm transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 dark:border-white/[0.07] dark:bg-[#0e1420]/95 dark:shadow-none dark:backdrop-blur-xl ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="space-y-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-5">
           <div className="flex items-center justify-between px-1 pt-1">
             <div className="flex items-center gap-2.5">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25 ring-1 ring-white/10">
@@ -1582,7 +1584,7 @@ export default function KitchenSystem() {
             <PlusCircle size={16} strokeWidth={2.5} /> New Order
           </button>
 
-          <nav className="space-y-1">
+          <nav aria-label="Kitchen navigation" className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
             {[
               {
                 id: "new" as const,
@@ -1590,8 +1592,8 @@ export default function KitchenSystem() {
                 icon: Bell,
                 badge: counts.pending,
                 activeCls:
-                  "bg-amber-500 text-white shadow-md shadow-amber-500/30",
-                badgeActive: "bg-white/25 text-white",
+                  "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/20",
+                badgeActive: "bg-black/[0.06] text-current dark:bg-white/10",
                 iconCls: "text-amber-500",
               },
               {
@@ -1600,8 +1602,8 @@ export default function KitchenSystem() {
                 icon: Flame,
                 badge: counts.preparing,
                 activeCls:
-                  "bg-orange-500 text-white shadow-md shadow-orange-500/30",
-                badgeActive: "bg-white/25 text-white",
+                  "bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200 dark:bg-orange-500/15 dark:text-orange-300 dark:ring-orange-400/20",
+                badgeActive: "bg-black/[0.06] text-current dark:bg-white/10",
                 iconCls: "text-orange-500",
               },
               {
@@ -1610,8 +1612,8 @@ export default function KitchenSystem() {
                 icon: CheckCircle,
                 badge: counts.completedToday,
                 activeCls:
-                  "bg-emerald-500 text-white shadow-md shadow-emerald-500/30",
-                badgeActive: "bg-white/25 text-white",
+                  "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20",
+                badgeActive: "bg-black/[0.06] text-current dark:bg-white/10",
                 iconCls: "text-emerald-500",
               },
               {
@@ -1619,7 +1621,7 @@ export default function KitchenSystem() {
                 label: "Settings",
                 icon: SettingsIcon,
                 badge: undefined,
-                activeCls: "bg-slate-900 text-white shadow-md dark:bg-slate-700",
+                activeCls: "bg-slate-100 text-slate-900 ring-1 ring-inset ring-slate-200 dark:bg-white/10 dark:text-white dark:ring-white/10",
                 badgeActive: "",
                 iconCls: "text-slate-400",
               },
@@ -1642,10 +1644,7 @@ export default function KitchenSystem() {
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Icon
-                      size={16}
-                      className={isActive ? "text-white" : tab.iconCls}
-                    />
+                    <Icon size={16} className={isActive ? "text-current" : tab.iconCls} />
                     <span>{tab.label}</span>
                   </div>
                   {typeof tab.badge === "number" && tab.badge > 0 && (
@@ -1697,7 +1696,7 @@ export default function KitchenSystem() {
       {/* MAIN                                                    */}
       {/* ===================================================== */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/85">
+        <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-2xl dark:border-white/[0.07] dark:bg-[#0c111b]/90">
           <div className="flex flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               <button
@@ -1882,13 +1881,6 @@ export default function KitchenSystem() {
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(true)}
-                className="hidden items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-3.5 py-2 text-xs font-black text-white shadow-md shadow-orange-500/20 transition hover:-translate-y-0.5 hover:shadow-lg active:scale-95 lg:flex"
-              >
-                <Plus size={15} strokeWidth={3} /> New Order
-              </button>
             </div>
           </div>
 
@@ -2021,7 +2013,34 @@ export default function KitchenSystem() {
           </div>
         )}
 
-        <main className="flex-1 p-4 sm:p-6">
+        <main className="mx-auto w-full max-w-[1800px] flex-1 p-4 sm:p-6 xl:p-7">
+          {activeTab !== "settings" && (
+            <section className="mb-5 flex flex-col gap-4 overflow-hidden rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-[0_20px_55px_-42px_rgba(15,23,42,0.45)] sm:p-5 xl:flex-row xl:items-center xl:justify-between dark:border-white/[0.07] dark:bg-[radial-gradient(ellipse_at_top_right,_rgba(249,115,22,0.13),_transparent_42%),linear-gradient(120deg,#141c2a_0%,#101621_68%,#141723_100%)] dark:shadow-[0_22px_60px_-40px_rgba(0,0,0,0.9)]">
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-600 dark:text-orange-300"><span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> Kitchen live board</span><span className="text-slate-300 dark:text-slate-600">/</span><span className="truncate text-slate-500 dark:text-slate-400">{activeBranchName || kitchenSettings.stationName}</span></p>
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h2 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{activeTab === "new" ? "Incoming tickets" : activeTab === "preparing" ? "In preparation" : "Ready & completed"}</h2>
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatISTDisplayDate(selectedDate)}</span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{activeTab === "new" ? "Review new tickets and send each order into preparation." : activeTab === "preparing" ? "Keep active orders moving and flag tickets that need attention." : "Check recently finished orders and handoff progress."}</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "New", value: counts.pending, tone: "amber" },
+                    { label: "Preparing", value: counts.preparing, tone: "orange" },
+                    { label: "Ready / done", value: counts.completedToday, tone: "emerald" },
+                  ].map((item) => (
+                    <div key={item.label} className="min-w-[76px] rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2 dark:border-white/[0.07] dark:bg-white/[0.035]">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{item.label}</p>
+                      <p className={`mt-0.5 font-mono text-lg font-bold ${item.tone === "amber" ? "text-amber-600 dark:text-amber-300" : item.tone === "orange" ? "text-orange-600 dark:text-orange-300" : "text-emerald-600 dark:text-emerald-300"}`}>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setShowCreateModal(true)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-orange-950/20 transition hover:bg-orange-400"><Plus size={15} strokeWidth={2.5} /> New order</button>
+              </div>
+            </section>
+          )}
           {activeTab === "settings" ? (
             <div className="mx-auto max-w-xl space-y-5">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 dark:border-white/5 dark:bg-slate-900/60 dark:shadow-none">
@@ -2253,7 +2272,7 @@ export default function KitchenSystem() {
                   <p className="mt-1 text-xs text-red-500">{error}</p>
                   <button
                     type="button"
-                    onClick={() => setSelectedDate((d) => d)}
+                    onClick={() => setOrdersRetryKey((key) => key + 1)}
                     className="mt-4 rounded-xl bg-orange-500 px-4 py-2 text-xs font-black text-white shadow-md hover:bg-orange-600"
                   >
                     Retry

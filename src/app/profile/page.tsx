@@ -176,7 +176,7 @@ const DEFAULT_ADDRESS_FORM: AddressForm = {
 };
 
 const inputCls =
-  "w-full rounded-xl border border-white/60 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 placeholder-gray-400 shadow-sm backdrop-blur-md transition focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-orange-500/15";
+  "w-full rounded-xl border border-[#e9e1d8] bg-white px-4 py-3 text-sm font-medium text-gray-900 placeholder-gray-400 shadow-sm transition focus:border-orange-400 focus:outline-none focus:ring-4 focus:ring-orange-500/10";
 
 /* ============================================================= */
 /* Helpers                                                       */
@@ -442,16 +442,17 @@ function MiniStat({
   icon: ReactNode;
   label: string;
   value: string | number;
-  tone: "orange" | "emerald" | "amber";
+  tone: "orange" | "emerald" | "amber" | "violet";
   loading?: boolean;
 }) {
   const tones: Record<string, string> = {
     orange: "from-orange-500 to-amber-500 shadow-orange-500/25",
     emerald: "from-emerald-500 to-teal-500 shadow-emerald-500/25",
     amber: "from-amber-500 to-yellow-500 shadow-amber-500/25",
+    violet: "from-violet-500 to-purple-600 shadow-violet-500/20",
   };
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-white/60 bg-white/60 p-3 text-center shadow-sm backdrop-blur-md">
+    <div className="flex flex-col items-center rounded-2xl border border-[#eee5dc] bg-white p-3.5 text-center shadow-[0_12px_30px_-24px_rgba(86,54,29,0.28)]">
       <div
         aria-hidden="true"
         className={`grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br text-white shadow-md ring-1 ring-white/50 ${tones[tone]}`}
@@ -978,7 +979,7 @@ export default function ProfilePage() {
 
   if (authLoading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50">
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f4ef]">
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={32} className="animate-spin text-orange-500" />
           <p className="text-[11px] font-black uppercase tracking-widest text-orange-500">
@@ -1011,20 +1012,20 @@ export default function ProfilePage() {
   /* ============================================================= */
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
+    <div className="min-h-screen bg-[#f7f4ef] px-3 py-6 sm:px-5 sm:py-10">
       <Toast state={toast} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-4xl">
         <Link
           href="/menu"
-          className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/60 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white hover:text-orange-600"
+          className="mb-5 inline-flex items-center gap-2 rounded-xl border border-[#e9e1d8] bg-white px-3.5 py-2.5 text-xs font-bold text-gray-600 shadow-sm transition hover:border-orange-200 hover:text-orange-700"
         >
           <ArrowLeft size={15} aria-hidden="true" /> Back to Menu
         </Link>
 
         {/* HERO */}
-        <div className="relative mb-5 overflow-hidden rounded-3xl border border-white/60 bg-white/60 p-5 shadow-[0_15px_50px_-15px_rgba(217,35,18,0.2)] backdrop-blur-2xl sm:p-7">
+        <div className="relative mb-5 overflow-hidden rounded-[1.75rem] border border-[#eee5dc] bg-white p-5 shadow-[0_24px_70px_-52px_rgba(103,62,31,0.45)] sm:p-7">
           <span
             aria-hidden="true"
             className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-orange-400/20 blur-3xl"
@@ -1036,14 +1037,15 @@ export default function ProfilePage() {
 
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center">
             <div className="relative shrink-0 self-center sm:self-auto">
-              <div className="relative grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-orange-500 via-amber-500 to-red-500 text-2xl font-black text-white shadow-xl shadow-orange-500/30 ring-4 ring-white">
+              <div className="relative grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-xl font-bold text-white shadow-lg shadow-orange-900/15 ring-4 ring-orange-50 sm:h-[4.5rem] sm:w-[4.5rem]">
                 {initials}
               </div>
             </div>
 
             <div className="min-w-0 flex-1 text-center sm:text-left">
+              <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.2em] text-orange-600">Your El Presto account</p>
               <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                <h1 className="truncate text-xl font-black tracking-tight text-gray-900 sm:text-2xl">
+                <h1 className="truncate text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">
                   {displayName}
                 </h1>
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-700">
@@ -1085,13 +1087,13 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-red-500 shadow-sm transition hover:bg-red-100 active:scale-95"
+              className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-[#f0d9d4] bg-[#fff8f6] px-3.5 py-2.5 text-[11px] font-bold text-[#a94435] transition hover:bg-[#fff0ec] active:scale-95"
             >
               <LogOut size={13} aria-hidden="true" /> Logout
             </button>
           </div>
 
-          <div className="relative mt-5 grid grid-cols-3 gap-2.5 border-t border-white/60 pt-5">
+          <div className="relative mt-5 grid grid-cols-2 gap-2.5 border-t border-[#f0e8df] pt-5 sm:grid-cols-4">
             <MiniStat
               icon={<Package size={14} />}
               label="Orders"
@@ -1107,9 +1109,15 @@ export default function ProfilePage() {
               loading={ordersLoading}
             />
             <MiniStat
+              icon={<Sparkles size={14} />}
+              label="Reward points"
+              value={Math.max(0, Number(userProfile?.loyaltyPoints) || 0).toLocaleString("en-IN")}
+              tone="violet"
+            />
+            <MiniStat
               icon={<TrendingUp size={14} />}
-              label="Total Spent"
-              value={`₹${Math.round(totalSpent)}`}
+              label="Total spent"
+              value={`₹${Math.round(totalSpent).toLocaleString("en-IN")}`}
               tone="amber"
               loading={ordersLoading}
             />
@@ -1126,7 +1134,7 @@ export default function ProfilePage() {
         <div
           role="tablist"
           aria-label="Profile sections"
-          className="mb-5 grid grid-cols-3 gap-1 rounded-2xl border border-white/60 bg-white/60 p-1.5 shadow-sm backdrop-blur-xl"
+          className="mb-5 grid grid-cols-3 gap-1 rounded-2xl border border-[#eee5dc] bg-[#efe9e2] p-1.5 shadow-sm"
         >
           {tabs.map(({ id, label, icon: Icon }) => {
             const active = activeTab === id;
@@ -1151,8 +1159,8 @@ export default function ProfilePage() {
                 }}
                 className={`relative flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-black transition-all ${
                   active
-                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-                    : "text-gray-500 hover:text-gray-800"
+                    ? "bg-white text-orange-700 shadow-sm ring-1 ring-black/[0.03]"
+                    : "text-gray-500 hover:bg-white/60 hover:text-gray-900"
                 }`}
               >
                 <Icon size={14} aria-hidden="true" />
@@ -1179,7 +1187,7 @@ export default function ProfilePage() {
         {/* PROFILE TAB                                                    */}
         {/* ============================================================= */}
         {activeTab === "profile" && (
-          <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/60 p-5 shadow-[0_15px_50px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-7">
+          <div className="relative overflow-hidden rounded-[1.6rem] border border-[#eee5dc] bg-white p-5 shadow-[0_20px_60px_-48px_rgba(103,62,31,0.38)] sm:p-7">
             <div className="mb-5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div
@@ -1333,7 +1341,7 @@ export default function ProfilePage() {
         {/* ADDRESSES TAB                                                  */}
         {/* ============================================================= */}
         {activeTab === "addresses" && (
-          <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/60 p-5 shadow-[0_15px_50px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-7">
+          <div className="relative overflow-hidden rounded-[1.6rem] border border-[#eee5dc] bg-white p-5 shadow-[0_20px_60px_-48px_rgba(103,62,31,0.38)] sm:p-7">
             <div className="mb-5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div
@@ -1401,7 +1409,7 @@ export default function ProfilePage() {
                 return (
                   <div
                     key={addr.id}
-                    className="group flex items-start gap-3 rounded-2xl border border-white/60 bg-white/70 p-4 shadow-sm backdrop-blur-md transition hover:border-orange-200 hover:bg-white hover:shadow-md"
+                    className="group flex items-start gap-3 rounded-2xl border border-[#efe7df] bg-white p-4 shadow-sm transition hover:border-orange-200 hover:bg-orange-50/20 hover:shadow-md"
                   >
                     <div
                       aria-hidden="true"
@@ -1604,7 +1612,7 @@ export default function ProfilePage() {
         {/* ORDERS TAB                                                     */}
         {/* ============================================================= */}
         {activeTab === "orders" && (
-          <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/60 p-5 shadow-[0_15px_50px_-15px_rgba(217,35,18,0.15)] backdrop-blur-2xl sm:p-7">
+          <div className="relative overflow-hidden rounded-[1.6rem] border border-[#eee5dc] bg-white p-5 shadow-[0_20px_60px_-48px_rgba(103,62,31,0.38)] sm:p-7">
             <div className="mb-5 flex items-center gap-2.5">
               <div
                 aria-hidden="true"

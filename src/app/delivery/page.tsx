@@ -1166,15 +1166,15 @@ export default function DeliveryPortal() {
   /* ============================================================= */
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 pb-20 text-white">
+    <div className="min-h-screen bg-[#090d15] pb-24 text-white sm:pb-6">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
       {/* HEADER */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-slate-950/80 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#0b101a]/95 pt-[env(safe-area-inset-top)] backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25 ring-1 ring-white/10">
+            <div className="relative grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-950/30 ring-1 ring-white/10">
               <Truck size={20} />
               {gpsActive && (
                 <span className="absolute -right-0.5 -top-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-slate-950 bg-emerald-400" />
@@ -1192,7 +1192,10 @@ export default function DeliveryPortal() {
 
           <div className="flex items-center gap-1.5">
             <div
-              className={`hidden items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider sm:flex ${
+              role="status"
+              aria-live="off"
+              aria-label={gpsActive ? `GPS sharing active, accuracy plus or minus ${gpsAccuracy} meters` : "GPS sharing is idle"}
+              className={`flex min-h-11 items-center gap-1.5 rounded-xl border px-2.5 text-[9px] font-black uppercase tracking-wider sm:rounded-full sm:px-3 sm:text-[10px] ${
                 gpsActive
                   ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
                   : "border-white/5 bg-slate-800/60 text-slate-400"
@@ -1203,7 +1206,8 @@ export default function DeliveryPortal() {
                   gpsActive ? "animate-pulse bg-emerald-400" : "bg-slate-500"
                 }`}
               />
-              {gpsActive ? `GPS ±${gpsAccuracy}m` : "GPS Idle"}
+              <span className="hidden min-[380px]:inline">{gpsActive ? `GPS ±${gpsAccuracy}m` : "GPS idle"}</span>
+              <span className="min-[380px]:hidden">{gpsActive ? "GPS" : "GPS off"}</span>
             </div>
 
             <button
@@ -1215,7 +1219,7 @@ export default function DeliveryPortal() {
                   : "Enable new order alerts"
               }
               aria-pressed={soundEnabled}
-              className={`grid h-9 w-9 place-items-center rounded-xl border transition ${
+              className={`grid h-11 w-11 place-items-center rounded-xl border transition ${
                 soundEnabled
                   ? "border-orange-500/40 bg-orange-500/15 text-orange-400"
                   : "border-white/5 bg-slate-800 text-slate-500"
@@ -1233,7 +1237,7 @@ export default function DeliveryPortal() {
               type="button"
               onClick={handleLogout}
               aria-label="Sign out"
-              className="grid h-9 w-9 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+              className="grid h-11 w-11 place-items-center rounded-xl border border-white/5 bg-slate-800 text-slate-400 transition hover:bg-slate-700 hover:text-white"
               title="Logout"
             >
               <LogOut size={15} />
@@ -1242,7 +1246,7 @@ export default function DeliveryPortal() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-4">
+      <main className="mx-auto max-w-6xl space-y-4 px-3 pb-5 pt-4 sm:space-y-5 sm:px-4 sm:py-5">
         {/* NEW ORDER PULSE */}
         {newOrderPulse && (
           <div
@@ -1255,7 +1259,7 @@ export default function DeliveryPortal() {
 
         {/* GPS BANNER */}
         {activeTrackingOrderId && (
-          <div className="relative overflow-hidden rounded-3xl border border-blue-500/40 bg-gradient-to-r from-blue-950/60 via-indigo-950/40 to-slate-900/60 p-4 backdrop-blur-xl">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-500/40 bg-gradient-to-r from-blue-950/60 via-indigo-950/40 to-slate-900/60 p-3.5 sm:rounded-3xl sm:p-4">
             <span className="pointer-events-none absolute -left-10 -top-10 h-32 w-32 rounded-full bg-blue-500/20 blur-3xl" />
             <div className="relative flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -1286,7 +1290,7 @@ export default function DeliveryPortal() {
                     onConfirm: () => stopGpsTracking(),
                   })
                 }
-                className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/15 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/25"
+                className="min-h-11 shrink-0 rounded-xl border border-red-500/30 bg-red-500/15 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-red-300 transition hover:bg-red-500/25"
               >
                 Pause GPS
               </button>
@@ -1312,7 +1316,7 @@ export default function DeliveryPortal() {
         )}
 
         {/* STATS */}
-        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           <StatTile
             label="Active"
             value={activeOrders.length}
@@ -1344,7 +1348,7 @@ export default function DeliveryPortal() {
         </div>
 
         {/* DATE */}
-        <div className="flex items-center justify-center">
+        <div className="flex w-full justify-center sm:w-auto sm:justify-start [&_button]:min-h-11 [&_button]:touch-manipulation">
           <DateNavigator
             selectedDate={selectedDate}
             onChangeDate={setSelectedDate}
@@ -1357,7 +1361,7 @@ export default function DeliveryPortal() {
         <div
           role="tablist"
           aria-label="Delivery views"
-          className="grid grid-cols-2 gap-1 rounded-2xl border border-white/5 bg-slate-900/60 p-1 backdrop-blur-xl"
+          className="hidden grid-cols-2 gap-1 rounded-2xl border border-white/[0.07] bg-[#111827] p-1 sm:grid"
         >
           <button
             type="button"
@@ -1397,7 +1401,7 @@ export default function DeliveryPortal() {
         {activeTab === "active" ? (
           <>
             {activeOrders.length > 0 && (
-              <div className="space-y-3 rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
+              <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-[#111827] p-3 sm:rounded-3xl sm:p-4">
                 <div className="relative">
                   <Search
                     size={15}
@@ -1412,7 +1416,7 @@ export default function DeliveryPortal() {
                     placeholder="Search by order #, name, or phone…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full rounded-xl border border-white/5 bg-slate-800/80 py-2.5 pl-10 pr-9 text-xs font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                    className="min-h-12 w-full rounded-xl border border-white/10 bg-slate-800/80 py-3 pl-10 pr-10 text-sm font-medium text-white placeholder-slate-500 transition focus:border-orange-500/40 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                   />
                   {searchQuery && (
                     <button
@@ -1441,7 +1445,7 @@ export default function DeliveryPortal() {
                         type="button"
                         onClick={() => setFilterMode(f.id)}
                         aria-pressed={filterMode === f.id}
-                        className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
+                        className={`min-h-10 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider transition ${
                           filterMode === f.id
                             ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm"
                             : "text-slate-400 hover:text-white"
@@ -1452,7 +1456,7 @@ export default function DeliveryPortal() {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
+                  <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/5 bg-slate-950 p-1">
                     <span className="px-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
                       <ArrowUpDown size={11} className="inline" /> Sort:
                     </span>
@@ -1476,7 +1480,7 @@ export default function DeliveryPortal() {
                           type="button"
                           onClick={() => setSortMode(s.id)}
                           aria-pressed={sortMode === s.id}
-                          className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
+                          className={`flex min-h-10 items-center gap-1 rounded-lg px-2.5 py-2 text-[10px] font-black uppercase tracking-wider transition ${
                             sortMode === s.id
                               ? "bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/30"
                               : "text-slate-400 hover:text-white"
@@ -1518,7 +1522,7 @@ export default function DeliveryPortal() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {processedOrders.map(({ order, distance }) => {
                   const cLat = getOrderLat(order);
                   const cLng = getOrderLng(order);
@@ -1547,7 +1551,7 @@ export default function DeliveryPortal() {
                   return (
                     <div
                       key={order.id}
-                      className={`relative flex flex-col overflow-hidden rounded-3xl border backdrop-blur-xl transition ${
+                      className={`relative flex flex-col overflow-hidden rounded-2xl border transition sm:rounded-3xl ${
                         isCurrentTracking
                           ? "border-blue-500/50 bg-gradient-to-br from-blue-950/40 to-slate-900/60 ring-1 ring-blue-500/30"
                           : isLate
@@ -1598,7 +1602,7 @@ export default function DeliveryPortal() {
                               </span>
                             </p>
                             {phoneNum && (
-                              <p className="mt-0.5 font-mono text-[11px] font-semibold text-slate-400">
+                              <p className="mt-1 font-mono text-xs font-medium text-slate-300">
                                 {phoneNum}
                               </p>
                             )}
@@ -1613,33 +1617,33 @@ export default function DeliveryPortal() {
                           </div>
                         </div>
 
-                        <p className="flex items-start gap-1.5 text-[11px] font-semibold leading-snug text-slate-400">
+                        <p className="flex items-start gap-2 text-xs font-medium leading-relaxed text-slate-300">
                           <MapPin
                             size={12}
                             className="mt-0.5 shrink-0 text-orange-400"
                           />
-                          <span className="line-clamp-2">{fullAddress}</span>
+                          <span className="line-clamp-3">{fullAddress}</span>
                         </p>
 
                         <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-800/40 px-2.5 py-2">
-                          <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-400">
-                            <Clock size={11} /> ETA {etaLabel}
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-blue-300">
+                            <Clock size={13} /> ETA {etaLabel}
                           </div>
                           <span className="h-3 w-px bg-white/10" />
-                          <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                            <Package size={11} /> {order.items?.length || 0}{" "}
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-300">
+                            <Package size={13} /> {order.items?.length || 0}{" "}
                             items
                           </div>
                         </div>
 
-                        <p className="line-clamp-1 text-[11px] font-semibold text-slate-500">
+                        <p className="line-clamp-2 text-xs font-medium leading-relaxed text-slate-400">
                           {order.items
                             ?.map((i) => `${i.quantity}× ${i.name}`)
                             .join(" · ")}
                         </p>
 
                         {order.instructions && (
-                          <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[10px] font-bold italic text-amber-300">
+                          <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-xs font-semibold leading-relaxed text-amber-200">
                             💬 {order.instructions}
                           </p>
                         )}
@@ -1679,7 +1683,7 @@ export default function DeliveryPortal() {
                         {phoneNum ? (
                           <a
                             href={`tel:${phoneNum.replace(/[^\d+]/g, "")}`}
-                            className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/20"
+                            className="touch-manipulation flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/20"
                           >
                             <Phone size={12} /> Call
                           </a>
@@ -1692,7 +1696,7 @@ export default function DeliveryPortal() {
                         <button
                           type="button"
                           onClick={() => openNavigationApp(cLat, cLng)}
-                          className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 py-2 text-[10px] font-black uppercase tracking-wider text-blue-300 transition hover:bg-blue-500/20"
+                          className="touch-manipulation flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-blue-300 transition hover:bg-blue-500/20"
                         >
                           <Navigation size={12} /> Navigate
                         </button>
@@ -1703,17 +1707,17 @@ export default function DeliveryPortal() {
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleStartDelivery(order)}
-                            className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95 disabled:opacity-60"
+                            className="touch-manipulation flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-white shadow-md shadow-orange-500/25 transition active:scale-[0.98] disabled:opacity-60"
                           >
                             {isBusy ? (
                               <Loader2 size={12} className="animate-spin" />
                             ) : (
                               <Truck size={12} />
                             )}
-                            Start
+                            Start trip
                           </button>
                         ) : (
-                          <span className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-500/20 py-2 text-[10px] font-black uppercase tracking-wider text-blue-300">
+                          <span className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-500/20 px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-blue-300">
                             <Compass size={12} className="animate-spin" />{" "}
                             Transit
                           </span>
@@ -1722,9 +1726,9 @@ export default function DeliveryPortal() {
                         <button
                           type="button"
                           onClick={() => openOtpModal(order)}
-                          className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition hover:scale-[1.03] active:scale-95"
+                          className="touch-manipulation flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-white shadow-md shadow-emerald-500/25 transition active:scale-[0.98]"
                         >
-                          <Check size={12} /> Done
+                          <Check size={13} /> Verify &amp; deliver
                         </button>
 
                         {typeof cLat === "number" &&
@@ -1736,7 +1740,7 @@ export default function DeliveryPortal() {
                                   isMapOpen ? null : order.id
                                 )
                               }
-                              className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-slate-800/60 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 transition hover:bg-slate-700/60 sm:col-span-4"
+                              className="col-span-2 flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-slate-800/60 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 transition hover:bg-slate-700/60 sm:col-span-4"
                             >
                               <Eye size={12} />
                               {isMapOpen ? "Hide Map" : "Show Route Map"}
@@ -1808,6 +1812,30 @@ export default function DeliveryPortal() {
           </div>
         )}
       </main>
+
+      <nav
+        aria-label="Delivery navigation"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.08] bg-[#0b101a]/95 px-3 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-2xl sm:hidden"
+      >
+        <div className="mx-auto grid max-w-xl grid-cols-2 gap-2">
+          <button
+            type="button"
+            aria-current={activeTab === "active" ? "page" : undefined}
+            onClick={() => setActiveTab("active")}
+            className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold transition ${activeTab === "active" ? "bg-orange-500/15 text-orange-200 ring-1 ring-inset ring-orange-400/20" : "text-slate-400 hover:bg-white/5"}`}
+          >
+            <Package size={17} /> Active <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px]">{activeOrders.length}</span>
+          </button>
+          <button
+            type="button"
+            aria-current={activeTab === "history" ? "page" : undefined}
+            onClick={() => setActiveTab("history")}
+            className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold transition ${activeTab === "history" ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-inset ring-emerald-400/20" : "text-slate-400 hover:bg-white/5"}`}
+          >
+            <CheckCircle size={17} /> Completed <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10px]">{deliveredOrders.length}</span>
+          </button>
+        </div>
+      </nav>
 
       {/* OTP MODAL */}
       {otpModalOrder && (
