@@ -1,7 +1,16 @@
-﻿"use client";
+"use client";
 
-import React, { useState } from "react";
-import { Lock, User, Eye, EyeOff, Loader2, ShieldAlert, Key, AlertCircle } from "lucide-react";
+import React, { useId, useState } from "react";
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Key,
+  Loader2,
+  Lock,
+  ShieldAlert,
+  User,
+} from "lucide-react";
 import {
   verifyStaffLogin,
   getFriendlyError,
@@ -15,7 +24,7 @@ interface StaffLoginFormProps {
   panelDisplayName: string;
   panelIcon: React.ReactNode;
   onSuccess: (session: StaffSession) => void;
-  isDark?: boolean; // true for dark panels (kitchen/delivery), false for light
+  isDark?: boolean;
 }
 
 export default function StaffLoginForm({
@@ -23,15 +32,14 @@ export default function StaffLoginForm({
   panelDisplayName,
   panelIcon,
   onSuccess,
-  isDark = true,
 }: StaffLoginFormProps) {
+  const formId = useId();
   const [staffId, setStaffId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Password change flow (for mustChangePassword accounts)
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [pendingSession, setPendingSession] = useState<StaffSession | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -40,18 +48,10 @@ export default function StaffLoginForm({
   const [changingPassword, setChangingPassword] = useState(false);
   const [changeError, setChangeError] = useState("");
 
-  const inputBase = isDark
-    ? "w-full rounded-xl border border-white/10 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-white placeholder-slate-500 transition focus:border-orange-500/50 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-    : "w-full rounded-xl border border-gray-200 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 placeholder-gray-400 transition focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20";
-
-  const labelBase = isDark
-    ? "mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400"
-    : "mb-1.5 block text-[10px] font-black uppercase tracking-widest text-gray-500";
-
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!staffId.trim() || !password) {
-      setError("Please enter your staff ID and password.");
+      setError("Enter your staff ID and password to continue.");
       return;
     }
     setError("");
@@ -74,15 +74,15 @@ export default function StaffLoginForm({
     }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setChangeError("");
     if (newPassword.length < 8) {
-      setChangeError("Password must be at least 8 characters.");
+      setChangeError("Choose a password with at least 8 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setChangeError("Passwords do not match.");
+      setChangeError("The passwords do not match.");
       return;
     }
     if (!pendingSession) return;
@@ -96,7 +96,6 @@ export default function StaffLoginForm({
         newPassword
       );
       if (result.success) {
-        // Update session and proceed
         onSuccess({ ...pendingSession, mustChangePassword: false });
       } else {
         setChangeError(getFriendlyError(result.reason || "unknown"));
@@ -106,180 +105,191 @@ export default function StaffLoginForm({
     }
   };
 
-  if (showChangePassword && pendingSession) {
-    return (
-      <div className="staff-login-portal flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
-        <ThemeControl fixed />
-        <div className="w-full max-w-sm">
-          <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-2xl backdrop-blur-2xl">
-            <div className="bg-gradient-to-r from-orange-600 to-amber-500 p-6 text-center">
-              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20">
-                <Key size={24} className="text-white" />
-              </div>
-              <h2 className="text-lg font-black text-white">Set Your Password</h2>
-              <p className="mt-1 text-sm text-orange-100">
-                Welcome, {pendingSession.name}! Please create a new secure password.
-              </p>
-            </div>
-            <div className="p-6">
-              {changeError && (
-                <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-xs font-semibold text-red-300">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                  {changeError}
-                </div>
-              )}
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <label className={labelBase}>New Password</label>
-                  <div className="relative">
-                    <input
-                      type={showNewPass ? "text" : "password"}
-                      className={inputBase}
-                      placeholder="Min. 8 characters"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowNewPass((v) => !v)}
-                      className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-200"
-                    >
-                      {showNewPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className={labelBase}>Confirm Password</label>
-                  <input
-                    type="password"
-                    className={inputBase}
-                    placeholder="Re-enter new password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    autoComplete="new-password"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={changingPassword}
-                  className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3 text-sm font-black text-white shadow-lg transition-all hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {changingPassword && <Loader2 size={16} className="animate-spin" />}
-                  Set Password & Continue
-                </button>
-              </form>
-            </div>
-          </div>
+  const brandPanel = (
+    <aside className="staff-login-brand flex flex-col justify-between p-6 sm:p-9 lg:min-h-[660px] lg:p-11">
+      <div className="flex items-center gap-3">
+        <div className="staff-login-brand-mark" aria-hidden="true">EP</div>
+        <div>
+          <p className="staff-login-brand-name">EL PRESTO</p>
+          <p className="staff-login-brand-caption">TEAM OPERATIONS</p>
         </div>
       </div>
-    );
-  }
+
+      <div className="mt-8 lg:mt-auto lg:pb-8">
+        <p className="staff-login-kicker">YOUR WORKSPACE</p>
+        <h2 className="staff-login-brand-heading mt-3 max-w-md">
+          Your shift starts here.
+        </h2>
+        <p className="staff-login-brand-copy mt-4 max-w-sm">
+          Sign in to your assigned workspace to keep orders, service, and handoffs moving.
+        </p>
+      </div>
+
+      <div className="staff-login-brand-foot mt-6 hidden items-center justify-between gap-4 lg:flex">
+        <span>ADMIN</span><span aria-hidden="true">·</span><span>DEVELOPER</span><span aria-hidden="true">·</span><span>KITCHEN</span><span aria-hidden="true">·</span><span>DELIVERY</span><span aria-hidden="true">·</span><span>COUNTER</span><span aria-hidden="true">·</span><span>ATTENDANCE</span>
+      </div>
+    </aside>
+  );
 
   return (
-    <div className="staff-login-portal flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+    <main className="staff-login-portal grid min-h-[100svh] place-items-center px-4 py-8 sm:px-6 lg:px-8">
       <ThemeControl fixed />
-      {/* Ambient glow */}
-      <span className="pointer-events-none fixed left-1/4 top-1/4 h-80 w-80 rounded-full bg-orange-500/5 blur-3xl" />
-      <span className="pointer-events-none fixed bottom-1/4 right-1/4 h-80 w-80 rounded-full bg-amber-500/5 blur-3xl" />
+      <div className="staff-login-frame grid w-full max-w-6xl overflow-hidden rounded-[2rem] border lg:grid-cols-[1fr_0.92fr]">
+        {brandPanel}
 
-      <div className="relative w-full max-w-sm">
-        <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
-          {/* Header */}
-          <div className="relative overflow-hidden bg-gradient-to-br from-orange-600 to-amber-500 p-8 text-center">
-            <span className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
-            <div className="relative">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-white shadow-lg ring-1 ring-white/30">
-                {panelIcon}
+        <section className="staff-login-form-surface flex items-center px-6 py-8 sm:px-10 sm:py-11 lg:px-14" aria-labelledby={`${formId}-title`}>
+          <div className="mx-auto w-full max-w-md">
+            <div className="staff-login-role flex items-center gap-3">
+              <span className="staff-login-role-icon" aria-hidden="true">{panelIcon}</span>
+              <div className="min-w-0">
+                <p className="staff-login-kicker">STAFF ACCESS</p>
+                <p className="staff-login-role-name truncate">{panelDisplayName}</p>
               </div>
-              <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-orange-100">
-                EL PRESTO PIZZA
-              </div>
-              <h1 className="text-xl font-black text-white">{panelDisplayName}</h1>
-              <p className="mt-1 text-xs text-orange-100">Sign in with your staff credentials</p>
             </div>
-          </div>
 
-          {/* Form */}
-          <div className="p-6">
-            {error && (
-              <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2.5">
-                <ShieldAlert size={14} className="mt-0.5 shrink-0 text-red-400" />
-                <p className="text-xs font-semibold text-red-300">{error}</p>
+            {showChangePassword && pendingSession ? (
+              <div className="mt-8">
+                <h1 id={`${formId}-title`} className="staff-login-title">Set your password</h1>
+                <p className="staff-login-copy mt-2">
+                  Welcome, {pendingSession.name}. Create a new password to finish setting up your account.
+                </p>
+
+                {changeError && (
+                  <div id={`${formId}-error`} className="staff-login-error mt-6" role="alert" aria-live="assertive">
+                    <ShieldAlert size={17} aria-hidden="true" />
+                    <p>{changeError}</p>
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePassword} className="mt-7 space-y-5">
+                  <div>
+                    <label htmlFor={`${formId}-new-password`} className="staff-login-label">New password</label>
+                    <div className="staff-login-input-wrap">
+                      <Key size={17} aria-hidden="true" className="staff-login-input-icon" />
+                      <input
+                        id={`${formId}-new-password`}
+                        type={showNewPass ? "text" : "password"}
+                        className="staff-login-input"
+                        placeholder="At least 8 characters"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="staff-login-input-action"
+                        onClick={() => setShowNewPass((visible) => !visible)}
+                        aria-label={showNewPass ? "Hide new password" : "Show new password"}
+                        aria-pressed={showNewPass}
+                      >
+                        {showNewPass ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor={`${formId}-confirm-password`} className="staff-login-label">Confirm password</label>
+                    <div className="staff-login-input-wrap">
+                      <Lock size={17} aria-hidden="true" className="staff-login-input-icon" />
+                      <input
+                        id={`${formId}-confirm-password`}
+                        type="password"
+                        className="staff-login-input"
+                        placeholder="Enter it once more"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" disabled={changingPassword} className="staff-login-submit">
+                    {changingPassword ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ArrowRight size={17} aria-hidden="true" />}
+                    {changingPassword ? "Saving password…" : "Save password and continue"}
+                  </button>
+                </form>
               </div>
+            ) : (
+              <>
+                <div className="mt-8">
+                  <h1 id={`${formId}-title`} className="staff-login-title">Welcome back.</h1>
+                  <p className="staff-login-copy mt-2">Sign in to continue to {panelDisplayName}.</p>
+                </div>
+
+                {error && (
+                  <div id={`${formId}-error`} className="staff-login-error mt-6" role="alert" aria-live="assertive">
+                    <ShieldAlert size={17} aria-hidden="true" />
+                    <p>{error}</p>
+                  </div>
+                )}
+
+                <form onSubmit={handleLogin} className="mt-7 space-y-5">
+                  <div>
+                    <label htmlFor={`${formId}-staff-id`} className="staff-login-label">Staff ID</label>
+                    <div className="staff-login-input-wrap">
+                      <User size={17} aria-hidden="true" className="staff-login-input-icon" />
+                      <input
+                        id={`${formId}-staff-id`}
+                        type="text"
+                        className="staff-login-input"
+                        placeholder="Enter your staff ID"
+                        value={staffId}
+                        onChange={(e) => setStaffId(e.target.value)}
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={error ? `${formId}-error` : undefined}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor={`${formId}-password`} className="staff-login-label">Password</label>
+                    <div className="staff-login-input-wrap">
+                      <Lock size={17} aria-hidden="true" className="staff-login-input-icon" />
+                      <input
+                        id={`${formId}-password`}
+                        type={showPassword ? "text" : "password"}
+                        className="staff-login-input"
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={error ? `${formId}-error` : undefined}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="staff-login-input-action"
+                        onClick={() => setShowPassword((visible) => !visible)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button type="submit" disabled={isSubmitting} className="staff-login-submit">
+                    {isSubmitting ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ArrowRight size={17} aria-hidden="true" />}
+                    {isSubmitting ? "Checking your access…" : "Sign in"}
+                  </button>
+                </form>
+
+                <div className="staff-login-note mt-7">
+                  <Lock size={15} aria-hidden="true" />
+                  <p>Access is limited to your assigned role. Contact your administrator if you need help signing in.</p>
+                </div>
+              </>
             )}
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className={labelBase}>Staff ID</label>
-                <div className="relative">
-                  <User
-                    size={14}
-                    className="absolute left-3.5 top-3.5 text-slate-400"
-                  />
-                  <input
-                    type="text"
-                    className={`${inputBase} pl-10`}
-                    placeholder="e.g. kitchen_amit"
-                    value={staffId}
-                    onChange={(e) => setStaffId(e.target.value)}
-                    autoComplete="username"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className={labelBase}>Password</label>
-                <div className="relative">
-                  <Lock
-                    size={14}
-                    className="absolute left-3.5 top-3.5 text-slate-400"
-                  />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    className={`${inputBase} pl-10 pr-10`}
-                    placeholder="Your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-3.5 text-slate-400 transition-colors hover:text-slate-200"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3 text-sm font-black text-white shadow-lg shadow-orange-500/25 transition-all hover:scale-[1.01] hover:opacity-95 active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <><Loader2 size={16} className="animate-spin" /> Verifying…</>
-                ) : (
-                  "Sign In to Panel"
-                )}
-              </button>
-            </form>
-
-            <p className="mt-5 text-center text-[10px] font-semibold text-slate-600">
-              Contact your administrator if you cannot access your account.
-            </p>
+            <p className="staff-login-footer mt-8">EL PRESTO <span aria-hidden="true">·</span> STAFF PORTAL</p>
           </div>
-        </div>
-
-        {/* Security badge */}
-        <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] font-semibold text-slate-600">
-          <Lock size={10} />
-          Secured · EL PRESTO Staff Portal
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }
