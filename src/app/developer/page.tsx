@@ -70,6 +70,7 @@ import {
   query,
   orderBy,
   limit,
+  where,
 } from "firebase/firestore";
 
 /* ============================================================
@@ -193,6 +194,7 @@ export default function DeveloperDashboardPage() {
   const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>([]);
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [fleetOrders, setFleetOrders] = useState<Order[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>("ALL");
 
   /* ---- Loading / errors ---- */
@@ -513,6 +515,19 @@ export default function DeveloperDashboardPage() {
       }
     );
 
+    const unsubFleetOrders = onSnapshot(
+      query(collection(db, "orders"), where("status", "==", "out_for_delivery")),
+      (snap) => {
+        setFleetOrders(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() })) as Order[]
+        );
+      },
+      (err) => {
+        setFleetOrders([]);
+        onSnapshotError("active fleet orders")(err);
+      }
+    );
+
     // Safety: don't spin forever if nothing resolves.
     const bootTimer = window.setTimeout(() => setIsBooting(false), 4000);
 
@@ -524,6 +539,7 @@ export default function DeveloperDashboardPage() {
       unsubPartners();
       unsubStaff();
       unsubOrders();
+      unsubFleetOrders();
       if (fallbackOrdersUnsub) fallbackOrdersUnsub();
     };
   }, []);
@@ -1272,7 +1288,11 @@ export default function DeveloperDashboardPage() {
 
             {/* ===================== 6. FLEET ===================== */}
             {activeSection === "fleet" && (
-              <FleetLiveMap partners={deliveryPartners} branches={branches} />
+              <FleetLiveMap
+                partners={deliveryPartners}
+                branches={branches}
+                orders={fleetOrders}
+              />
             )}
 
             {/* ===================== 7. PAYMENTS ===================== */}
