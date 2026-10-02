@@ -62,7 +62,6 @@ import {
   formatISTDisplayDate,
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
-import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
@@ -2476,7 +2475,6 @@ export default function CounterPOSPage() {
     <div className="flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900">
       <Toast state={toast} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
-      <StaffAttendanceAction token={staffSession?.token as string | undefined} branchId={staffSession?.branchId} />
 
       {/* Header */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4">

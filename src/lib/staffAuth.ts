@@ -18,6 +18,7 @@ export const PANEL_ROLE_MAP: Record<string, string[]> = {
   kitchen: ["DEVELOPER", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "KITCHEN_MANAGER", "KITCHEN_STAFF"],
   counter: ["DEVELOPER", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "COUNTER_MANAGER", "COUNTER_STAFF"],
   delivery: ["DEVELOPER", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "DELIVERY_MANAGER", "DELIVERY_PARTNER"],
+  attendance: ["DEVELOPER", "SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "KITCHEN_MANAGER", "KITCHEN_STAFF", "COUNTER_MANAGER", "COUNTER_STAFF", "DELIVERY_MANAGER", "DELIVERY_PARTNER"],
   developer: ["DEVELOPER", "SUPER_ADMIN"],
 };
 
@@ -27,6 +28,7 @@ const SESSION_KEYS: Record<string, string> = {
   kitchen: "elpestro_kitchen_auth_v2",
   counter: "elpestro_counter_auth_v2",
   delivery: "elpestro_delivery_auth_v2",
+  attendance: "elpestro_attendance_auth_v1",
   developer: "elpestro_developer_auth_v2",
 };
 

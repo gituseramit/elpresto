@@ -15,16 +15,16 @@ import { SignJWT } from "jose";
 import { logAuditEvent } from "@/lib/rbac";
 
 const PANEL_ROLE_ACCESS: Record<string, string[]> = {
-  DEVELOPER: ["admin", "kitchen", "counter", "delivery", "developer"],
-  SUPER_ADMIN: ["admin", "kitchen", "counter", "delivery", "developer"],
-  ADMIN: ["admin", "kitchen", "counter", "delivery"],
-  BRANCH_MANAGER: ["admin", "kitchen", "counter", "delivery"],
-  KITCHEN_MANAGER: ["kitchen"],
-  KITCHEN_STAFF: ["kitchen"],
-  COUNTER_MANAGER: ["counter"],
-  COUNTER_STAFF: ["counter"],
-  DELIVERY_MANAGER: ["delivery"],
-  DELIVERY_PARTNER: ["delivery"],
+  DEVELOPER: ["admin", "kitchen", "counter", "delivery", "developer", "attendance"],
+  SUPER_ADMIN: ["admin", "kitchen", "counter", "delivery", "developer", "attendance"],
+  ADMIN: ["admin", "kitchen", "counter", "delivery", "attendance"],
+  BRANCH_MANAGER: ["admin", "kitchen", "counter", "delivery", "attendance"],
+  KITCHEN_MANAGER: ["kitchen", "attendance"],
+  KITCHEN_STAFF: ["kitchen", "attendance"],
+  COUNTER_MANAGER: ["counter", "attendance"],
+  COUNTER_STAFF: ["counter", "attendance"],
+  DELIVERY_MANAGER: ["delivery", "attendance"],
+  DELIVERY_PARTNER: ["delivery", "attendance"],
 };
 
 const JWT_SECRET = new TextEncoder().encode(

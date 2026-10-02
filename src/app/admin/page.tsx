@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   useCallback,
@@ -77,7 +77,6 @@ import Modern3DCategoryChart from "@/components/Admin/Charts/Modern3DCategoryCha
 import StaffLoginForm from "@/components/Auth/StaffLoginForm";
 import AttendancePanel from "@/components/Admin/AttendancePanel";
 import LoyaltyRewardsManager from "@/components/Admin/LoyaltyRewardsManager";
-import StaffAttendanceAction from "@/components/StaffAttendanceAction";
 import type { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
 
@@ -626,7 +625,6 @@ function MetricCard({
   sub,
   icon,
   gradient,
-  border,
   iconGradient,
 }: {
   label: string;
@@ -634,34 +632,31 @@ function MetricCard({
   sub?: string;
   icon: ReactNode;
   gradient: string;
-  border: string;
   iconGradient: string;
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl border ${border} bg-gradient-to-br ${gradient} bg-slate-900/60 p-5 backdrop-blur-xl transition hover:-translate-y-0.5 hover:shadow-lg`}
+      className="group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111827] p-5 shadow-[0_12px_35px_-24px_rgba(0,0,0,0.9)] transition duration-200 hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-[#151e2e]"
     >
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-white/5 blur-2xl"
-      />
+      <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${iconGradient} opacity-70`} />
+      <span aria-hidden="true" className={`pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full bg-gradient-to-br ${gradient} opacity-40 blur-3xl transition group-hover:opacity-70`} />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
             {label}
           </p>
-          <p className="mt-1.5 font-mono text-2xl font-black leading-none text-white lg:text-3xl">
+          <p className="mt-3 font-mono text-3xl font-bold leading-none tracking-tight text-white lg:text-[2rem]">
             {value}
           </p>
           {sub && (
-            <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-500">
+            <p className="mt-2 truncate text-xs font-medium text-slate-500">
               {sub}
             </p>
           )}
         </div>
         <div
           aria-hidden="true"
-          className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br ${iconGradient} text-white shadow-lg ring-1 ring-white/10`}
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${iconGradient} text-white shadow-lg ring-1 ring-white/10`}
         >
           {icon}
         </div>
@@ -721,7 +716,7 @@ function KpiCard({
     blue: "from-blue-500 to-indigo-500",
   };
   return (
-    <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
+    <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl">
       <div className="flex items-center gap-2.5">
         <div
           aria-hidden="true"
@@ -2576,15 +2571,34 @@ export default function AdminPage() {
   /* ============================================================= */
 
   const renderDashboard = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="space-y-6 sm:space-y-7">
+      <section className="relative overflow-hidden rounded-[1.6rem] border border-white/[0.08] bg-[radial-gradient(ellipse_at_top_right,_rgba(249,115,22,0.17),_transparent_48%),linear-gradient(120deg,#171f2e_0%,#111827_60%,#151a27_100%)] px-5 py-6 shadow-[0_22px_60px_-36px_rgba(0,0,0,0.9)] sm:px-7 sm:py-7">
+        <div aria-hidden="true" className="absolute -right-16 -top-20 h-64 w-64 rounded-full border border-orange-300/10" />
+        <div aria-hidden="true" className="absolute -right-8 -top-12 h-48 w-48 rounded-full border border-orange-300/[0.07]" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-2xl">
+            <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300"><span className="h-1.5 w-1.5 rounded-full bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.85)]" /> EL PRESTO · STORE CONTROL</p>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Good to see you{staffSession?.name ? `, ${staffSession.name.split(" ")[0]}` : ""}.</h1>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">Here’s what’s happening across your store today. Keep an eye on incoming orders and kitchen progress.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-2 rounded-xl border border-white/[0.09] bg-black/15 px-3.5 py-2.5 text-xs font-medium text-slate-300"><Clock size={14} className="text-orange-300" />{new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date())}</span>
+            <button type="button" onClick={() => setActiveTab("liveOrders")} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-orange-950/30 transition hover:bg-orange-400"><ShoppingBag size={14} /> Open orders <ChevronRight size={14} /></button>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-sm font-semibold text-white">Today at a glance</h2><p className="mt-1 text-xs text-slate-500">Live performance and fulfilment status</p></div>
+        <span className="hidden items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400 sm:flex"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> Updating live</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="Today's Revenue"
           value={`₹${Math.round(todayStats.revenue).toLocaleString("en-IN")}`}
           sub={`${todayStats.orderCount} orders today`}
           icon={<IndianRupee size={20} />}
           gradient="from-emerald-500/20 to-teal-500/5"
-          border="border-emerald-500/30"
           iconGradient="from-emerald-500 to-teal-500"
         />
         <MetricCard
@@ -2593,7 +2607,6 @@ export default function AdminPage() {
           sub={`${todayStats.deliveryCount} delivery`}
           icon={<ShoppingBag size={20} />}
           gradient="from-orange-500/20 to-amber-500/5"
-          border="border-orange-500/30"
           iconGradient="from-orange-500 to-amber-500"
         />
         <MetricCard
@@ -2602,7 +2615,6 @@ export default function AdminPage() {
           sub="Actively preparing"
           icon={<Flame size={20} />}
           gradient="from-amber-500/20 to-yellow-500/5"
-          border="border-amber-500/30"
           iconGradient="from-amber-500 to-yellow-500"
         />
         <MetricCard
@@ -2611,23 +2623,22 @@ export default function AdminPage() {
           sub="Awaiting pickup"
           icon={<Truck size={20} />}
           gradient="from-blue-500/20 to-indigo-500/5"
-          border="border-blue-500/30"
           iconGradient="from-blue-500 to-indigo-500"
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl lg:col-span-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-4 shadow-[0_18px_45px_-30px_rgba(0,0,0,0.85)] sm:p-5 xl:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div
                 aria-hidden="true"
-                className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
+                className="grid h-9 w-9 place-items-center rounded-xl bg-orange-500/15 text-orange-300 ring-1 ring-orange-400/15"
               >
                 <Zap size={16} />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white">
+                <h3 className="text-sm font-semibold text-white">
                   Live Order Queue
                 </h3>
                 <p className="text-[11px] font-semibold text-slate-500">
@@ -2715,7 +2726,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="space-y-4 rounded-3xl border border-white/5 bg-slate-900/60 p-5 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+        <div className="space-y-4 rounded-2xl border border-white/[0.07] bg-[#111827] p-4 shadow-[0_18px_45px_-30px_rgba(0,0,0,0.85)] sm:p-5">
           <div className="flex items-center gap-2.5">
             <div
               aria-hidden="true"
@@ -2776,7 +2787,7 @@ export default function AdminPage() {
 
   const renderLiveOrders = () => (
     <div className="space-y-5">
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-4 backdrop-blur-xl">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative flex-1 lg:max-w-xs">
             <Search
@@ -2944,7 +2955,7 @@ export default function AdminPage() {
         />
       </div>
 
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-4 backdrop-blur-xl">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative flex-1 lg:max-w-xs">
             <Search
@@ -3190,7 +3201,7 @@ export default function AdminPage() {
 
   const renderMenuManagement = () => (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-md">
             <Search
@@ -3367,7 +3378,7 @@ export default function AdminPage() {
           {groupedMenuItems.map((group) => (
             <div
               key={group.category + "-" + group.subcategory}
-              className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl"
+              className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl"
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -3511,7 +3522,7 @@ export default function AdminPage() {
 
   const renderCategoryManagement = () => (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+      <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
         <span
           aria-hidden="true"
           className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-purple-500/10 blur-3xl"
@@ -3553,7 +3564,7 @@ export default function AdminPage() {
           return (
             <div
               key={cat.id}
-              className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl"
+              className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl"
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
                 <div className="flex items-center gap-3">
@@ -3687,7 +3698,7 @@ export default function AdminPage() {
 
   const renderOrderHistory = () => (
     <div className="space-y-5">
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-4 backdrop-blur-xl">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row">
             <div className="relative flex-1 lg:max-w-xs">
@@ -3730,7 +3741,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 backdrop-blur-xl">
+      <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111827] backdrop-blur-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-xs" aria-label="Order history">
             <thead className="bg-slate-800/60 text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -3842,7 +3853,7 @@ export default function AdminPage() {
 
     return (
       <div className="space-y-8">
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <div
@@ -3960,7 +3971,7 @@ export default function AdminPage() {
         </div>
 
         <div className="space-y-5 border-t border-white/5 pt-6">
-          <div className="flex flex-col gap-3 rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <div
                 aria-hidden="true"
@@ -4032,7 +4043,7 @@ export default function AdminPage() {
             {categoryList.map((cat, idx) => (
               <div
                 key={idx}
-                className="flex flex-col gap-4 rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl transition hover:border-white/10"
+                className="flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl transition hover:border-white/10"
               >
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-2">
@@ -4119,7 +4130,7 @@ export default function AdminPage() {
 
   const renderPromoCodes = () => (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+      <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
         <span
           aria-hidden="true"
           className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-orange-500/10 blur-3xl"
@@ -4198,7 +4209,7 @@ export default function AdminPage() {
             return (
               <div
                 key={p.id}
-                className="relative flex flex-col gap-4 overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl transition hover:border-white/10"
+                className="relative flex flex-col gap-4 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl transition hover:border-white/10"
               >
                 <span
                   aria-hidden="true"
@@ -4314,7 +4325,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl">
         <div className="mb-4 flex items-center gap-2">
           <History
             size={15}
@@ -4414,7 +4425,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-6 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-6 backdrop-blur-xl">
         <SectionHeader
           icon={<ShieldCheck size={18} />}
           title="Automated Safeguards"
@@ -4440,7 +4451,7 @@ export default function AdminPage() {
         </ul>
       </div>
 
-      <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-6 backdrop-blur-xl">
+      <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-6 backdrop-blur-xl">
         <SectionHeader
           icon={<Key size={18} />}
           title="Execute Reset"
@@ -4508,7 +4519,7 @@ export default function AdminPage() {
 
     return (
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Store size={18} />}
             title="Store Profile"
@@ -4579,7 +4590,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader icon={<Receipt size={18} />} title="Packing Charges" subtitle="Set an optional per-item packing charge by product category" />
           <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 p-4">
             <div><p className="text-xs font-black text-white">Enable packing charges</p><p className="mt-0.5 text-[11px] text-slate-400">Charges are calculated from each product's category.</p></div>
@@ -4591,7 +4602,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader icon={<Sparkles size={18} />} title="Loyalty Rewards" subtitle="Configure points and reward offers for customers" />
           <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 p-4">
             <div><p className="text-xs font-black text-white">Enable loyalty points</p><p className="mt-0.5 text-[11px] text-slate-400">Customers earn points on paid online orders and can redeem active offers.</p></div>
@@ -4602,7 +4613,7 @@ export default function AdminPage() {
           <LoyaltyRewardsManager />
         </div>
 
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Truck size={18} />}
             title="Delivery Hub & Radius"
@@ -4728,7 +4739,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
           <SectionHeader
             icon={<Flame size={18} />}
             title="Trending Section"
@@ -4871,7 +4882,7 @@ export default function AdminPage() {
 
     return (
       <div className="space-y-6">
-        <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-slate-900/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
           <span
             aria-hidden="true"
             className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-emerald-500/10 blur-3xl"
@@ -5181,24 +5192,23 @@ export default function AdminPage() {
   /* ============================================================= */
 
   return (
-    <div className="flex min-h-screen flex-col overflow-hidden bg-slate-950 text-slate-100 lg:flex-row">
+    <div className="flex min-h-screen flex-col overflow-hidden bg-[#090d15] text-slate-100 lg:flex-row">
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
-      <StaffAttendanceAction token={staffSession?.token} branchId={staffSession?.branchId} />
 
       {/* SIDEBAR */}
       <aside
         aria-label="Admin navigation"
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col justify-between border-r border-white/5 bg-slate-900/95 p-4 backdrop-blur-xl transition-transform duration-300 lg:relative lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col justify-between border-r border-white/[0.07] bg-[#0e1420] p-4 backdrop-blur-xl transition-transform duration-300 lg:relative lg:translate-x-0 ${
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="space-y-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-6">
           <div className="flex items-center justify-between px-1 pt-1">
             <div className="flex items-center gap-2.5">
               <div
                 aria-hidden="true"
-                className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-tr from-orange-500 via-amber-500 to-yellow-500 text-2xl shadow-lg shadow-orange-500/30 ring-1 ring-white/10"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 text-2xl shadow-lg shadow-orange-950/50 ring-1 ring-orange-200/20"
               >
                 🍕
               </div>
@@ -5240,7 +5250,7 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <nav className="space-y-1">
+          <nav aria-label="Admin sections" className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1 [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.2)_transparent]">
             {navItems.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -5253,10 +5263,10 @@ export default function AdminPage() {
                     setIsSidebarOpen(false);
                   }}
                   aria-current={isActive ? "page" : undefined}
-                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-black transition-all ${
+                  className={`group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition-all ${
                     isActive
-                      ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25"
-                      : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                      ? "bg-orange-500/[0.14] text-orange-200 ring-1 ring-inset ring-orange-400/20"
+                      : "text-slate-400 hover:bg-white/[0.045] hover:text-slate-100"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -5281,7 +5291,7 @@ export default function AdminPage() {
         </div>
 
         <div className="space-y-2 border-t border-white/5 pt-4">
-          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-slate-800/40 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
             <span className="flex items-center gap-1.5">
               <span
                 aria-hidden="true"
@@ -5312,7 +5322,7 @@ export default function AdminPage() {
 
       {/* MAIN */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-white/5 bg-slate-900/70 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-30 flex h-[4.25rem] shrink-0 items-center justify-between gap-3 border-b border-white/[0.07] bg-[#0c111b]/90 px-4 backdrop-blur-xl sm:px-7">
           <div className="flex min-w-0 items-center gap-2.5">
             <button
               type="button"
@@ -5323,7 +5333,7 @@ export default function AdminPage() {
               <MenuIcon size={16} />
             </button>
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-black text-white sm:text-base">
+              <h2 className="truncate text-sm font-semibold tracking-tight text-white sm:text-base">
                 {tabTitle[activeTab] || activeTab}
               </h2>
               <p className="hidden truncate text-[10px] font-black uppercase tracking-widest text-slate-500 sm:block">
@@ -5377,7 +5387,7 @@ export default function AdminPage() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="mx-auto w-full max-w-[1500px] flex-1 p-4 sm:p-6 xl:p-8">
           {activeTab === "dashboard" && renderDashboard()}
           {activeTab === "kitchen" && renderKitchenOrders()}
           {activeTab === "liveOrders" && renderLiveOrders()}
@@ -6451,7 +6461,7 @@ function OrderCard({
   const status = getStatusKey(order);
 
   return (
-    <div className="rounded-3xl border border-white/5 bg-slate-900/60 p-4 backdrop-blur-xl transition hover:border-white/10 sm:p-5">
+    <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-4 backdrop-blur-xl transition hover:border-white/10 sm:p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
