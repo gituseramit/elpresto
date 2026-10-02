@@ -70,6 +70,7 @@ import {
 } from "@/lib/branchService";
 import type { Branch, Counter } from "@/lib/types";
 import { getPackingCharge } from "@/lib/commerce";
+import { usePendingOrderReminder } from "@/hooks/usePendingOrderReminder";
 
 /* ============================================================ */
 /* Types                                                        */
@@ -801,9 +802,52 @@ export default function CounterPOSPage() {
     }
   }, []);
 
+  const playReminderRing = useCallback(() => {
+    if (!soundEnabledRef.current || typeof window === "undefined") return;
+    try {
+      if (!audioCtxRef.current) {
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctor) return;
+        audioCtxRef.current = new Ctor();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      const start = ctx.currentTime;
+      // A short, two-tone double ring distinct from the immediate order chime.
+      [0, 0.58].forEach((offset) => {
+        [784, 1046].forEach((frequency, index) => {
+          const oscillator = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const noteStart = start + offset + index * 0.19;
+          oscillator.type = "sine";
+          oscillator.frequency.value = frequency;
+          oscillator.connect(gain);
+          gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0.001, noteStart);
+          gain.gain.linearRampToValueAtTime(0.24, noteStart + 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.18);
+          oscillator.start(noteStart);
+          oscillator.stop(noteStart + 0.19);
+        });
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const pendingOrderReminder = usePendingOrderReminder(
+    soundEnabledRef,
+    playReminderRing
+  );
+
   const toggleSound = useCallback(() => {
     setSoundEnabled((prev) => {
       const next = !prev;
+      soundEnabledRef.current = next;
+      if (!next) pendingOrderReminder.cancelAll();
       try {
         window.localStorage.setItem(SOUND_STORAGE_KEY, String(next));
       } catch {
@@ -812,7 +856,7 @@ export default function CounterPOSPage() {
       if (next) playChime();
       return next;
     });
-  }, [playChime]);
+  }, [playChime, pendingOrderReminder.cancelAll]);
 
   /* ============================================================ */
   /* Logout                                                       */
@@ -820,6 +864,7 @@ export default function CounterPOSPage() {
 
   const handleLogout = useCallback(() => {
     const doLogout = () => {
+      pendingOrderReminder.cancelAll();
       setIsAuthenticated(false);
       setStaffSession(null);
       setOrders([]);
@@ -849,7 +894,7 @@ export default function CounterPOSPage() {
     } else {
       doLogout();
     }
-  }, []);
+  }, [pendingOrderReminder.cancelAll]);
 
   /* ============================================================ */
   /* Data subscriptions                                           */
@@ -894,6 +939,7 @@ export default function CounterPOSPage() {
     const unsubscribe = subscribeDayOrders(
       selectedDate,
       (fetched: Order[]) => {
+        pendingOrderReminder.syncOrderStatuses(fetched);
         const newPending = fetched.filter(
           (o) =>
             o.status === "pending" &&
@@ -901,6 +947,7 @@ export default function CounterPOSPage() {
             seenOrderIdsRef.current.size > 0
         );
         if (newPending.length > 0) playChime();
+        if (newPending.length > 0) pendingOrderReminder.scheduleFor(newPending);
         fetched.forEach((o) => seenOrderIdsRef.current.add(o.id));
         if (seenOrderIdsRef.current.size > SEEN_ORDERS_MAX) {
           const trimmed = Array.from(seenOrderIdsRef.current).slice(
@@ -920,8 +967,19 @@ export default function CounterPOSPage() {
       activeBranchId
     );
 
-    return () => unsubscribe();
-  }, [isAuthenticated, selectedDate, activeBranchId, playChime]);
+    return () => {
+      unsubscribe();
+      pendingOrderReminder.cancelAll();
+    };
+  }, [
+    isAuthenticated,
+    selectedDate,
+    activeBranchId,
+    playChime,
+    pendingOrderReminder.cancelAll,
+    pendingOrderReminder.scheduleFor,
+    pendingOrderReminder.syncOrderStatuses,
+  ]);
 
   /* Reset seen IDs on date/branch change */
   useEffect(() => {

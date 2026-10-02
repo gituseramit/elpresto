@@ -55,6 +55,7 @@ import {
 import DateNavigator from "@/components/DateNavigator";
 import ThemeControl from "@/components/ThemeControl";
 import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
+import { usePendingOrderReminder } from "@/hooks/usePendingOrderReminder";
 
 /* ============================================================
    TYPES
@@ -652,6 +653,51 @@ export default function KitchenSystem() {
     }
   }, []);
 
+  const playReminderRing = useCallback(() => {
+    if (!soundEnabledRef.current || typeof window === "undefined") return;
+    try {
+      if (!audioContextRef.current) {
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctor) return;
+        audioContextRef.current = new Ctor();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      const start = ctx.currentTime;
+      // A short, two-tone double ring distinct from the immediate order chime.
+      [0, 0.58].forEach((offset) => {
+        [784, 1046].forEach((frequency, index) => {
+          const oscillator = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const noteStart = start + offset + index * 0.19;
+          oscillator.type = "sine";
+          oscillator.frequency.value = frequency;
+          oscillator.connect(gain);
+          gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0.001, noteStart);
+          gain.gain.linearRampToValueAtTime(0.24, noteStart + 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.18);
+          oscillator.start(noteStart);
+          oscillator.stop(noteStart + 0.19);
+        });
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const pendingOrderReminder = usePendingOrderReminder(
+    soundEnabledRef,
+    playReminderRing
+  );
+
+  useEffect(() => {
+    if (!kitchenSettings.soundEnabled) pendingOrderReminder.cancelAll();
+  }, [kitchenSettings.soundEnabled, pendingOrderReminder.cancelAll]);
+
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
@@ -671,6 +717,7 @@ export default function KitchenSystem() {
      ============================================================ */
 
   const handleLogout = useCallback(() => {
+    pendingOrderReminder.cancelAll();
     setIsAuthenticated(false);
     setStaffSession(null);
     setOrders([]);
@@ -681,7 +728,7 @@ export default function KitchenSystem() {
       .catch(() => {
         /* ignore */
       });
-  }, []);
+  }, [pendingOrderReminder.cancelAll]);
 
   /* ============================================================
      REALTIME ORDERS LISTENER
@@ -697,6 +744,7 @@ export default function KitchenSystem() {
     const unsubscribe = subscribeDayOrders(
       selectedDate,
       (fetched: Order[]) => {
+        pendingOrderReminder.syncOrderStatuses(fetched);
         const newlyAdded = fetched.filter(
           (o) =>
             (o.status === "pending" || o.status === "preparing") &&
@@ -705,6 +753,9 @@ export default function KitchenSystem() {
 
         if (newlyAdded.length > 0 && seenOrderIdsRef.current.size > 0) {
           if (soundEnabledRef.current) playNotificationSound();
+          pendingOrderReminder.scheduleFor(
+            newlyAdded.filter((order) => order.status === "pending")
+          );
           setNewOrderAlert(newlyAdded[0]);
           if (alertTimeoutRef.current != null) {
             window.clearTimeout(alertTimeoutRef.current);
@@ -737,12 +788,16 @@ export default function KitchenSystem() {
 
     return () => {
       if (unsubscribe) unsubscribe();
+      pendingOrderReminder.cancelAll();
     };
   }, [
     isAuthenticated,
     selectedDate,
     activeBranchId,
     playNotificationSound,
+    pendingOrderReminder.cancelAll,
+    pendingOrderReminder.scheduleFor,
+    pendingOrderReminder.syncOrderStatuses,
     ordersRetryKey,
   ]);
 
