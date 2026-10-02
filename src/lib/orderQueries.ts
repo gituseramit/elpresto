@@ -181,7 +181,10 @@ export function subscribeDayOrders(
         (snap) => {
           mapFallback.clear();
           snap.docs.forEach((d) => {
-            const data = { id: d.id, ...d.data() };
+            const data: Record<string, unknown> = {
+              ...(d.data() as Record<string, unknown>),
+              id: d.id,
+            };
             const orderDate = parseOrderDate(data.createdAt);
             if (orderDate >= startOfDay && orderDate <= endOfDay) {
               mapFallback.set(d.id, data);

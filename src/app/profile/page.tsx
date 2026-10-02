@@ -745,7 +745,7 @@ export default function ProfilePage() {
     () =>
       completedOrders.reduce(
         (sum, o) => sum + (Number(o.discount) || 0),
-        []
+        0
       ),
     [completedOrders]
   );

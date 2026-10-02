@@ -109,7 +109,7 @@ function formatDistance(km: number): string {
 function normalizeRouteCoordinates(raw: unknown): [number, number][] {
   if (!raw) return [];
 
-  let value = raw;
+  let value: unknown = raw;
   if (
     typeof raw === "object" &&
     raw !== null &&

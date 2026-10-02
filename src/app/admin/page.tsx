@@ -61,6 +61,7 @@ import {
   Coffee,
   Crown,
   Info,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { DUMMY_MENU } from "@/data/menu";
@@ -4790,7 +4791,7 @@ export default function AdminPage() {
       key: PanelKey;
       title: string;
       route: string;
-      icon: StatusIcon;
+      icon: LucideIcon;
       desc: string;
       gradient: string;
     }[] = [

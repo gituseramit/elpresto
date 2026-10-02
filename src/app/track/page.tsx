@@ -1097,7 +1097,7 @@ export default function TrackOrderPage() {
                       ? "Assigned Rider"
                       : "Awaiting assignment"}
                   </p>
-                  {orderData.deliveryLocationUpdatedAt && (
+                  {Boolean(orderData.deliveryLocationUpdatedAt) && (
                     <p className="mt-0.5 text-[10px] font-bold text-gray-400">
                       GPS updated:{" "}
                       {formatISTTime(orderData.deliveryLocationUpdatedAt)}

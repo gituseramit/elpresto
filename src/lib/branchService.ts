@@ -106,7 +106,7 @@ export async function initDefaultBranchIfMissing(): Promise<Branch> {
       return DEFAULT_MAIN_BRANCH;
     }
 
-    return { id: snap.id, ...(snap.data() as Branch) };
+    return { ...(snap.data() as Branch), id: snap.id };
   } catch (err) {
     console.warn("Could not check/initialize default branch:", err);
     return DEFAULT_MAIN_BRANCH;
@@ -125,7 +125,7 @@ export async function getActiveBranches(): Promise<Branch[]> {
       const defaultBranch = await initDefaultBranchIfMissing();
       return [defaultBranch];
     }
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Branch) }));
+    return snap.docs.map((d) => ({ ...(d.data() as Branch), id: d.id }));
   } catch (err) {
     console.warn("Error getting active branches, fallback to default:", err);
     return [DEFAULT_MAIN_BRANCH];
@@ -142,7 +142,7 @@ export async function getAllBranches(): Promise<Branch[]> {
       const defaultBranch = await initDefaultBranchIfMissing();
       return [defaultBranch];
     }
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Branch) }));
+    return snap.docs.map((d) => ({ ...(d.data() as Branch), id: d.id }));
   } catch (err) {
     console.warn("Error getting all branches:", err);
     return [DEFAULT_MAIN_BRANCH];
@@ -159,7 +159,7 @@ export async function getBranchById(branchId: string): Promise<Branch> {
   try {
     const snap = await getDoc(doc(db, "branches", branchId));
     if (snap.exists()) {
-      return { id: snap.id, ...(snap.data() as Branch) };
+      return { ...(snap.data() as Branch), id: snap.id };
     }
   } catch (err) {
     console.warn(`Error getting branch ${branchId}:`, err);
@@ -389,7 +389,7 @@ export async function getKitchensForBranch(branchId: string): Promise<Kitchen[]>
   try {
     const q = query(collection(db, "kitchens"), where("branchId", "==", branchId));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Kitchen) }));
+    return snap.docs.map((d) => ({ ...(d.data() as Kitchen), id: d.id }));
   } catch (err) {
     console.warn(`Error getting kitchens for branch ${branchId}:`, err);
     return [];
@@ -400,7 +400,7 @@ export async function getCountersForBranch(branchId: string): Promise<Counter[]>
   try {
     const q = query(collection(db, "counters"), where("branchId", "==", branchId));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Counter) }));
+    return snap.docs.map((d) => ({ ...(d.data() as Counter), id: d.id }));
   } catch (err) {
     console.warn(`Error getting counters for branch ${branchId}:`, err);
     return [];
@@ -475,7 +475,7 @@ export async function getDeliveryPartners(branchId?: string): Promise<DeliveryPa
       q = query(collection(db, "deliveryPartners"), where("assignedBranchId", "==", branchId));
     }
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as DeliveryPartner) }));
+    return snap.docs.map((d) => ({ ...(d.data() as DeliveryPartner), id: d.id }));
   } catch (err) {
     console.warn("Could not get delivery partners:", err);
     return [];

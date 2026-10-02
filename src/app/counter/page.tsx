@@ -66,9 +66,8 @@ import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
   getCountersForBranch,
-  type Branch,
-  type Counter,
 } from "@/lib/branchService";
+import type { Branch, Counter } from "@/lib/types";
 
 /* ============================================================ */
 /* Types                                                        */

@@ -53,9 +53,9 @@ import {
   resolveNearestBranch,
   getBranchMenuAvailabilityMap,
   isBranchOpen,
-  type Branch,
   type ResolveNearestBranchResult,
 } from "@/lib/branchService";
+import type { Branch } from "@/lib/types";
 import { db } from "@/lib/firebase";
 import {
   addDoc,
@@ -873,8 +873,8 @@ export default function CheckoutPage() {
       setOrderNumber(newOrderNum);
       setCreatedDeliveryOtp(otp || null);
       setPlacedOrderSummary({
-        id: docRef.id,
         ...(orderPayload as unknown as Order),
+        id: docRef.id,
       });
 
       try {
