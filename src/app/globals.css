@@ -642,6 +642,7 @@ html.dark .storefront-theme [class*="bg-[#B8190B]"].text-white {
 }
 
 .ep-luxe-home .ep-home-story,
+.ep-luxe-home .ep-home-nutrition,
 .ep-luxe-home .ep-home-process {
   background: #faf7f0;
 }
@@ -659,6 +660,7 @@ html.dark .storefront-theme [class*="bg-[#B8190B]"].text-white {
 .ep-luxe-home .ep-service-card,
 .ep-luxe-home .ep-category-card,
 .ep-luxe-home .ep-featured-card,
+.ep-luxe-home .ep-nutrition-card,
 .ep-luxe-home .ep-process-card {
   border-color: #e8dfd1;
   background-color: #fffdf8;
@@ -789,6 +791,7 @@ html.dark .ep-luxe-home .ep-home-story,
 html.dark .ep-luxe-home .ep-home-service,
 html.dark .ep-luxe-home .ep-home-categories,
 html.dark .ep-luxe-home .ep-home-featured,
+html.dark .ep-luxe-home .ep-home-nutrition,
 html.dark .ep-luxe-home .ep-home-process {
   border-color: rgba(255, 255, 255, 0.08);
   background: #0e131c !important;
@@ -823,9 +826,62 @@ html.dark .ep-luxe-home .ep-home-float-card,
 html.dark .ep-luxe-home .ep-service-card,
 html.dark .ep-luxe-home .ep-category-card,
 html.dark .ep-luxe-home .ep-featured-card,
+html.dark .ep-luxe-home .ep-nutrition-card,
 html.dark .ep-luxe-home .ep-process-card {
   border-color: rgba(255, 255, 255, 0.1);
   background: #121a25 !important;
+}
+
+html.dark .ep-luxe-home .ep-home-nutrition h2,
+html.dark .ep-luxe-home .ep-home-nutrition h3 {
+  color: #f5efe4 !important;
+}
+
+html.dark .ep-luxe-home .ep-home-nutrition p {
+  color: #c6c0b7 !important;
+}
+
+html.dark .storefront-theme #nutrition-guide > div {
+  border-color: rgba(228, 189, 120, 0.22) !important;
+  background: #111827 !important;
+}
+
+html.dark .storefront-theme #nutrition-guide h2 {
+  color: #f5efe4 !important;
+}
+
+html.dark .storefront-theme #nutrition-guide p {
+  color: #cbd5e1;
+}
+
+html.dark .storefront-theme #nutrition-guide [class*="bg-white"] {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: #17202d !important;
+}
+
+html.dark .storefront-theme #nutrition-guide .text-amber-800,
+html.dark .storefront-theme #nutrition-guide .text-emerald-800,
+html.dark .storefront-theme #nutrition-guide .text-orange-800 {
+  color: #e8c98d !important;
+}
+
+html.dark .storefront-theme .menu-nutrition-details {
+  border-color: rgba(228, 189, 120, 0.22) !important;
+  background: #17202d !important;
+  color: #cbd5e1;
+}
+
+html.dark .storefront-theme .menu-nutrition-details summary {
+  color: #e8c98d !important;
+}
+
+html.dark .storefront-theme .menu-nutrition-details p,
+html.dark .storefront-theme .menu-nutrition-details span {
+  color: #cbd5e1;
+}
+
+html.dark .storefront-theme .menu-nutrition-details .text-gray-500 {
+  color: #94a3b8 !important;
 }
 
 html.dark .ep-luxe-home .ep-service-delivery {

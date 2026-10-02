@@ -135,6 +135,20 @@ interface MenuItemRecord {
   available?: boolean;
   isVeg?: boolean;
   order?: number;
+  ingredients?: string[] | string;
+  ingredientsConfirmed?: boolean;
+  allergens?: string[] | string;
+  allergensConfirmed?: boolean;
+  nutritionFacts?: {
+    servingSize?: string;
+    calories?: number;
+    carbsG?: number;
+    proteinG?: number;
+    fatG?: number;
+    fiberG?: number;
+    sodiumMg?: number;
+  };
+  nutritionFactsConfirmed?: boolean;
 }
 
 interface OrderItemRecord {
@@ -279,6 +293,49 @@ function safeNumber(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+function formList(value: string): string[] {
+  return value.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function valueAsLines(value?: string[] | string): string {
+  return Array.isArray(value) ? value.join("\n") : value || "";
+}
+
+function readMenuRecipeForm(formData: FormData) {
+  const nutritionFacts: NonNullable<MenuItemRecord["nutritionFacts"]> = {};
+  const servingSize = String(formData.get("servingSize") || "").trim();
+  if (servingSize) nutritionFacts.servingSize = servingSize;
+
+  const numberFields = [
+    ["calories", "calories"],
+    ["carbsG", "carbsG"],
+    ["proteinG", "proteinG"],
+    ["fatG", "fatG"],
+    ["fiberG", "fiberG"],
+    ["sodiumMg", "sodiumMg"],
+  ] as const;
+  for (const [field, key] of numberFields) {
+    const rawValue = String(formData.get(field) || "").trim();
+    if (!rawValue) continue;
+    const parsed = Number(rawValue);
+    if (Number.isFinite(parsed) && parsed >= 0) nutritionFacts[key] = parsed;
+  }
+
+  const ingredients = formList(String(formData.get("ingredients") || ""));
+  const allergens = formList(String(formData.get("allergens") || ""));
+  return {
+    ingredients,
+    ingredientsConfirmed: formData.get("ingredientsConfirmed") === "on" && ingredients.length > 0,
+    allergens,
+    allergensConfirmed: formData.get("allergensConfirmed") === "on" && allergens.length > 0,
+    nutritionFacts,
+    nutritionFactsConfirmed:
+      formData.get("nutritionFactsConfirmed") === "on" &&
+      Boolean(nutritionFacts.servingSize) &&
+      Object.keys(nutritionFacts).some((key) => key !== "servingSize"),
+  };
+}
+
 function escapeHtml(value: unknown): string {
   if (value == null) return "";
   return String(value)
@@ -352,6 +409,68 @@ const inputCls =
 
 const labelCls =
   "mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400";
+
+function MenuRecipeEditor({
+  idPrefix,
+  item,
+}: {
+  idPrefix: "mi" | "mei";
+  item?: MenuItemRecord;
+}) {
+  const facts = item?.nutritionFacts || {};
+  const confirmCheckboxCls = "mt-0.5 h-4 w-4 shrink-0 rounded border-slate-700 bg-slate-800 text-amber-500 focus:ring-amber-500";
+
+  return (
+    <details className="group/recipe rounded-2xl border border-white/10 bg-slate-950/35 p-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-black text-amber-300 marker:hidden [&::-webkit-details-marker]:hidden">
+        <span>Ingredient, allergen &amp; nutrition details</span>
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open/recipe:rotate-90" />
+      </summary>
+      <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+        <div>
+          <label htmlFor={`${idPrefix}-ingredients`} className={labelCls}>Ingredients (one per line)</label>
+          <textarea id={`${idPrefix}-ingredients`} name="ingredients" defaultValue={valueAsLines(item?.ingredients)} rows={3} placeholder="Whole-wheat flour&#10;Mozzarella&#10;Tomato sauce&#10;Capsicum" className={`${inputCls} resize-y`} />
+          <label className="mt-2 flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed text-slate-300">
+            <input name="ingredientsConfirmed" type="checkbox" defaultChecked={item?.ingredientsConfirmed === true} className={confirmCheckboxCls} />
+            <span>Kitchen-confirmed full ingredient list</span>
+          </label>
+        </div>
+        <div>
+          <label htmlFor={`${idPrefix}-allergens`} className={labelCls}>Allergens (if confirmed; one per line)</label>
+          <textarea id={`${idPrefix}-allergens`} name="allergens" defaultValue={valueAsLines(item?.allergens)} rows={2} placeholder="Milk&#10;Gluten / wheat" className={`${inputCls} resize-y`} />
+          <label className="mt-2 flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed text-slate-300">
+            <input name="allergensConfirmed" type="checkbox" defaultChecked={item?.allergensConfirmed === true} className={confirmCheckboxCls} />
+            <span>Kitchen-confirmed allergen notes</span>
+          </label>
+        </div>
+        <div>
+          <label htmlFor={`${idPrefix}-serving-size`} className={labelCls}>Nutrition serving size</label>
+          <input id={`${idPrefix}-serving-size`} name="servingSize" defaultValue={facts.servingSize || ""} placeholder="e.g. 1 medium pizza (serves 1)" className={inputCls} />
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {([
+            ["calories", "Calories (kcal)", facts.calories],
+            ["carbsG", "Carbs (g)", facts.carbsG],
+            ["proteinG", "Protein (g)", facts.proteinG],
+            ["fatG", "Fat (g)", facts.fatG],
+            ["fiberG", "Fibre (g)", facts.fiberG],
+            ["sodiumMg", "Sodium (mg)", facts.sodiumMg],
+          ] as const).map(([name, label, value]) => (
+            <div key={name}>
+              <label htmlFor={`${idPrefix}-${name}`} className={labelCls}>{label}</label>
+              <input id={`${idPrefix}-${name}`} name={name} type="number" min="0" step="any" defaultValue={value ?? ""} placeholder="—" className={inputCls} />
+            </div>
+          ))}
+        </div>
+        <label className="flex cursor-pointer items-start gap-2 text-[11px] leading-relaxed text-slate-300">
+          <input name="nutritionFactsConfirmed" type="checkbox" defaultChecked={item?.nutritionFactsConfirmed === true} className={confirmCheckboxCls} />
+          <span>Kitchen-confirmed values for this recipe and serving size</span>
+        </label>
+        <p className="text-[10px] leading-relaxed text-slate-500">Customer-facing figures are shown only after confirmation. Use measured recipe quantities and a defined serving size for macro values.</p>
+      </div>
+    </details>
+  );
+}
 
 function SectionHeader({
   icon,
@@ -5757,6 +5876,7 @@ export default function AdminPage() {
               subcategory,
               price,
               description: String(fd.get("description") || "").trim(),
+              ...readMenuRecipeForm(fd),
               imageUrl:
                 String(fd.get("image") || "").trim() ||
                 "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&q=80",
@@ -5906,6 +6026,8 @@ export default function AdminPage() {
             />
           </div>
 
+          <MenuRecipeEditor idPrefix="mi" />
+
           <div>
             <label htmlFor="mi-image" className={labelCls}>
               Image URL
@@ -5963,6 +6085,7 @@ export default function AdminPage() {
                 subcategory,
                 price,
                 description: String(fd.get("description") || "").trim(),
+                ...readMenuRecipeForm(fd),
                 imageUrl:
                   String(fd.get("image") || "").trim() ||
                   showEditMenuItemModal.imageUrl ||
@@ -6125,6 +6248,8 @@ export default function AdminPage() {
                 className={`${inputCls} resize-none`}
               />
             </div>
+
+            <MenuRecipeEditor idPrefix="mei" item={showEditMenuItemModal} />
 
             <div>
               <label htmlFor="mei-image" className={labelCls}>

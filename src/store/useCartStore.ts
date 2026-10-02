@@ -12,6 +12,22 @@ export interface MenuItem {
   imageUrl: string;
   available: boolean;
   isVeg?: boolean;
+  /** Kitchen-provided ingredient list. A short product description is not a complete recipe. */
+  ingredients?: string[] | string;
+  ingredientsConfirmed?: boolean;
+  allergens?: string[] | string;
+  allergensConfirmed?: boolean;
+  /** Per-serving values; only publish values when the kitchen has confirmed the recipe/portion. */
+  nutritionFacts?: {
+    servingSize?: string;
+    calories?: number;
+    carbsG?: number;
+    proteinG?: number;
+    fatG?: number;
+    fiberG?: number;
+    sodiumMg?: number;
+  };
+  nutritionFactsConfirmed?: boolean;
   catalogMissing?: boolean;
 }
 

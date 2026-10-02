@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import BrandIntro from "@/components/BrandIntro";
+import { getMenuNutritionProfile } from "@/lib/menuNutrition";
 
 /* ============================================================= */
 /* Site constants (single source of truth for repeated claims)   */
@@ -38,13 +39,13 @@ const HERO_IMAGE =
 
 const OG_TITLE = "EL PRESTO | 100% Whole Wheat & Zero Palm Oil";
 const OG_DESC =
-  "Hot, guilt-free pizzas baked on 100% whole wheat atta with real mozzarella and zero palm oil.";
+  "Fresh pizzas and more, with whole-wheat bases, real mozzarella and clear ingredient notes.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { absolute: "EL PRESTO | 100% Whole Wheat Pizza & Zero Palm Oil" },
   description:
-    "Order hot, guilt-free pizzas, burgers, and cold coffee from EL PRESTO. 100% whole wheat atta, zero palm oil, real mozzarella. Pickup at UCER or live GPS delivery in Naini, Prayagraj.",
+    "Order fresh pizzas, burgers, and cold coffee from EL PRESTO. Explore ingredient notes for whole-wheat bases, real mozzarella and more. Pickup at UCER or live GPS delivery in Naini, Prayagraj.",
   keywords: [
     "whole wheat pizza Prayagraj",
     "healthy pizza Naini",
@@ -134,8 +135,8 @@ const featuredItems: FeaturedItem[] = [
     image:
       "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=800&q=75&auto=format",
     description:
-      "Zero refined sugar, rich brewed coffee with chilled cream. Refresh without guilt!",
-    badge: "Guilt-free",
+      "Rich brewed coffee blended with chilled cream and served cold.",
+    badge: "Coffee & cream",
     cta: "Order chilled",
     atta: false,
   },
@@ -148,7 +149,7 @@ const featuredItems: FeaturedItem[] = [
       "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&q=75&auto=format",
     description:
       "Crispy grilled paneer patty layered with fresh lettuce, tomatoes & tangy garlic spread.",
-    badge: "Protein power",
+    badge: "Paneer & vegetables",
     cta: "Order hot & fresh",
     atta: false,
   },
@@ -328,13 +329,13 @@ export default function Home() {
             <div className="space-y-6 text-center lg:col-span-7 lg:text-left">
               <p className="ep-home-eyebrow inline-flex items-center gap-2 rounded-full border border-red-200/80 bg-red-50/95 px-4 py-1.5 text-xs font-bold text-[#D92312] shadow-sm md:text-sm">
                 <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#A77A35]" />
-                Hot, melting &amp; guilt-free
+                Freshly baked · ingredient notes
               </p>
 
               <h1 className="ep-home-display text-balance text-4xl font-black leading-[1.05] tracking-tight text-gray-950 sm:text-5xl md:text-6xl lg:text-7xl">
                 Crave the crust.
                 <span className="relative mt-1 block w-fit text-[#D92312] max-lg:mx-auto">
-                  Love your health.
+                  Choose with confidence.
                   <svg
                     aria-hidden="true"
                     className="absolute -bottom-2 left-0 h-3 w-full text-amber-400"
@@ -659,7 +660,14 @@ export default function Home() {
           </div>
 
           <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {featuredItems.map((item) => (
+            {featuredItems.map((item) => {
+              const nutrition = getMenuNutritionProfile({ name: item.name, description: item.description });
+              const nutritionNotes = [
+                nutrition.carbohydrates[0] ? `Carbs · ${nutrition.carbohydrates[0]}` : "",
+                nutrition.protein[0] ? `Protein · ${nutrition.protein[0]}` : "",
+                nutrition.fiber[0] ? `Fibre · ${nutrition.fiber[0]}` : "",
+              ].filter(Boolean);
+              return (
               <li
                 key={item.id}
                 className="ep-featured-card group flex flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-shadow duration-300 hover:border-red-200 hover:shadow-[0_20px_50px_rgba(217,35,18,0.15)] motion-reduce:transition-none"
@@ -692,6 +700,15 @@ export default function Home() {
                     <p className="mt-1.5 line-clamp-2 text-[13px] font-medium leading-relaxed text-gray-600">
                       {item.description}
                     </p>
+                    {nutritionNotes.length > 0 && (
+                      <div role="group" aria-label="Ingredient-based nutrition highlights" className="mt-3 flex flex-wrap gap-1.5">
+                        {nutritionNotes.map((note) => (
+                          <span key={note} className="rounded-full border border-emerald-900/10 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-900">
+                            {note}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <Link
                     href={`/menu?item=${item.id}`}
@@ -702,7 +719,8 @@ export default function Home() {
                   </Link>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
 
           <div className="mt-12 text-center">
@@ -712,6 +730,46 @@ export default function Home() {
               <ArrowRight size={16} aria-hidden="true" className={arrow} />
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* ====================== 6A. NUTRITION GUIDE ======================= */}
+      <section className="ep-home-nutrition border-b border-orange-100/80 bg-[#f7f3e9] px-4 py-16 sm:py-20" aria-labelledby="home-nutrition-title">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-9 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#9a5b28]">A clearer way to choose</p>
+              <h2 id="home-nutrition-title" className="mt-2 text-balance text-3xl font-black tracking-tight text-gray-950 md:text-4xl">Know what your meal brings</h2>
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-gray-700 sm:text-base">Explore the ingredients behind carbohydrates, protein and fibre in our menu. Exact nutrition depends on each recipe and portion.</p>
+            </div>
+            <Link href="/menu#nutrition-guide" className={`group inline-flex w-fit items-center gap-2 rounded-full px-5 py-3 text-sm ${btnDark}`}>
+              See ingredient notes <ArrowRight size={15} aria-hidden="true" className="transition-transform group-hover:translate-x-1 motion-reduce:transition-none" />
+            </Link>
+          </div>
+
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <li className="ep-nutrition-card rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-amber-50 text-amber-800"><Leaf size={20} aria-hidden="true" /></span>
+              <h3 className="mt-4 text-base font-black text-gray-900">Carbohydrates for energy</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">Whole-wheat flour is a carbohydrate source. WHO guidance favors carbohydrates from whole grains, vegetables, fruits and pulses.</p>
+            </li>
+            <li className="ep-nutrition-card rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-50 text-emerald-800"><Award size={20} aria-hidden="true" /></span>
+              <h3 className="mt-4 text-base font-black text-gray-900">Protein from ingredients</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">Paneer, cheese, soya and pulses contribute protein when they appear in a dish. Amounts vary with recipe and serving size.</p>
+            </li>
+            <li className="ep-nutrition-card rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-50 text-orange-800"><Sparkles size={20} aria-hidden="true" /></span>
+              <h3 className="mt-4 text-base font-black text-gray-900">Fibre from grains &amp; veg</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">Whole grains, pulses and vegetables can add dietary fibre. The total depends on the specific ingredients and quantities.</p>
+            </li>
+            <li className="ep-nutrition-card rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-rose-50 text-[#9b3026]"><ShieldCheck size={20} aria-hidden="true" /></span>
+              <h3 className="mt-4 text-base font-black text-gray-900">Nutrition with context</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">We show exact calories, carbs, protein, fat, fibre and sodium only when a kitchen-confirmed recipe and serving size are available.</p>
+            </li>
+          </ul>
+          <p className="mt-5 text-xs leading-relaxed text-gray-500">Food-composition context: <a className="font-bold underline underline-offset-2" href="https://www.who.int/en/news-room/fact-sheets/detail/healthy-diet" target="_blank" rel="noreferrer">WHO healthy-diet guidance</a> and <a className="font-bold underline underline-offset-2" href="https://www.nin.res.in/ebooks/IFCT2017.pdf" target="_blank" rel="noreferrer">ICMR–NIN Indian Food Composition Tables</a>. These references describe foods and dietary patterns, not nutrition totals for EL PRESTO dishes.</p>
         </div>
       </section>
 
@@ -801,8 +859,8 @@ export default function Home() {
                 <span className="text-lg font-black tracking-tight">EL PRESTO</span>
               </div>
               <p className="text-sm leading-relaxed text-gray-300">
-                Healthy &amp; tasty Italian cuisine. 100% whole wheat pizzas, no maida, freshly
-                baked every day.
+                Italian-inspired favourites, with whole-wheat pizzas and ingredient notes to help
+                you choose. Open the menu for recipe and nutrition details.
               </p>
               <a
                 href={INSTAGRAM_URL}
@@ -866,7 +924,7 @@ export default function Home() {
             <p>© {year} EL PRESTO. All rights reserved.</p>
             <p className="flex items-center gap-1.5">
               <Heart size={12} aria-hidden="true" className="fill-red-500 text-red-500" />
-              Healthy. Tasty. Always.
+              Fresh. Thoughtful. Always.
             </p>
           </div>
         </div>

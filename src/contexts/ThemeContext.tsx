@@ -49,7 +49,11 @@ function readPreference(): ThemePreference {
     // Read the preference already applied to the document, when available.
   }
   const applied = document.documentElement.dataset.themeMode;
-  return isThemePreference(applied) ? applied : "system";
+  if (isThemePreference(applied)) return applied;
+
+  // Give first-time visitors a consistent light storefront on the homepage,
+  // while keeping the system default on other routes. Saved choices above win.
+  return window.location.pathname === "/" ? "light" : "system";
 }
 
 function resolveTheme(preference: ThemePreference): ResolvedTheme {

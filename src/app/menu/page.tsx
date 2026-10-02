@@ -27,6 +27,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { subscribeMenuCatalog } from "@/lib/menuCatalog";
+import { getMenuNutritionProfile } from "@/lib/menuNutrition";
 
 const FREE_DELIVERY_THRESHOLD = 499;
 
@@ -282,6 +283,36 @@ export default function MenuPage() {
         </div>
       </section>
 
+      <section id="nutrition-guide" className="px-4 pt-4" aria-labelledby="nutrition-guide-title">
+        <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-amber-200/80 bg-gradient-to-br from-white via-amber-50/80 to-orange-50/70 p-5 shadow-sm sm:p-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-xl">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#a45a16]">Ingredients, explained</p>
+              <h2 id="nutrition-guide-title" className="mt-1 text-2xl font-black tracking-tight text-gray-950 sm:text-3xl">Nutrition starts with what’s in the recipe</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-700">Open any dish for the ingredients named in its recipe notes and the nutrients those ingredients can contribute.</p>
+            </div>
+            <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-2xl">
+              <div className="rounded-2xl border border-amber-200/80 bg-white/85 p-3.5">
+                <p className="text-xs font-black uppercase tracking-wide text-amber-800">Carbohydrates</p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-700">Whole-wheat flour, bread, corn and potatoes are menu ingredient sources.</p>
+              </div>
+              <div className="rounded-2xl border border-amber-200/80 bg-white/85 p-3.5">
+                <p className="text-xs font-black uppercase tracking-wide text-emerald-800">Protein</p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-700">Paneer, cheese, soya and pulses contribute protein where listed.</p>
+              </div>
+              <div className="rounded-2xl border border-amber-200/80 bg-white/85 p-3.5">
+                <p className="text-xs font-black uppercase tracking-wide text-orange-800">Fibre</p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-700">Whole grains, pulses and vegetable toppings can add dietary fibre.</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col gap-1.5 border-t border-amber-200/70 pt-3 text-[11px] leading-relaxed text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+            <p>These are ingredient-level notes, not per-dish nutrition totals. Full recipe lists and grams depend on kitchen-verified recipes and serving sizes; ask us about allergens before ordering.</p>
+            <p className="shrink-0">Guidance: <a className="font-bold text-[#a45a16] underline underline-offset-2" href="https://www.who.int/en/news-room/fact-sheets/detail/healthy-diet" target="_blank" rel="noreferrer">WHO</a> · <a className="font-bold text-[#a45a16] underline underline-offset-2" href="https://www.nin.res.in/ebooks/IFCT2017.pdf" target="_blank" rel="noreferrer">ICMR–NIN food tables</a></p>
+          </div>
+        </div>
+      </section>
+
       {/* ============================================================ */}
       {/* 2. STICKY SEARCH + CATEGORY NAV                                */}
       {/* Solid background — no backdrop-blur, which was re-blurring   */}
@@ -453,6 +484,17 @@ export default function MenuPage() {
                     const rating = productRatings[item.id];
                     const reviewCount = rating?.totalRatings || 0;
                     const hasRating = Boolean(rating && reviewCount > 0);
+                    const nutritionProfile = getMenuNutritionProfile(item);
+                    const confirmedNutritionRows = nutritionProfile.facts
+                      ? [
+                          ["Calories", nutritionProfile.facts.calories != null ? `${nutritionProfile.facts.calories} kcal` : ""],
+                          ["Carbohydrates", nutritionProfile.facts.carbsG != null ? `${nutritionProfile.facts.carbsG} g` : ""],
+                          ["Protein", nutritionProfile.facts.proteinG != null ? `${nutritionProfile.facts.proteinG} g` : ""],
+                          ["Fat", nutritionProfile.facts.fatG != null ? `${nutritionProfile.facts.fatG} g` : ""],
+                          ["Fibre", nutritionProfile.facts.fiberG != null ? `${nutritionProfile.facts.fiberG} g` : ""],
+                          ["Sodium", nutritionProfile.facts.sodiumMg != null ? `${nutritionProfile.facts.sodiumMg} mg` : ""],
+                        ].filter(([, value]) => Boolean(value))
+                      : [];
                     const isWheatProduct = /whole wheat|whole-wheat|atta|stone[- ]ground/i.test(item.description || "") || /pizza/i.test(item.category) && item.category !== "Extra Toppings";
                     const showVegLabel = item.isVeg === true && !["beverages", "extra toppings"].includes(item.category.toLowerCase());
 
@@ -512,6 +554,54 @@ export default function MenuPage() {
                               {item.description}
                             </p>
                           )}
+
+                          <details className="menu-nutrition-details group/nutrition mt-3 rounded-xl border border-amber-200/70 bg-amber-50/55 px-2.5 py-2">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-extrabold text-amber-900 marker:hidden [&::-webkit-details-marker]:hidden">
+                              <span>Ingredients &amp; nutrition</span>
+                              <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open/nutrition:rotate-90" />
+                            </summary>
+                            <div className="mt-2 space-y-2 border-t border-amber-200/70 pt-2 text-[10px] leading-relaxed text-gray-700 sm:text-[11px]">
+                              <div>
+                                <p className="font-black uppercase tracking-wide text-gray-500">
+                                  {nutritionProfile.ingredientsConfirmed
+                                    ? "Kitchen-confirmed ingredients"
+                                    : nutritionProfile.hasDeclaredIngredients
+                                      ? "Ingredients on file"
+                                      : "Ingredients mentioned in description"}
+                                </p>
+                                <p className="mt-0.5">
+                                  {nutritionProfile.ingredients.length
+                                    ? nutritionProfile.ingredients.join(", ")
+                                    : "Ingredient details are not listed for this item yet."}
+                                </p>
+                                {!nutritionProfile.ingredientsConfirmed && nutritionProfile.ingredients.length > 0 && (
+                                  <p className="mt-1 text-gray-500">This short list is not a complete ingredient or allergen declaration.</p>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                                <p><span className="font-bold text-gray-800">Carbs:</span> {nutritionProfile.carbohydrates.join(", ") || "No source listed"}</p>
+                                <p><span className="font-bold text-gray-800">Protein:</span> {nutritionProfile.protein.join(", ") || "No source listed"}</p>
+                                <p><span className="font-bold text-gray-800">Fibre:</span> {nutritionProfile.fiber.join(", ") || "No source listed"}</p>
+                              </div>
+                              {nutritionProfile.allergens.length > 0 ? (
+                                <div>
+                                  <p className="font-black uppercase tracking-wide text-gray-500">Allergen notes</p>
+                                  <p className="mt-0.5">{nutritionProfile.allergens.join(", ")}</p>
+                                  {!nutritionProfile.allergensConfirmed && <p className="mt-1 text-gray-500">These allergen notes are not kitchen-confirmed.</p>}
+                                </div>
+                              ) : (
+                                <p className="text-gray-500">Allergen and cross-contact details are not listed; please ask us before ordering.</p>
+                              )}
+                              {confirmedNutritionRows.length > 0 ? (
+                                <div>
+                                  <p className="font-black uppercase tracking-wide text-gray-500">Kitchen-confirmed per serving</p>
+                                  <p className="mt-0.5">{nutritionProfile.facts?.servingSize ? `Serving: ${nutritionProfile.facts.servingSize} · ` : ""}{confirmedNutritionRows.map(([label, value]) => `${label}: ${value}`).join(" · ")}</p>
+                                </div>
+                              ) : (
+                                <p className="text-gray-500">Exact calories and macro grams are not published yet; they require a measured recipe and serving size.</p>
+                              )}
+                            </div>
+                          </details>
                         </div>
 
                         {/* Right: image + action */}
