@@ -140,12 +140,12 @@ function SectionHeader({
   return (
     <div className="mb-4 flex items-center gap-3">
       <div
-        className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25 ring-1 ring-white/60"
+        className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#342019] text-[#e7c98c] shadow-md shadow-[#342019]/15 ring-1 ring-[#c3a36e]/30"
         aria-hidden="true"
       >
         {icon}
         {step !== undefined && (
-          <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full border-2 border-white bg-gray-900 text-[10px] font-black text-white">
+          <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full border-2 border-[#fffaf1] bg-[#b18a4d] text-[10px] font-black text-[#241915]">
             {step}
           </span>
         )}
@@ -192,7 +192,7 @@ function Field({
 }
 
 const inputCls =
-  "w-full rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 placeholder-gray-400 shadow-sm backdrop-blur-md transition-all focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-orange-500/15";
+  "ep-checkout-input w-full rounded-xl border border-[#e6ddce] bg-[#fffdfa] px-4 py-3 text-sm font-semibold text-gray-900 placeholder-gray-400 shadow-sm transition-all focus:border-[#9a3728] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#9a3728]/10";
 
 /* ================================================================ */
 /* Toast                                                            */
@@ -738,9 +738,15 @@ export default function CheckoutPage() {
     () => items.filter((item) => item.catalogMissing || item.available === false),
     [items],
   );
-  const packing = useMemo(() => getPackingCharge(items, packingEnabled, packingRates), [items, packingEnabled, packingRates]);
-  const selectedReward = useMemo(() => loyaltyRewards.find((reward) => reward.id === selectedRewardId) || null, [loyaltyRewards, selectedRewardId]);
   const isDelivery = formData.type === "delivery";
+  const packing = useMemo(
+    () =>
+      isDelivery
+        ? getPackingCharge(items, packingEnabled, packingRates)
+        : { total: 0, breakdown: {} as Record<string, number> },
+    [items, packingEnabled, packingRates, isDelivery],
+  );
+  const selectedReward = useMemo(() => loyaltyRewards.find((reward) => reward.id === selectedRewardId) || null, [loyaltyRewards, selectedRewardId]);
 
   const deliveryFee = useMemo(
     () =>
@@ -877,8 +883,8 @@ export default function CheckoutPage() {
         loyaltyRewardName: selectedReward && loyaltyPoints >= selectedReward.pointsCost ? selectedReward.name : null,
         loyaltyPointsRedeemed: loyaltyEnabled && selectedReward && loyaltyPoints >= selectedReward.pointsCost ? selectedReward.pointsCost : 0,
         loyaltyPointsEarned,
-        packingCharge: packing.total,
-        packingChargeBreakdown: packing.breakdown,
+        packingCharge: isDelivery ? packing.total : 0,
+        packingChargeBreakdown: isDelivery ? packing.breakdown : {},
         promoCode: appliedPromo?.code || null,
         deliveryFee: isDelivery ? deliveryFee : 0,
         total: finalTotal,
@@ -1223,7 +1229,7 @@ export default function CheckoutPage() {
 
   if (!hydrated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50/60 to-orange-50/40">
+      <div className="storefront-theme ep-luxe-checkout flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50/60 to-orange-50/40">
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={32} className="animate-spin text-orange-500" />
           <p className="text-[11px] font-black uppercase tracking-widest text-orange-500">
@@ -1240,9 +1246,9 @@ export default function CheckoutPage() {
 
   if (orderNumber) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-8 sm:px-4">
+      <div className="storefront-theme ep-luxe-checkout ep-checkout-success min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-8 sm:px-4">
         <div className="container mx-auto max-w-2xl">
-          <div className="relative overflow-hidden rounded-3xl border border-white/60 bg-white/60 p-6 text-center shadow-[0_25px_70px_-25px_rgba(217,35,18,0.35)] backdrop-blur-2xl sm:p-10">
+          <div className="ep-checkout-success-card relative overflow-hidden rounded-3xl border border-white/60 bg-white/60 p-6 text-center shadow-[0_25px_70px_-25px_rgba(217,35,18,0.35)] backdrop-blur-2xl sm:p-10">
             <span
               aria-hidden="true"
               className="pointer-events-none absolute -left-20 -top-20 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl"
@@ -1402,27 +1408,27 @@ export default function CheckoutPage() {
     <>
       <Toast state={toast} onDismiss={dismissToast} />
 
-      <div className="storefront-theme min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
+      <div className="storefront-theme ep-luxe-checkout min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
         <div className="container mx-auto max-w-6xl">
           {/* Header */}
-          <div className="mb-6 flex items-center gap-3">
+          <div className="ep-checkout-header mb-7 flex items-center gap-3 border-b border-[#e8dfd0] pb-5">
             <Link
               href="/menu"
               aria-label="Back to menu"
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-white/60 bg-white/70 text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white hover:text-orange-600"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-[#e5dac8] bg-[#fffdf8] text-[#4b382d] shadow-sm transition-colors hover:border-[#b18a4d] hover:text-[#8f2119]"
             >
               <ArrowLeft size={18} />
             </Link>
             <div className="min-w-0">
-              <h1 className="text-xl font-black tracking-tight text-gray-900 sm:text-2xl">
+              <h1 className="ep-checkout-display text-xl font-black tracking-tight text-gray-900 sm:text-2xl">
                 Checkout
               </h1>
-              <p className="truncate text-[11px] font-semibold text-gray-500 sm:text-xs">
-                Complete your details & proceed to secure payment
+              <p className="truncate text-[11px] font-medium text-gray-500 sm:text-xs">
+                A few details, then your order is on its way
               </p>
             </div>
-            <div className="ml-auto hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/80 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 shadow-sm sm:flex">
-              <ShieldCheck size={12} aria-hidden="true" /> Secure
+            <div className="ml-auto hidden items-center gap-1.5 rounded-full border border-[#d9c7a6] bg-[#f3ead8] px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-[#5d482d] shadow-sm sm:flex">
+              <ShieldCheck size={12} aria-hidden="true" /> Secure checkout
             </div>
           </div>
 
@@ -1512,8 +1518,8 @@ export default function CheckoutPage() {
                       }
                       className={`group relative overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
                         formData.type === "takeaway"
-                          ? "border-transparent bg-gradient-to-br from-[#D92312] to-[#B8190B] text-white shadow-lg shadow-red-500/25"
-                          : "border-white/60 bg-white/70 text-gray-800 shadow-sm hover:border-orange-200 hover:bg-white"
+                          ? "border-[#4a3024] bg-[#342019] text-white shadow-lg shadow-[#342019]/20"
+                          : "border-[#e7dece] bg-[#fbf7ef] text-gray-800 shadow-sm hover:border-[#bea577] hover:bg-white"
                       }`}
                     >
                       <span
@@ -1525,7 +1531,7 @@ export default function CheckoutPage() {
                           className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-colors ${
                             formData.type === "takeaway"
                               ? "bg-white/20 text-white"
-                              : "bg-orange-100 text-orange-600"
+                              : "bg-[#efe3ce] text-[#745c37]"
                           }`}
                         >
                           <ShoppingBag size={20} />
@@ -1541,7 +1547,7 @@ export default function CheckoutPage() {
                                 : "text-gray-500"
                             }`}
                           >
-                            Collect at counter · No delivery fee
+                            Collect at counter · No delivery or packing fee
                           </p>
                         </div>
                         {formData.type === "takeaway" && (
@@ -1563,8 +1569,8 @@ export default function CheckoutPage() {
                       }
                       className={`group relative overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
                         formData.type === "delivery"
-                          ? "border-transparent bg-gradient-to-br from-[#D92312] to-[#B8190B] text-white shadow-lg shadow-red-500/25"
-                          : "border-white/60 bg-white/70 text-gray-800 shadow-sm hover:border-orange-200 hover:bg-white"
+                          ? "border-[#4a3024] bg-[#342019] text-white shadow-lg shadow-[#342019]/20"
+                          : "border-[#e7dece] bg-[#fbf7ef] text-gray-800 shadow-sm hover:border-[#bea577] hover:bg-white"
                       }`}
                     >
                       <span
@@ -1576,7 +1582,7 @@ export default function CheckoutPage() {
                           className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl transition-colors ${
                             formData.type === "delivery"
                               ? "bg-white/20 text-white"
-                              : "bg-orange-100 text-orange-600"
+                              : "bg-[#efe3ce] text-[#745c37]"
                           }`}
                         >
                           <Truck size={20} />
@@ -1984,8 +1990,8 @@ export default function CheckoutPage() {
                     subtitle="Secure online payment via Razorpay"
                   />
 
-                  <div className="flex items-start gap-3 rounded-2xl border-2 border-orange-500 bg-orange-500/10 p-4 shadow-md ring-1 ring-orange-400">
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25">
+                    <div className="flex items-start gap-3 rounded-2xl border-2 border-[#9a3728] bg-[#9a3728]/[0.06] p-4 shadow-sm ring-1 ring-[#9a3728]/20">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#342019] text-[#e7c98c] shadow-md shadow-[#342019]/15">
                       <CreditCard size={20} />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -2003,7 +2009,7 @@ export default function CheckoutPage() {
                     </div>
                     <CheckCircle2
                       size={18}
-                      className="shrink-0 text-orange-500"
+                      className="shrink-0 text-[#9a3728]"
                       aria-hidden="true"
                     />
                   </div>
@@ -2054,10 +2060,10 @@ export default function CheckoutPage() {
 
             {/* RIGHT: SUMMARY */}
             <div className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start">
-              <div className="flex max-h-full flex-col overflow-hidden rounded-3xl border border-white/60 bg-white/60 shadow-[0_20px_60px_-25px_rgba(217,35,18,0.3)] backdrop-blur-2xl">
-                <div className="flex items-center justify-between border-b border-white/60 bg-gradient-to-r from-orange-50/80 to-amber-50/50 px-5 py-4">
+              <div className="ep-checkout-summary flex max-h-full flex-col overflow-hidden rounded-3xl border border-white/60 bg-white/60 shadow-[0_20px_60px_-25px_rgba(217,35,18,0.3)] backdrop-blur-2xl">
+                <div className="ep-checkout-summary-header flex items-center justify-between border-b border-white/60 bg-gradient-to-r from-orange-50/80 to-amber-50/50 px-5 py-4">
                   <div className="flex items-center gap-2">
-                    <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25">
+                    <div className="grid h-8 w-8 place-items-center rounded-xl bg-[#b18a4d] text-white shadow-sm">
                       <Receipt size={15} />
                     </div>
                     <h2 className="text-sm font-black text-gray-900">
@@ -2074,7 +2080,7 @@ export default function CheckoutPage() {
                     {items.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm"
+                        className="ep-checkout-item flex items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm"
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-700">
@@ -2102,7 +2108,7 @@ export default function CheckoutPage() {
                   </div>
 
                   {/* Promo */}
-                  <div className="rounded-2xl border border-white/70 bg-white/70 p-3.5 shadow-sm">
+                  <div className="ep-checkout-promo rounded-2xl border border-white/70 bg-white/70 p-3.5 shadow-sm">
                     <div className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-gray-700">
                       <Tag size={13} className="text-orange-500" />
                       Promo Code
@@ -2182,14 +2188,14 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
-                  {loyaltyEnabled && <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 shadow-sm">
+                  {loyaltyEnabled && <div className="ep-checkout-loyalty rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 shadow-sm">
                     <div className="mb-2 flex items-center justify-between"><span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-amber-900"><Sparkles size={14} /> Loyalty rewards</span><span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-amber-800">{loyaltyPoints} pts</span></div>
                     {loyaltyRewards.length === 0 ? <p className="text-[11px] font-semibold text-amber-800">No rewards are available right now.</p> : <select value={selectedRewardId} onChange={(event) => setSelectedRewardId(event.target.value)} className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800"><option value="">Earn points on this order</option>{loyaltyRewards.map((reward) => <option key={reward.id} value={reward.id} disabled={loyaltyPoints < reward.pointsCost}>{reward.name} · {reward.pointsCost} pts{loyaltyPoints < reward.pointsCost ? " (not enough points)" : ""}</option>)}</select>}
                     {selectedReward && loyaltyPoints >= selectedReward.pointsCost && <p className="mt-2 text-[10px] font-bold text-amber-800">{selectedReward.type === "discount" ? `Redeeming saves ₹${Math.round(loyaltyDiscount)}.` : `Free item: ${selectedReward.itemName || selectedReward.name}.`} You will earn {loyaltyPointsEarned} points on this order.</p>}
                   </div>}
 
                   {/* Totals */}
-                  <div className="space-y-2 rounded-2xl border border-white/70 bg-white/60 p-4 text-sm">
+                  <div className="ep-checkout-totals space-y-2 rounded-2xl border border-white/70 bg-white/60 p-4 text-sm">
                     <div className="flex justify-between text-gray-600">
                       <span className="font-semibold">Subtotal</span>
                       <span className="font-black text-gray-900">
@@ -2230,7 +2236,7 @@ export default function CheckoutPage() {
                       <span className="text-sm font-black text-gray-900">
                         Total Amount
                       </span>
-                      <span className="bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-2xl font-black text-transparent">
+                      <span className="bg-gradient-to-r from-[#8F2119] to-[#b18a4d] bg-clip-text text-2xl font-black text-transparent">
                         ₹{Math.round(finalTotal)}
                       </span>
                     </div>
@@ -2248,7 +2254,7 @@ export default function CheckoutPage() {
                       unavailableCartItems.length > 0 ||
                       (isDelivery && !deliveryCoords.isWithinRadius)
                     }
-                    className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-[#D92312] to-[#B8190B] py-4 text-sm font-black text-white shadow-lg shadow-red-500/30 transition-all hover:scale-[1.02] hover:shadow-red-500/50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+                    className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-[#8F2119] to-[#651C18] py-4 text-sm font-black text-white shadow-lg shadow-[#651C18]/20 transition-all hover:scale-[1.01] hover:shadow-[#651C18]/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
                   >
                     <span
                       aria-hidden="true"

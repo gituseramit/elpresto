@@ -5,28 +5,17 @@ import { X, Plus, Minus, Trash2, ShoppingBag, ArrowRight } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import Link from "next/link";
 import Image from "next/image";
-import { db } from "@/lib/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
-import { getPackingCharge } from "@/lib/commerce";
 
 export default function Cart() {
   const [isOpen, setIsOpen] = useState(false);
   const { items, updateQuantity, removeItem, getTotal } = useCartStore();
-  const [packingEnabled, setPackingEnabled] = useState(false);
-  const [packingRates, setPackingRates] = useState<Record<string, number>>({});
-  const packing = getPackingCharge(items, packingEnabled, packingRates);
+  // The cart has no order type selected yet, so only show the base subtotal.
 
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
     document.addEventListener("open-cart", handleOpen);
     return () => document.removeEventListener("open-cart", handleOpen);
   }, []);
-
-  useEffect(() => onSnapshot(doc(db, "settings", "general"), (snapshot) => {
-    const data = snapshot.data();
-    setPackingEnabled(data?.packingChargesEnabled === true);
-    setPackingRates(data?.packingChargeByCategory || {});
-  }), []);
 
   if (!isOpen) return null;
 
@@ -116,14 +105,13 @@ export default function Cart() {
                 <span>Subtotal</span>
                 <span>₹{(getTotal() || 0).toFixed(2)}</span>
               </div>
-              {packing.total > 0 && <div className="flex justify-between text-gray-600 font-medium"><span>Packing charge</span><span>₹{packing.total.toFixed(2)}</span></div>}
               <div className="flex justify-between text-emerald-700 font-bold">
-                <span>Doorstep Delivery</span>
-                <span>Calculated at checkout</span>
+                <span>Delivery &amp; packing</span>
+                <span>Only for delivery</span>
               </div>
               <div className="flex justify-between items-center pt-2 border-t border-orange-100 text-lg">
                 <span className="font-black text-gray-900">Total</span>
-                <span className="font-black text-2xl text-[#D92312]">₹{((getTotal() || 0) + packing.total).toFixed(2)}</span>
+                <span className="font-black text-2xl text-[#D92312]">₹{(getTotal() || 0).toFixed(2)}</span>
               </div>
             </div>
 

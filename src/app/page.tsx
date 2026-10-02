@@ -254,8 +254,8 @@ const focusRing =
   "focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-300";
 const lift =
   "transition-transform hover:-translate-y-0.5 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0";
-const btnRed = `inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#D92312] to-[#B8190B] font-bold text-white shadow-md shadow-red-500/25 ${lift} ${focusRing}`;
-const btnDark = `inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 font-bold text-white shadow-md hover:bg-black ${lift} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gray-400`;
+const btnRed = `inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#8F2119] to-[#651C18] font-bold text-white shadow-md shadow-[#651C18]/20 ${lift} ${focusRing}`;
+const btnDark = `inline-flex items-center justify-center gap-2 rounded-xl bg-[#241915] font-bold text-white shadow-md hover:bg-[#3A2821] ${lift} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gray-400`;
 const arrow =
   "transition-transform group-hover:translate-x-1 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0";
 const footLink =
@@ -263,9 +263,9 @@ const footLink =
 
 const heroBackground = {
   background:
-    "radial-gradient(520px circle at 20% 0%, rgba(217,35,18,0.10), transparent 60%)," +
-    "radial-gradient(460px circle at 92% 35%, rgba(245,158,11,0.15), transparent 60%)," +
-    "radial-gradient(420px circle at 0% 100%, rgba(217,35,18,0.08), transparent 60%)",
+    "radial-gradient(520px circle at 20% 0%, rgba(177,138,77,0.12), transparent 60%)," +
+    "radial-gradient(460px circle at 92% 35%, rgba(217,35,18,0.07), transparent 60%)," +
+    "radial-gradient(420px circle at 0% 100%, rgba(177,138,77,0.08), transparent 60%)",
 } as const;
 
 /* ============================================================= */
@@ -313,10 +313,10 @@ export default function Home() {
   };
 
   return (
-    <div className="storefront-theme">
+    <div className="storefront-theme ep-luxe-home">
       <BrandIntro />
       {/* ============================ 1. HERO ============================ */}
-      <section className="relative isolate overflow-x-clip px-4 pb-16 pt-8 md:pb-24 md:pt-14">
+      <section className="ep-home-hero relative isolate overflow-x-clip px-4 pb-16 pt-8 md:pb-24 md:pt-14">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 -z-10"
@@ -326,15 +326,12 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <div className="grid grid-cols-1 items-center gap-14 lg:grid-cols-12">
             <div className="space-y-6 text-center lg:col-span-7 lg:text-left">
-              <p className="inline-flex items-center gap-2 rounded-full border border-red-200/80 bg-red-50/95 px-4 py-1.5 text-xs font-bold text-[#D92312] shadow-sm md:text-sm">
-                <span aria-hidden="true" className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-[#D92312] opacity-75 motion-safe:animate-ping" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#D92312]" />
-                </span>
+              <p className="ep-home-eyebrow inline-flex items-center gap-2 rounded-full border border-red-200/80 bg-red-50/95 px-4 py-1.5 text-xs font-bold text-[#D92312] shadow-sm md:text-sm">
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#A77A35]" />
                 Hot, melting &amp; guilt-free
               </p>
 
-              <h1 className="text-balance text-4xl font-black leading-[1.05] tracking-tight text-gray-950 sm:text-5xl md:text-6xl lg:text-7xl">
+              <h1 className="ep-home-display text-balance text-4xl font-black leading-[1.05] tracking-tight text-gray-950 sm:text-5xl md:text-6xl lg:text-7xl">
                 Crave the crust.
                 <span className="relative mt-1 block w-fit text-[#D92312] max-lg:mx-auto">
                   Love your health.
@@ -395,8 +392,8 @@ export default function Home() {
             {/* Hero visual */}
             <div className="relative flex justify-center lg:col-span-5">
               <div className="relative w-full max-w-md">
-                <div className="relative aspect-square rounded-[2.5rem] bg-gradient-to-tr from-[#D92312]/20 via-amber-400/20 to-red-600/30 p-3.5 shadow-[0_20px_50px_rgba(217,35,18,0.25)]">
-                  <div className="group relative h-full w-full overflow-hidden rounded-[2rem]">
+                <div className="ep-home-photo-frame relative aspect-square rounded-[2.5rem] bg-gradient-to-tr from-[#D92312]/20 via-amber-400/20 to-red-600/30 p-3.5 shadow-[0_20px_50px_rgba(217,35,18,0.25)]">
+                  <div className="ep-home-photo group relative h-full w-full overflow-hidden rounded-[2rem]">
                     <Image
                       src={HERO_IMAGE}
                       alt="EL PRESTO Special whole-wheat pizza with melted mozzarella"
@@ -409,11 +406,11 @@ export default function Home() {
                       aria-hidden="true"
                       className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent"
                     />
-                    <div className="absolute left-4 top-4 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-1.5 text-xs font-bold text-[#D92312] shadow-lg">
+                    <div className="ep-photo-label absolute left-4 top-4 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-1.5 text-xs font-bold text-[#D92312] shadow-lg">
                       <Flame size={13} aria-hidden="true" />
                       Bestseller
                     </div>
-                    <div className="absolute bottom-4 left-4 right-4 text-white">
+                    <div className="ep-photo-caption absolute bottom-4 left-4 right-4 text-white">
                   <p className="flex items-center gap-1 text-xs font-bold text-amber-300">
                         <Star size={12} fill="currentColor" aria-hidden="true" /> Chef&apos;s Signature
                       </p>
@@ -425,25 +422,15 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* The one moving element: a slowly turning quality stamp */}
                 <div
                   aria-hidden="true"
-                  className="absolute -right-2 -top-5 grid h-24 w-24 place-items-center rounded-full bg-[#D92312] text-white shadow-xl ring-4 ring-white sm:-right-5 sm:h-28 sm:w-28"
+                  className="ep-home-quality-mark absolute -right-2 -top-5 flex items-center gap-2 rounded-2xl border border-[#c7a66b]/50 bg-[#2d1d17] px-3 py-2.5 text-white shadow-xl ring-4 ring-[#fbf7ef] sm:-right-5"
                 >
-                  <svg viewBox="0 0 120 120" className="ep-spin absolute inset-0 h-full w-full">
-                    <defs>
-                      <path id="ep-ring" d="M60,60 m-46,0 a46,46 0 1,1 92,0 a46,46 0 1,1 -92,0" />
-                    </defs>
-                    <text fontSize="9.5" fontWeight="800" fill="currentColor">
-                      <textPath href="#ep-ring" textLength="284" lengthAdjust="spacing">
-                        100% WHOLE WHEAT • ZERO PALM OIL •{" "}
-                      </textPath>
-                    </text>
-                  </svg>
-                  <span className="text-2xl">🌾</span>
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#b18a4d]/15 text-lg text-[#e5c78e]">🌾</span>
+                  <span className="text-left"><span className="block text-[9px] font-bold uppercase tracking-[0.18em] text-[#e5c78e]">Made with</span><span className="block text-xs font-black">Whole wheat</span></span>
                 </div>
 
-                <div className="absolute -bottom-4 -left-4 hidden items-center gap-3 rounded-2xl border border-red-100 bg-white px-4 py-3 shadow-xl sm:flex">
+                <div className="ep-home-float-card absolute -bottom-4 -left-4 hidden items-center gap-3 rounded-2xl border border-red-100 bg-white px-4 py-3 shadow-xl sm:flex">
                   <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-xl bg-red-100 text-[#D92312]">
                     <Zap size={20} />
                   </span>
@@ -453,7 +440,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="absolute -right-3 top-[58%] hidden items-center gap-2.5 rounded-2xl border border-amber-200 bg-white px-3.5 py-2.5 shadow-xl sm:flex">
+                <div className="ep-home-float-card absolute -right-3 top-[58%] hidden items-center gap-2.5 rounded-2xl border border-amber-200 bg-white px-3.5 py-2.5 shadow-xl sm:flex">
                   <span aria-hidden="true" className="text-2xl">☕</span>
                   <div>
                     <p className="text-xs font-bold text-gray-900">Cold Coffee</p>
@@ -469,7 +456,7 @@ export default function Home() {
       {/* =========================== 2. MARQUEE =========================== */}
       <section
         aria-hidden="true"
-        className="relative overflow-hidden border-y border-orange-200/60 bg-gradient-to-r from-[#D92312] via-[#B8190B] to-[#F59E0B] py-3.5"
+        className="ep-home-marquee relative overflow-hidden border-y border-orange-200/60 bg-gradient-to-r from-[#D92312] via-[#B8190B] to-[#F59E0B] py-3.5"
       >
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-2 px-4 text-center text-xs font-bold uppercase tracking-[0.12em] text-white sm:text-sm">
           {["Made to order", "Pickup at UCER", "Delivery in Naini"].map((item) => (
@@ -482,11 +469,11 @@ export default function Home() {
       </section>
 
       {/* ============================ 3. STORY ============================ */}
-      <section id="about" className="px-4 py-16 sm:py-20">
+      <section id="about" className="ep-home-story px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-12 lg:gap-14">
             <div className="relative lg:col-span-5">
-              <div className="relative flex min-h-[320px] flex-col justify-between overflow-hidden rounded-3xl bg-[#211712] p-8 text-white shadow-[0_20px_50px_rgba(50,27,16,0.18)] sm:min-h-[380px] sm:p-10">
+              <div className="ep-story-feature relative flex min-h-[320px] flex-col justify-between overflow-hidden rounded-3xl bg-[#211712] p-8 text-white shadow-[0_20px_50px_rgba(50,27,16,0.18)] sm:min-h-[380px] sm:p-10">
                 <div aria-hidden="true" className="absolute -right-16 -top-20 h-72 w-72 rounded-full border-[36px] border-[#D92312]/25" />
                 <div aria-hidden="true" className="absolute -bottom-24 -left-16 h-64 w-64 rounded-full border-[28px] border-amber-400/15" />
                 <span className="relative text-xs font-bold uppercase tracking-[0.2em] text-amber-300">EL PRESTO · NAINI</span>
@@ -524,7 +511,7 @@ export default function Home() {
       </section>
 
       {/* ====================== 4. PICKUP & DELIVERY ====================== */}
-      <section className="border-y border-orange-100 bg-orange-50/40 px-4 py-16 sm:py-20">
+      <section className="ep-home-service border-y border-orange-100 bg-orange-50/40 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="mb-10 text-center">
             <h2 className="text-3xl font-black tracking-tight text-gray-950 sm:text-4xl">
@@ -536,7 +523,7 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="flex flex-col rounded-3xl border border-orange-200/80 bg-white p-7 shadow-sm md:p-9">
+            <div className="ep-service-card flex flex-col rounded-3xl border border-orange-200/80 bg-white p-7 shadow-sm md:p-9">
               <span aria-hidden="true" className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-400 text-3xl shadow-md shadow-amber-500/20">
                 🛍️
               </span>
@@ -560,7 +547,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex flex-col rounded-3xl border-2 border-red-200/80 bg-gradient-to-br from-red-50 via-amber-50 to-white p-7 shadow-sm md:p-9">
+            <div className="ep-service-card ep-service-delivery flex flex-col rounded-3xl border-2 border-red-200/80 bg-gradient-to-br from-red-50 via-amber-50 to-white p-7 shadow-sm md:p-9">
               <div className="flex items-start justify-between gap-3">
                 <span aria-hidden="true" className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-tr from-[#D92312] to-[#F59E0B] text-3xl shadow-lg shadow-red-500/25">
                   🛵
@@ -589,7 +576,7 @@ export default function Home() {
       </section>
 
       {/* =========================== 5. CATEGORIES ========================== */}
-      <section className="relative isolate overflow-hidden border-y border-orange-100 bg-[#fff8ee] px-4 py-16 sm:py-20">
+      <section className="ep-home-categories relative isolate overflow-hidden border-y border-orange-100 bg-[#fff8ee] px-4 py-16 sm:py-20">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 -z-10"
@@ -628,7 +615,7 @@ export default function Home() {
               <li key={cat.slug}>
                 <Link
                   href={`/menu?category=${cat.slug}`}
-                  className={`group relative flex h-full min-h-40 flex-col justify-between overflow-hidden rounded-3xl border border-orange-100/90 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-900/10 motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:min-h-44 sm:p-5 ${focusRing}`}
+                  className={`ep-category-card group relative flex h-full min-h-40 flex-col justify-between overflow-hidden rounded-3xl border border-orange-100/90 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-900/10 motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:min-h-44 sm:p-5 ${focusRing}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span
@@ -660,7 +647,7 @@ export default function Home() {
       </section>
 
       {/* =========================== 6. BEST SELLERS ======================== */}
-      <section className="border-y border-orange-200/60 bg-gradient-to-b from-orange-50/60 to-amber-50/40 px-4 py-16 sm:py-20">
+      <section className="ep-home-featured border-y border-orange-200/60 bg-gradient-to-b from-orange-50/60 to-amber-50/40 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto mb-12 max-w-2xl text-center">
               <h2 className="text-balance text-3xl font-black tracking-tight text-gray-950 md:text-5xl">
@@ -675,7 +662,7 @@ export default function Home() {
             {featuredItems.map((item) => (
               <li
                 key={item.id}
-                className="group flex flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-shadow duration-300 hover:border-red-200 hover:shadow-[0_20px_50px_rgba(217,35,18,0.15)] motion-reduce:transition-none"
+                className="ep-featured-card group flex flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-shadow duration-300 hover:border-red-200 hover:shadow-[0_20px_50px_rgba(217,35,18,0.15)] motion-reduce:transition-none"
               >
                 <div className="relative h-52 w-full overflow-hidden bg-gray-100">
                   <Image
@@ -779,7 +766,7 @@ export default function Home() {
       </div>
 
       {/* =========================== 8. HOW IT WORKS ========================= */}
-      <section className="border-t border-gray-100 bg-gray-50/70 px-4 py-16 sm:py-20">
+      <section className="ep-home-process border-t border-gray-100 bg-gray-50/70 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
           <h2 className="mb-10 text-center text-3xl font-black text-gray-900 md:text-4xl">
             How ordering works
@@ -787,7 +774,7 @@ export default function Home() {
 
           <ol className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {orderingSteps.map(({ num, title, desc, Icon, tone }) => (
-              <li key={num} className="rounded-3xl border border-gray-100 bg-white p-6 text-center shadow-sm">
+              <li key={num} className="ep-process-card rounded-3xl border border-gray-100 bg-white p-6 text-center shadow-sm">
                 <div className={`relative mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ${tone}`}>
                   <Icon size={22} aria-hidden="true" />
                   <span aria-hidden="true" className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full border-2 border-white bg-gray-900 text-xs font-black text-white">
@@ -803,7 +790,7 @@ export default function Home() {
       </section>
 
       {/* ============================= 9. FOOTER ============================ */}
-      <footer className="border-t border-gray-800 bg-gray-950 px-4 pb-8 pt-14 text-white">
+      <footer className="ep-home-footer border-t border-gray-800 bg-gray-950 px-4 pb-8 pt-14 text-white">
         <div className="mx-auto max-w-6xl">
           <div className="mb-12 grid grid-cols-1 gap-8 md:grid-cols-4">
             <div className="space-y-3">
@@ -884,15 +871,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-
-      {/* Decorative stamp animation; respect reduced-motion preferences. */}
-      <style>{`
-        .ep-spin { animation: ep-spin 24s linear infinite; }
-        @media (prefers-reduced-motion: reduce) {
-          .ep-spin { animation: none; }
-        }
-        @keyframes ep-spin { to { transform: rotate(360deg); } }
-      `}</style>
 
       {/* Structured data (escape "<" so the JSON can never close the script tag) */}
       <script

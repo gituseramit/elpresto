@@ -4604,9 +4604,9 @@ export default function AdminPage() {
         </div>
 
         <div className="rounded-2xl border border-white/[0.07] bg-[#111827] p-5 backdrop-blur-xl sm:p-6">
-          <SectionHeader icon={<Receipt size={18} />} title="Packing Charges" subtitle="Set an optional per-item packing charge by product category" />
+          <SectionHeader icon={<Receipt size={18} />} title="Packing Charges" subtitle="Set an optional per-item packing charge by product category for delivery orders only" />
           <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/5 bg-slate-800/40 p-4">
-            <div><p className="text-xs font-black text-white">Enable packing charges</p><p className="mt-0.5 text-[11px] text-slate-400">Charges are calculated from each product's category.</p></div>
+            <div><p className="text-xs font-black text-white">Enable packing charges</p><p className="mt-0.5 text-[11px] text-slate-400">Charges are calculated by category for delivery orders only.</p></div>
             <button type="button" onClick={() => handleChange("packingChargesEnabled", !settings.packingChargesEnabled)} aria-pressed={settings.packingChargesEnabled}>{settings.packingChargesEnabled ? <ToggleRight className="text-orange-500" size={32} /> : <ToggleLeft className="text-slate-500" size={32} />}</button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
