@@ -654,34 +654,68 @@ export default function Home() {
       </section>
 
       {/* =========================== 5. CATEGORIES ========================== */}
-      <section className="px-4 py-16 sm:py-20">
+      <section className="relative isolate overflow-hidden border-y border-orange-100 bg-[#fff8ee] px-4 py-16 sm:py-20">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(520px circle at 8% 0%, rgba(217,35,18,0.08), transparent 62%)," +
+              "radial-gradient(520px circle at 100% 100%, rgba(245,158,11,0.13), transparent 62%)",
+          }}
+        />
         <div className="mx-auto max-w-6xl">
-          <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
-            <h2 className="text-3xl font-black tracking-tight text-gray-950 md:text-4xl">
-              Explore the menu
-            </h2>
+          <div className="mb-8 flex flex-col items-start justify-between gap-5 sm:mb-10 sm:flex-row sm:items-end">
+            <div className="max-w-xl">
+              <p className="mb-2 inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-[#D92312]">
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Find your next favourite
+              </p>
+              <h2 className="text-balance text-3xl font-black tracking-tight text-gray-950 md:text-4xl">
+                Explore the menu
+              </h2>
+              <p className="mt-2 max-w-lg text-sm font-medium leading-relaxed text-gray-600 sm:text-base">
+                From wholesome whole-wheat pizzas to desi coffee and sweet treats, there’s
+                something for every craving.
+              </p>
+            </div>
             <Link
               href="/menu"
-              className="group inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-[#D92312] transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200"
+              className={`group shrink-0 rounded-full px-5 py-3 text-sm ${btnDark}`}
             >
-              View full menu
+              Browse full menu
               <ArrowRight size={16} aria-hidden="true" className={arrow} />
             </Link>
           </div>
 
-          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
             {categories.map((cat) => (
               <li key={cat.slug}>
                 <Link
                   href={`/menu?category=${cat.slug}`}
-                  className={`group flex h-full flex-col justify-between rounded-2xl border border-orange-100 bg-white p-5 shadow-sm transition-colors hover:border-[#D92312] hover:bg-orange-50/50 ${focusRing}`}
+                  className={`group relative flex h-full min-h-40 flex-col justify-between overflow-hidden rounded-3xl border border-orange-100/90 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-900/10 motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:min-h-44 sm:p-5 ${focusRing}`}
                 >
-                  <span aria-hidden="true" className="text-3xl">{cat.emoji}</span>
-                  <div className="mt-4">
-                    <h3 className="text-sm font-bold text-gray-900 group-hover:text-[#D92312] md:text-base">
+                  <div className="flex items-start justify-between gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-orange-50 to-amber-100 text-3xl shadow-inner ring-1 ring-inset ring-orange-100 transition-transform duration-300 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100 sm:h-14 sm:w-14"
+                    >
+                      {cat.emoji}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="grid h-8 w-8 place-items-center rounded-full border border-orange-100 text-gray-400 transition-all duration-300 group-hover:border-[#D92312] group-hover:bg-[#D92312] group-hover:text-white"
+                    >
+                      <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                    </span>
+                  </div>
+                  <div className="mt-5">
+                    <h3 className="text-sm font-black leading-snug text-gray-900 transition-colors group-hover:text-[#D92312] sm:text-base">
                       {cat.name}
                     </h3>
-                    <p className="mt-0.5 text-xs font-bold text-amber-700">{cat.price}</p>
+                    <p className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-extrabold text-amber-800 ring-1 ring-inset ring-amber-100 sm:text-xs">
+                      {cat.price}
+                    </p>
                   </div>
                 </Link>
               </li>
