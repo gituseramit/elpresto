@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useDeferredValue } from "react";
+import { useState, useEffect, useMemo, useDeferredValue, useRef } from "react";
 import { CATEGORIES, DUMMY_MENU } from "@/data/menu";
 import TrendingNow from "@/components/Menu/TrendingNow";
 import {
@@ -41,6 +41,7 @@ const bannerBackgroundStyle: React.CSSProperties = {
 
 export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
+  const categoryLinkHandled = useRef(false);
   const [searchInput, setSearchInput] = useState<string>("");
   /* useDeferredValue keeps typing responsive without blocking scroll. */
   const searchQuery = useDeferredValue(searchInput);
@@ -56,18 +57,19 @@ export default function MenuPage() {
 
   /* ---------- Live Firestore menu ---------- */
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
     let cancelled = false;
 
     const q = query(collection(db, "menuItems"));
-    unsubscribe = onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         if (cancelled || snapshot.empty) return;
         const map = new Map<string, MenuItem>();
         DUMMY_MENU.forEach((item) => map.set(item.id, item));
         snapshot.docs.forEach((doc) => {
-          map.set(doc.id, { id: doc.id, ...doc.data() } as MenuItem);
+          const data = doc.data();
+          const item = { ...data, id: String(data.id || doc.id) } as MenuItem;
+          map.set(item.id, item);
         });
         setMenuItems(Array.from(map.values()));
       },
@@ -109,7 +111,7 @@ export default function MenuPage() {
   }, [menuItems, searchQuery]);
 
   const categoriesList = useMemo(() => {
-    const set = new Set<string>(CATEGORIES.filter((cat) => cat !== "All"));
+    const set = new Set<string>();
     menuItems.forEach((item) => {
       if (item.subcategory && item.subcategory !== "General") {
         set.add(item.subcategory);
@@ -117,24 +119,63 @@ export default function MenuPage() {
         set.add(item.category);
       }
     });
-    return Array.from(set);
+    const knownOrder = CATEGORIES.filter((category) => category !== "All" && set.has(category));
+    return [...knownOrder, ...Array.from(set).filter((category) => !CATEGORIES.includes(category))];
   }, [menuItems]);
 
   const categorizedMenu = useMemo(() => {
     const grouped: { [key: string]: MenuItem[] } = {};
     const knownCats = new Set(categoriesList);
     categoriesList.forEach((cat) => {
-      const items = filteredItems.filter(
-        (item) => item.category === cat || item.subcategory === cat
+      const items = filteredItems.filter((item) =>
+        (item.subcategory && item.subcategory !== "General" ? item.subcategory : item.category) === cat
       );
       if (items.length > 0) grouped[cat] = items;
     });
     const otherItems = filteredItems.filter(
-      (i) => !knownCats.has(i.category) && !knownCats.has(i.subcategory || "")
+      (i) => !knownCats.has(i.subcategory && i.subcategory !== "General" ? i.subcategory : i.category)
     );
     if (otherItems.length > 0) grouped["Specials & Combos"] = otherItems;
     return grouped;
   }, [categoriesList, filteredItems]);
+
+  // Landing-page category links use short editorial slugs; translate them to
+  // the live menu category once the menu has mounted, then scroll to the section.
+  useEffect(() => {
+    if (categoryLinkHandled.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("category");
+    const itemId = params.get("item");
+    if (!slug && itemId) {
+      categoryLinkHandled.current = true;
+      window.requestAnimationFrame(() => {
+        document.getElementById(itemId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      return;
+    }
+    if (!slug) {
+      categoryLinkHandled.current = true;
+      return;
+    }
+    const aliases: Record<string, string> = {
+      "indian-tadka": "Indian Tadka Pizza",
+      "large-feast": "Large Pizzas",
+      "subs-burgers": "Subs",
+      "fries-bowls": "Fries",
+      "cold-coffee": "Beverages",
+      desserts: "Desserts",
+    };
+    const category = aliases[slug] || categoriesList.find(
+      (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-$/, "") === slug
+    );
+    if (!category) return;
+    categoryLinkHandled.current = true;
+    window.requestAnimationFrame(() => {
+      setActiveCategory(category);
+      const id = "category-" + category.toLowerCase().replace(/[^a-z0-9]/g, "-");
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [categoriesList]);
 
   const totalCartCount = useMemo(
     () => cartItems.reduce((acc, i) => acc + i.quantity, 0),
@@ -228,18 +269,9 @@ export default function MenuPage() {
 
               {/* Right: trust badges */}
               <div className="flex shrink-0 items-center gap-2.5">
-                <div className="flex items-center gap-2.5 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 px-3.5 py-2.5 text-white shadow-lg shadow-emerald-600/25">
-                  <Star
-                    size={18}
-                    aria-hidden="true"
-                    className="fill-amber-300 text-amber-300"
-                  />
-                  <div>
-                    <p className="text-base font-black leading-none">4.9</p>
-                    <p className="mt-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-100">
-                      1.2k+ ratings
-                    </p>
-                  </div>
+                <div className="rounded-2xl border border-orange-200 bg-white/80 px-3.5 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Kitchen</p>
+                  <p className="mt-0.5 text-sm font-black text-gray-900">Made to order</p>
                 </div>
                 <div className="rounded-2xl border border-red-200/80 bg-gradient-to-r from-red-50 to-orange-50 px-3.5 py-2.5 shadow-sm">
                   <p className="text-[10px] font-black uppercase tracking-wider text-red-700">
@@ -260,7 +292,7 @@ export default function MenuPage() {
       {/* Solid background — no backdrop-blur, which was re-blurring   */}
       {/* the entire scroll viewport on every frame.                    */}
       {/* ============================================================ */}
-      <div className="sticky top-0 z-30 mt-5 border-b border-white/60 bg-white/95 shadow-sm">
+      <div className="sticky top-16 z-30 mt-5 border-b border-white/60 bg-white/95 shadow-sm">
         <div className="mx-auto max-w-6xl space-y-2.5 px-4 py-3">
           {/* Search */}
           <div className="relative">
@@ -416,19 +448,22 @@ export default function MenuPage() {
                   {items.map((item) => {
                     const qty = cartQuantities.get(item.id) ?? 0;
                     const rating = productRatings[item.id];
-                    const displayRating = rating?.averageRating || 4.8;
                     const reviewCount = rating?.totalRatings || 0;
+                    const hasRating = Boolean(rating && reviewCount > 0);
+                    const isWheatProduct = /whole wheat|whole-wheat|atta|stone[- ]ground/i.test(item.description || "") || /pizza/i.test(item.category) && item.category !== "Extra Toppings";
+                    const showVegLabel = item.isVeg === true && !["beverages", "extra toppings"].includes(item.category.toLowerCase());
 
                     return (
                       <div
                         key={item.id}
+                        id={item.id}
                         className="group relative flex gap-3 overflow-hidden rounded-3xl border border-white/60 bg-white p-3.5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-[0_15px_40px_-12px_rgba(217,35,18,0.15)] sm:gap-4 sm:p-4"
                       >
                         {/* Left: content */}
                         <div className="flex min-w-0 flex-1 flex-col justify-between pr-1">
                           {/* Badges */}
-                          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                            <span className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
+                          {(showVegLabel || isWheatProduct) && <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                            {showVegLabel && <span className="flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
                               <span
                                 aria-hidden="true"
                                 className="grid h-2.5 w-2.5 place-items-center rounded-sm border border-emerald-600 bg-white"
@@ -436,11 +471,11 @@ export default function MenuPage() {
                                 <span className="h-1 w-1 rounded-full bg-emerald-600" />
                               </span>
                               Veg
-                            </span>
-                            <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800">
+                            </span>}
+                            {isWheatProduct && <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800">
                               🌾 Whole Wheat
-                            </span>
-                          </div>
+                            </span>}
+                          </div>}
 
                           {/* Name + rating */}
                           <div className="flex flex-wrap items-start justify-between gap-2">
@@ -448,17 +483,17 @@ export default function MenuPage() {
                               {item.name}
                             </h3>
 
-                            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-black text-amber-900">
+                            {hasRating ? <div className="flex shrink-0 items-center gap-1 rounded-lg border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-black text-amber-900">
                               <Star
                                 size={10}
                                 aria-hidden="true"
                                 className="fill-amber-400 text-amber-500"
                               />
-                              {displayRating.toFixed(1)}
+                              {rating!.averageRating.toFixed(1)}
                               <span className="text-[9px] font-bold text-amber-700">
-                                ({reviewCount > 0 ? reviewCount : "New"})
+                                ({reviewCount})
                               </span>
-                            </div>
+                            </div> : <span className="shrink-0 text-[10px] font-bold text-gray-400">New</span>}
                           </div>
 
                           {/* Price */}

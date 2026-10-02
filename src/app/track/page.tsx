@@ -812,6 +812,12 @@ export default function TrackOrderPage() {
               >
                 View Past Orders
               </Link>
+              <a
+                href="tel:+916392512314"
+                className="text-center text-xs font-semibold text-gray-500 underline decoration-gray-300 underline-offset-4 transition hover:text-[#D92312]"
+              >
+                Need help finding an order? Call +91 63925 12314
+              </a>
             </div>
           </div>
         </div>

@@ -28,9 +28,6 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://elpresto.co.in";
 const PHONE_DISPLAY = "+91 63925 12314";
 const PHONE_TEL = "+916392512314";
 const INSTAGRAM_URL = "https://instagram.com/elprestopizza";
-const FSSAI_NO = "12722010000123"; // TODO: confirm this is your real licence number
-const WEEKLY_ORDERS = "1,200+"; // TODO: keep in sync with real numbers
-const MENU_COUNT = "46+";
 const HERO_IMAGE =
   "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1000&q=75&auto=format";
 
@@ -84,8 +81,6 @@ interface FeaturedItem {
   image: string;
   description: string;
   badge: string;
-  rating: number;
-  orders: string;
   cta: string;
   /** Show the "100% atta" tag. Only true where the crust really is whole wheat. */
   atta: boolean;
@@ -101,8 +96,6 @@ const featuredItems: FeaturedItem[] = [
     description:
       "Our legendary chef's special with secret spiced sauce, exotic veggies & premium mozzarella.",
     badge: "Most popular",
-    rating: 4.9,
-    orders: "600+",
     cta: "Order hot & fresh",
     atta: true,
   },
@@ -116,8 +109,6 @@ const featuredItems: FeaturedItem[] = [
     description:
       "Crisp capsicum, sweet onions, juicy tomatoes & mushrooms on 100% whole wheat crust.",
     badge: "100% whole wheat",
-    rating: 4.8,
-    orders: "420+",
     cta: "Order hot & fresh",
     atta: true,
   },
@@ -131,23 +122,19 @@ const featuredItems: FeaturedItem[] = [
     description:
       "Rich and creamy butter makhani gravy topped with soft malai paneer cubes.",
     badge: "Desi twist",
-    rating: 4.9,
-    orders: "380+",
     cta: "Order hot & fresh",
     atta: true,
   },
   {
     id: "bv1",
-    name: "Desi Cold Coffee",
-    category: "Healthy Beverage",
-    price: 49,
+    name: "Cold Coffee",
+    category: "Beverages",
+    price: 60,
     image:
       "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=800&q=75&auto=format",
     description:
       "Zero refined sugar, rich brewed coffee with chilled cream. Refresh without guilt!",
     badge: "Guilt-free",
-    rating: 4.7,
-    orders: "520+",
     cta: "Order chilled",
     atta: false,
   },
@@ -161,8 +148,6 @@ const featuredItems: FeaturedItem[] = [
     description:
       "Crispy grilled paneer patty layered with fresh lettuce, tomatoes & tangy garlic spread.",
     badge: "Protein power",
-    rating: 4.8,
-    orders: "290+",
     cta: "Order hot & fresh",
     atta: false,
   },
@@ -170,14 +155,12 @@ const featuredItems: FeaturedItem[] = [
     id: "sd2",
     name: "Stuffed Garlic Bread",
     category: "Sides",
-    price: 99,
+    price: 139,
     image:
       "https://images.unsplash.com/photo-1604382355076-af4b0eb60143?w=800&q=75&auto=format",
     description:
       "Golden baked garlic loaf loaded with melting mozzarella cheese and aromatic Italian herbs.",
     badge: "Extra cheesy",
-    rating: 4.9,
-    orders: "410+",
     cta: "Order hot & fresh",
     atta: false,
   },
@@ -221,18 +204,8 @@ const categories = [
   { name: "Large Feast Pizzas", price: "From ₹399", slug: "large-feast", emoji: "🎉" },
   { name: "Healthy Subs & Burgers", price: "From ₹69", slug: "subs-burgers", emoji: "🍔" },
   { name: "Fries & Protein Bowls", price: "From ₹59", slug: "fries-bowls", emoji: "🍟" },
-  { name: "Desi Cold Coffee", price: "Just ₹49", slug: "cold-coffee", emoji: "☕" },
+  { name: "Cold Coffee", price: "From ₹60", slug: "cold-coffee", emoji: "☕" },
   { name: "Choco Lava & Desserts", price: "From ₹49", slug: "desserts", emoji: "🍫" },
-];
-
-const marqueeItems = [
-  "100% whole wheat atta",
-  "Zero maida",
-  "Real mozzarella",
-  "Zero palm oil",
-  "15-minute kitchen prep",
-  `${WEEKLY_ORDERS} orders every week`,
-  "Baked fresh daily",
 ];
 
 const orderingSteps: { num: string; title: string; desc: string; Icon: LucideIcon; tone: string }[] = [
@@ -256,25 +229,6 @@ const orderingSteps: { num: string; title: string; desc: string; Icon: LucideIco
     desc: "Pay with any UPI app and watch your order progress live until it reaches you.",
     Icon: Zap,
     tone: "from-emerald-500 to-teal-500 shadow-emerald-500/25",
-  },
-];
-
-/* TODO: these milestones and the story copy below are placeholders — replace with your real story. */
-const storyMilestones = [
-  {
-    year: "2023",
-    title: "A dorm-room idea",
-    text: "Two students at UCER got tired of choosing between cheap junk food and tasteless “healthy” meals, so they started experimenting with whole-wheat dough in a hostel kitchen.",
-  },
-  {
-    year: "2024",
-    title: "The UCER counter opens",
-    text: "A small counter on campus with one oven, one menu, and one promise: real ingredients, zero shortcuts. The first 100 pizzas sold out in a weekend.",
-  },
-  {
-    year: "Today",
-    title: `${WEEKLY_ORDERS} weekly orders`,
-    text: "Hundreds of whole-wheat pizzas, burgers, and cold coffees every week for students, faculty, and families across Naini.",
   },
 ];
 
@@ -412,7 +366,7 @@ export default function Home() {
                   href="/menu"
                   className={`group w-full px-8 py-4 text-base sm:w-auto ${btnRed}`}
                 >
-                  Order now, from ₹49
+                  Order online
                   <ArrowRight size={20} aria-hidden="true" className={arrow} />
                 </Link>
                 <Link
@@ -458,8 +412,8 @@ export default function Home() {
                       Bestseller
                     </div>
                     <div className="absolute bottom-4 left-4 right-4 text-white">
-                      <p className="flex items-center gap-1 text-xs font-bold text-amber-300">
-                        <Star size={12} fill="currentColor" aria-hidden="true" /> 4.9 · Chef&apos;s Signature
+                  <p className="flex items-center gap-1 text-xs font-bold text-amber-300">
+                        <Star size={12} fill="currentColor" aria-hidden="true" /> Chef&apos;s Signature
                       </p>
                       <p className="mt-1 text-2xl font-black">EL PRESTO Special</p>
                       <p className="mt-0.5 text-xs font-medium text-amber-100">
@@ -500,8 +454,8 @@ export default function Home() {
                 <div className="absolute -right-3 top-[58%] hidden items-center gap-2.5 rounded-2xl border border-amber-200 bg-white px-3.5 py-2.5 shadow-xl sm:flex">
                   <span aria-hidden="true" className="text-2xl">☕</span>
                   <div>
-                    <p className="text-xs font-bold text-gray-900">Desi Cold Coffee</p>
-                    <p className="text-xs font-bold text-[#D92312]">Only ₹49</p>
+                    <p className="text-xs font-bold text-gray-900">Cold Coffee</p>
+                    <p className="text-xs font-bold text-[#D92312]">₹60</p>
                   </div>
                 </div>
               </div>
@@ -515,9 +469,13 @@ export default function Home() {
         aria-hidden="true"
         className="relative overflow-hidden border-y border-orange-200/60 bg-gradient-to-r from-[#D92312] via-[#B8190B] to-[#F59E0B] py-3.5"
       >
-        <div className="ep-marquee flex w-max whitespace-nowrap">
-          <MarqueeRow items={marqueeItems} />
-          <MarqueeRow items={marqueeItems} />
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-2 px-4 text-center text-xs font-bold uppercase tracking-[0.12em] text-white sm:text-sm">
+          {["Made to order", "Pickup at UCER", "Delivery in Naini"].map((item) => (
+            <span key={item} className="flex items-center gap-2">
+              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-200" />
+              {item}
+            </span>
+          ))}
         </div>
       </section>
 
@@ -526,62 +484,37 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-12 lg:gap-14">
             <div className="relative lg:col-span-5">
-              <div className="relative aspect-[4/5] overflow-hidden rounded-3xl shadow-[0_20px_50px_rgba(217,35,18,0.15)]">
-                <Image
-                  src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=900&q=75&auto=format"
-                  alt="The EL PRESTO team preparing fresh whole-wheat dough"
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 480px"
-                  className="object-cover"
-                />
-                <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-              </div>
-              <div className="absolute -bottom-5 -right-3 hidden items-center gap-3 rounded-2xl border border-orange-100 bg-white px-5 py-4 shadow-xl sm:flex lg:-right-6">
-                <span aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-tr from-[#D92312] to-[#F59E0B] text-white shadow-md">
-                  <Heart size={18} />
-                </span>
-                <div>
-                  <p className="text-sm font-black text-gray-950">{WEEKLY_ORDERS} weekly</p>
-                  <p className="text-xs font-semibold text-gray-600">orders and counting</p>
+              <div className="relative flex min-h-[320px] flex-col justify-between overflow-hidden rounded-3xl bg-[#211712] p-8 text-white shadow-[0_20px_50px_rgba(50,27,16,0.18)] sm:min-h-[380px] sm:p-10">
+                <div aria-hidden="true" className="absolute -right-16 -top-20 h-72 w-72 rounded-full border-[36px] border-[#D92312]/25" />
+                <div aria-hidden="true" className="absolute -bottom-24 -left-16 h-64 w-64 rounded-full border-[28px] border-amber-400/15" />
+                <span className="relative text-xs font-bold uppercase tracking-[0.2em] text-amber-300">EL PRESTO · NAINI</span>
+                <div className="relative">
+                  <p className="text-5xl font-black leading-none tracking-tight sm:text-6xl">A better<br />kind of slice.</p>
+                  <p className="mt-5 max-w-xs text-sm leading-relaxed text-white/75">Thoughtful ingredients, comforting favourites, and convenient pickup or delivery from our UCER kitchen.</p>
                 </div>
               </div>
             </div>
 
             <div className="lg:col-span-7">
               <h2 className="text-balance text-3xl font-black leading-tight tracking-tight text-gray-950 sm:text-4xl md:text-5xl">
-                From a dorm-room experiment to Naini&apos;s favourite healthy kitchen
+                Comfort food, made with care
               </h2>
 
               <div className="mt-5 max-w-prose space-y-4 text-base leading-relaxed text-gray-700">
                 <p>
-                  EL PRESTO started with one stubborn question: why should campus food force you to
-                  choose between <em>tasty</em> and <em>healthy</em>? Every pizza we tried was
-                  either dripping in cheap palm oil and maida, or a sad, cardboard “diet” version
-                  nobody wanted to eat.
+                  EL PRESTO serves pizzas, burgers, sides, desserts, and drinks from our kitchen at UCER Campus in Naini. Choose a familiar favourite or try something new from the menu.
                 </p>
                 <p>
-                  So we built the pizza we wished existed. Stone-ground whole wheat atta for the
-                  crust. Real dairy mozzarella, never a cheese analog. Cold-pressed oils in the
-                  kitchen. Vegetables sourced fresh every morning from the Naini mandi.
+                  Order online for campus pickup or delivery in the surrounding area. Menu descriptions include ingredient details to help you choose; contact us with questions about allergens or specific ingredients before ordering.
                 </p>
               </div>
 
-              <ol className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {storyMilestones.map((m) => (
-                  <li key={m.year} className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm">
-                    <p className="text-sm font-bold text-[#D92312]">{m.year}</p>
-                    <p className="mt-1 text-sm font-black text-gray-950">{m.title}</p>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-gray-600">{m.text}</p>
-                  </li>
-                ))}
-              </ol>
-
               <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
                 <Link href="/menu" className={`group px-6 py-3 text-sm ${btnDark}`}>
-                  Taste the difference
+                  Explore our menu
                   <ArrowRight size={16} aria-hidden="true" className={arrow} />
                 </Link>
-                <p className="text-sm font-medium italic text-gray-500">Team EL PRESTO, Naini</p>
+                <p className="text-sm font-medium text-gray-500">UCER Campus, Naini · Prayagraj</p>
               </div>
             </div>
           </div>
@@ -728,8 +661,8 @@ export default function Home() {
       <section className="border-y border-orange-200/60 bg-gradient-to-b from-orange-50/60 to-amber-50/40 px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto mb-12 max-w-2xl text-center">
-            <h2 className="text-balance text-3xl font-black tracking-tight text-gray-950 md:text-5xl">
-              Top customer favourites
+              <h2 className="text-balance text-3xl font-black tracking-tight text-gray-950 md:text-5xl">
+              From the menu
             </h2>
             <p className="mt-2 text-sm font-medium text-gray-700 md:text-base">
               Hand-tossed on whole wheat, finished with Italian herbs and real mozzarella.
@@ -751,11 +684,7 @@ export default function Home() {
                     className="object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   />
                   <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-gray-900 shadow-md">
-                    {item.badge}
-                  </span>
-                  <span className="absolute bottom-3 left-3 flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-gray-900 shadow-sm">
-                    <Star size={12} aria-hidden="true" className="fill-amber-400 text-amber-400" />
-                    {item.rating} · {item.orders}
+                    {item.badge === "Most popular" ? "Signature" : item.badge}
                   </span>
                   {item.atta && (
                     <span className="absolute bottom-3 right-3 rounded-full bg-black/75 px-2.5 py-1 text-xs font-bold text-amber-300">
@@ -790,7 +719,7 @@ export default function Home() {
           <div className="mt-12 text-center">
             <Link href="/menu" className={`group rounded-full px-8 py-3.5 text-sm ${btnDark}`}>
               <Utensils size={16} aria-hidden="true" />
-              Explore all {MENU_COUNT} menu items
+              Explore the full menu
               <ArrowRight size={16} aria-hidden="true" className={arrow} />
             </Link>
           </div>
@@ -822,7 +751,7 @@ export default function Home() {
               id="promise-heading"
               className="text-balance text-3xl font-black leading-[1.1] tracking-tight text-white sm:text-4xl md:text-5xl"
             >
-              Why Naini keeps ordering, week after week
+              Our quality promise
             </h2>
             <p className="mt-3 max-w-lg text-sm leading-relaxed text-amber-100/80 sm:text-base">
               Every pizza is baked on stone-ground whole wheat with real mozzarella and zero palm
@@ -941,7 +870,6 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              <p className="pt-1 text-xs text-gray-400">FSSAI Lic. No. {FSSAI_NO}</p>
             </div>
           </div>
 
@@ -955,15 +883,12 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Animations: marquee + stamp. Reduced-motion aware. */}
+      {/* Decorative stamp animation; respect reduced-motion preferences. */}
       <style>{`
-        .ep-marquee { animation: ep-marquee 32s linear infinite; will-change: transform; }
-        .ep-marquee-row { display: flex; gap: 2rem; padding-right: 2rem; flex-shrink: 0; }
         .ep-spin { animation: ep-spin 24s linear infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .ep-marquee, .ep-spin { animation: none; }
+          .ep-spin { animation: none; }
         }
-        @keyframes ep-marquee { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
         @keyframes ep-spin { to { transform: rotate(360deg); } }
       `}</style>
 
@@ -975,25 +900,5 @@ export default function Home() {
         }}
       />
     </>
-  );
-}
-
-/* ============================================================= */
-/* Small components                                              */
-/* ============================================================= */
-
-function MarqueeRow({ items }: { items: string[] }) {
-  return (
-    <div className="ep-marquee-row">
-      {items.map((item) => (
-        <span
-          key={item}
-          className="flex shrink-0 items-center gap-2 text-sm font-bold uppercase tracking-wider text-white"
-        >
-          {item}
-          <span className="text-amber-200">•</span>
-        </span>
-      ))}
-    </div>
   );
 }

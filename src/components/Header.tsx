@@ -8,6 +8,7 @@ import {
   User,
   ChevronDown,
   Package,
+  Menu as MenuIcon,
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -156,7 +157,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-orange-100 bg-white shadow-[0_4px_25px_-5px_rgba(217,35,18,0.06)]">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4">
         {/* Logo */}
         <Link
           href="/"
@@ -168,7 +169,7 @@ export default function Header() {
             alt="EL PRESTO"
             width={120}
             height={44}
-            className="h-10 w-auto object-contain sm:h-11"
+            className="h-9 w-[108px] object-contain sm:h-11 sm:w-auto"
           />
         </Link>
 
@@ -215,7 +216,17 @@ export default function Header() {
         </nav>
 
         {/* Right cluster */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
+          <Link
+            href="/menu"
+            aria-current={isActive("/menu") ? "page" : undefined}
+            aria-label="Browse menu"
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 md:hidden ${
+              isActive("/menu") ? "border-red-200 bg-red-50 text-[#D92312]" : "border-orange-100 text-gray-800 hover:bg-orange-50"
+            }`}
+          >
+            <MenuIcon size={17} aria-hidden="true" /> <span className="hidden min-[380px]:inline">Menu</span>
+          </Link>
           {/* Mobile live-order pill */}
           {hasActiveOrder && (
             <Link
@@ -325,7 +336,7 @@ export default function Header() {
             ) : (
               <Link
                 href="/auth"
-                className="rounded-xl bg-gradient-to-r from-[#D92312] to-[#B8190B] px-5 py-2 text-sm font-black text-white shadow-md shadow-red-500/20 transition-transform hover:-translate-y-0.5 hover:from-[#B8190B] hover:to-[#991409] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 active:scale-95"
+                className="rounded-xl bg-gradient-to-r from-[#D92312] to-[#B8190B] px-3 py-2 text-sm font-black text-white shadow-md shadow-red-500/20 transition-transform hover:-translate-y-0.5 hover:from-[#B8190B] hover:to-[#991409] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 active:scale-95 min-[380px]:px-5"
               >
                 Login
               </Link>

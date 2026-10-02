@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Plus, Minus, Trash2 } from "lucide-react";
+import { X, Plus, Minus, Trash2, ShoppingBag, ArrowRight } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import Link from "next/link";
 import Image from "next/image";
@@ -37,17 +37,21 @@ export default function Cart() {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {items.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
-              <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center">
-                <Trash2 size={48} className="text-gray-300" />
+            <div className="h-full flex flex-col items-center justify-center px-5 text-center text-gray-500 space-y-4">
+              <div className="grid h-24 w-24 place-items-center rounded-full border border-orange-100 bg-orange-50 text-[#D92312]">
+                <ShoppingBag size={40} strokeWidth={1.7} />
               </div>
-              <p className="text-lg font-medium">Your cart is empty</p>
-              <button 
+              <div>
+                <p className="text-xl font-black text-gray-900">Your cart is waiting</p>
+                <p className="mt-1 max-w-xs text-sm leading-relaxed text-gray-500">Add something freshly baked and we’ll keep your order together here.</p>
+              </div>
+              <Link
+                href="/menu"
                 onClick={() => setIsOpen(false)}
-                className="text-[var(--primary)] font-medium hover:underline"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#D92312] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#B8190B] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200"
               >
-                Continue Browsing
-              </button>
+                Browse the menu <ArrowRight size={16} aria-hidden="true" />
+              </Link>
             </div>
           ) : (
             items.map((item) => (

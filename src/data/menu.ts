@@ -29,7 +29,7 @@ export const DUMMY_MENU: MenuItem[] = [
     price: 99,
     category: "Healthy Mania",
     imageUrl:
-      "https://6aa2af33ea08b9137fd58d43.imgix.net/sandbox/pngtree-d-pizza-with-onion-rings-and-cubed-cheese-isolated-on-transparent-png-image_18967346.png",
+      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&q=80",
     available: true,
     isVeg: true,
   },

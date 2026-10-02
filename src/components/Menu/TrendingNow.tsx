@@ -98,7 +98,6 @@ export default function TrendingNow({
 
   useEffect(() => {
     if (!needsOrderData) {
-      setLiveOrders([]);
       return;
     }
 
@@ -126,7 +125,7 @@ export default function TrendingNow({
   const trendingItems = useMemo<TrendingItem[]>(() => {
     if (!trendingSettings.enabled) return [];
 
-    const max = Math.max(1, trendingSettings.maxItems || 6);
+    const max = Math.min(4, Math.max(1, trendingSettings.maxItems || 4));
 
     /* Manual mode — admin-curated list */
     if (
@@ -140,7 +139,7 @@ export default function TrendingNow({
         .map((item, idx) => ({
           ...item,
           trendingRank: idx + 1,
-          ratingValue: productRatings[item.id]?.averageRating ?? 4.9,
+          ...(productRatings[item.id]?.totalRatings ? { ratingValue: productRatings[item.id].averageRating } : {}),
         }));
     }
 
@@ -182,22 +181,9 @@ export default function TrendingNow({
       ranked.push({
         ...found,
         orderCount: data.count,
-        ratingValue: productRatings[found.id]?.averageRating ?? 4.9,
+        ...(productRatings[found.id]?.totalRatings ? { ratingValue: productRatings[found.id].averageRating } : {}),
       });
       if (ranked.length >= max) break;
-    }
-
-    /* Fill remaining slots with bestsellers if not enough live orders */
-    if (ranked.length < max) {
-      for (const item of DUMMY_MENU) {
-        if (rankedIds.has(item.id)) continue;
-        rankedIds.add(item.id);
-        ranked.push({
-          ...item,
-          ratingValue: productRatings[item.id]?.averageRating ?? 4.8,
-        });
-        if (ranked.length >= max) break;
-      }
     }
 
     return ranked.map((item, idx) => ({
@@ -231,10 +217,10 @@ export default function TrendingNow({
               className="fill-[#D92312]"
               aria-hidden="true"
             />
-            <span>Community Favorites</span>
+            <span>{trendingSettings.mode === "auto" ? "Live order picks" : "Kitchen picks"}</span>
           </div>
           <h2 className="flex items-center gap-2 text-xl font-black text-gray-950 sm:text-2xl">
-            Trending Now Across Prayagraj
+            {trendingSettings.mode === "auto" ? "Popular orders" : "Selected for you"}
           </h2>
         </div>
 
@@ -266,10 +252,7 @@ export default function TrendingNow({
       >
         {trendingItems.map((dish) => {
           const qtyInCart = cartQuantities.get(dish.id) ?? 0;
-          const ratingText =
-            dish.ratingValue !== undefined
-              ? dish.ratingValue.toFixed(1)
-              : "4.8";
+          const isWholeWheat = /whole wheat|whole-wheat|atta|stone[- ]ground/i.test(dish.description || "");
 
           return (
             <article
@@ -304,17 +287,17 @@ export default function TrendingNow({
                       className="fill-white"
                       aria-hidden="true"
                     />
-                    <span>#{dish.trendingRank} TRENDING</span>
+                    <span>{trendingSettings.mode === "auto" ? `#${dish.trendingRank} TRENDING` : "FEATURED"}</span>
                   </div>
 
                   {/* Atta indicator — solid, no blur */}
-                  <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-[9px] font-black text-emerald-800 shadow-sm">
+                  {isWholeWheat && <div className="absolute bottom-2.5 left-2.5 flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-[9px] font-black text-emerald-800 shadow-sm">
                     <span
                       aria-hidden="true"
                       className="h-1.5 w-1.5 rounded-full bg-emerald-600"
                     />
                     <span>100% Atta</span>
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Title + rating */}
@@ -322,13 +305,12 @@ export default function TrendingNow({
                   <h3 className="line-clamp-1 text-sm font-black text-gray-950 transition-colors group-hover:text-[#D92312]">
                     {dish.name}
                   </h3>
-                  <span className="shrink-0 rounded-md border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-900">
-                    ⭐ {ratingText}
-                  </span>
+                  {dish.ratingValue !== undefined && <span className="shrink-0 rounded-md border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-black text-amber-900">
+                    ⭐ {dish.ratingValue.toFixed(1)}
+                  </span>}
                 </div>
                 <p className="mt-0.5 line-clamp-2 text-[11px] font-medium leading-relaxed text-gray-500">
-                  {dish.description ||
-                    "Fresh stoneground atta base, farm toppings & real cheese."}
+                  {dish.description || "Made fresh to order."}
                 </p>
               </div>
 

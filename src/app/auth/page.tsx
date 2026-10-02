@@ -493,10 +493,10 @@ function AuthForm() {
         {/* Top bar */}
         <div className="mb-6 flex items-center justify-between sm:mb-8">
           <Link
-            href="/"
+            href={redirect === "/checkout" ? "/menu" : "/"}
             className="flex items-center gap-1.5 rounded-lg text-sm font-medium text-gray-500 transition-colors hover:text-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
           >
-            <ArrowLeft size={15} aria-hidden="true" /> Back to Home
+            <ArrowLeft size={15} aria-hidden="true" /> {redirect === "/checkout" ? "Back to menu" : "Back to Home"}
           </Link>
           <div className="text-right">
             <div className="text-lg font-black leading-none text-gray-900">
@@ -510,15 +510,20 @@ function AuthForm() {
 
         <div className="overflow-hidden rounded-3xl border border-white/50 bg-white/60 shadow-2xl backdrop-blur-xl">
           {/* Header */}
-          <div className="bg-gradient-to-r from-orange-500 to-amber-400 px-6 pb-6 pt-8 text-center text-white sm:px-8">
+          <div className="bg-[#211712] px-6 pb-6 pt-8 text-center text-white sm:px-8">
             <div aria-hidden="true" className="mb-2 text-4xl">
               🍕
             </div>
             <h1 className="text-2xl font-black">{headerTitle}</h1>
-            <p className="mt-1 text-sm text-orange-100">{headerSubtitle}</p>
+            <p className="mt-1 text-sm text-white/75">{headerSubtitle}</p>
           </div>
 
           <div className="px-6 py-7 sm:px-8">
+            {redirect === "/checkout" && (
+              <div className="mb-5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm leading-relaxed text-gray-700">
+                Sign in to finish checkout. Your cart will stay ready, and your account lets you view order updates after you place it.
+              </div>
+            )}
             {/* Error banner */}
             {error && (
               <div
