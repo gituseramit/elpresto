@@ -19,6 +19,7 @@ import {
   Award,
   type LucideIcon,
 } from "lucide-react";
+import BrandIntro from "@/components/BrandIntro";
 
 /* ============================================================= */
 /* Site constants (single source of truth for repeated claims)   */
@@ -313,6 +314,7 @@ export default function Home() {
 
   return (
     <>
+      <BrandIntro />
       {/* ============================ 1. HERO ============================ */}
       <section className="relative isolate overflow-x-clip px-4 pb-16 pt-8 md:pb-24 md:pt-14">
         <div
