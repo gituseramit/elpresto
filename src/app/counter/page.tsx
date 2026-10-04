@@ -48,6 +48,7 @@ import {
   doc,
   updateDoc,
   addDoc,
+  limit,
   Timestamp,
 } from "firebase/firestore";
 import { subscribeMenuCatalog } from "@/lib/menuCatalog";
@@ -71,6 +72,7 @@ import {
 import type { Branch, Counter } from "@/lib/types";
 import { getPackingCharge } from "@/lib/commerce";
 import { usePendingOrderReminder } from "@/hooks/usePendingOrderReminder";
+import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
 
 /* ============================================================ */
 /* Types                                                        */
@@ -201,39 +203,26 @@ function normaliseOrderType(raw: unknown): OrderType {
   return "counter";
 }
 
-function normalisePhone(raw: string): string {
-  return raw.replace(/\D/g, "").slice(-10);
-}
-
 async function findCustomerByPhone(
   rawPhone: string
 ): Promise<LinkedCustomer | null> {
   const phone = normalisePhone(rawPhone);
   if (phone.length !== 10) return null;
-
-  const findByStoredPhone = async (storedPhone: string) => {
-    const snap = await getDocs(
-      query(collection(db, "customers"), where("phone", "==", storedPhone))
-    );
-    const customer = snap.docs[0];
-    if (!customer) return null;
-    const data = customer.data();
-    return {
-      uid: customer.id,
-      name: String(data.name || "Customer"),
-      phone,
-    } satisfies LinkedCustomer;
-  };
-
-  const exactMatch = await findByStoredPhone(phone);
-  if (exactMatch) return exactMatch;
-
-  const alternateMatches = await Promise.all(
-    ["+91" + phone, "91" + phone, "0" + phone].map(findByStoredPhone)
+  const snap = await getDocs(
+    query(
+      collection(db, "customers"),
+      where("phone", "in", phoneSearchVariants(phone)),
+      limit(1)
+    )
   );
-  return alternateMatches.find(
-    (customer): customer is LinkedCustomer => customer !== null
-  ) || null;
+  const customer = snap.docs[0];
+  if (!customer) return null;
+  const data = customer.data();
+  return {
+    uid: customer.id,
+    name: String(data.name || "Customer"),
+    phone,
+  } satisfies LinkedCustomer;
 }
 
 function sanitiseTel(raw: string): string {
@@ -1575,8 +1564,8 @@ export default function CounterPOSPage() {
             (oType === "delivery"
               ? "Delivery Customer"
               : "Walk-in Customer"),
-          customerPhone: customerPhoneRef.current.trim() || "Counter",
-          phone: customerPhoneRef.current.trim() || "Counter",
+          customerPhone: submittedPhone || "Counter",
+          phone: submittedPhone || "Counter",
           type: oType,
           orderType: oType,
           kitchenNotes: editingId

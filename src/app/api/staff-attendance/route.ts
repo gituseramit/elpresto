@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, where, addDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, query, runTransaction, serverTimestamp, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.STAFF_JWT_SECRET || "elpresto_staff_jwt_secret_change_in_production_32chars");
@@ -59,14 +59,50 @@ export async function POST(req: NextRequest) {
     const radius = Number.isFinite(branch.attendanceRadiusMeters) && branch.attendanceRadiusMeters > 0 ? branch.attendanceRadiusMeters : 1000;
     const distance = distanceMeters(latitude, longitude, branch.lat, branch.lng);
     const status = distance <= radius ? "SUCCESS" : "REJECTED_OUT_OF_RANGE";
+    const attendanceDate = getISTDateKey();
     const record = {
       staffId: String(staff.staffId), staffName: String(staff.profile.name || staff.name || staff.staffId), role,
       branchId, branchName: String(branch.name || branchId), action, timestamp: serverTimestamp(),
-      createdAtISO: new Date().toISOString(), attendanceDate: getISTDateKey(), latitude, longitude, accuracy: Number.isFinite(accuracy) ? accuracy : null,
+      createdAtISO: new Date().toISOString(), attendanceDate, latitude, longitude, accuracy: Number.isFinite(accuracy) ? accuracy : null,
       distanceMeters: Math.round(distance), radiusMeters: radius, status,
     };
-    await addDoc(collection(db, "staffAttendance"), record);
-    if (status !== "SUCCESS") return NextResponse.json({ error: `You must be within ${radius >= 1000 ? `${(radius / 1000).toFixed(radius % 1000 ? 1 : 0)} km` : `${radius} m`} of ${branch.name || "your branch"} to mark attendance. You are currently ${(distance / 1000).toFixed(2)} km away.`, status, distanceMeters: Math.round(distance), radiusMeters: radius }, { status: 403 });
+    if (status !== "SUCCESS") {
+      await addDoc(collection(db, "staffAttendance"), record);
+      return NextResponse.json({ error: `You must be within ${radius >= 1000 ? `${(radius / 1000).toFixed(radius % 1000 ? 1 : 0)} km` : `${radius} m`} of ${branch.name || "your branch"} to mark attendance. You are currently ${(distance / 1000).toFixed(2)} km away.`, status, distanceMeters: Math.round(distance), radiusMeters: radius }, { status: 403 });
+    }
+
+    const todaysRecords = await getDocs(
+      query(
+        collection(db, "staffAttendance"),
+        where("attendanceDate", "==", attendanceDate),
+        limit(1000)
+      )
+    );
+    const alreadyMarked = todaysRecords.docs.some((item) => {
+      const saved = item.data();
+      return saved.staffId === String(staff.staffId) && saved.action === action && saved.status === "SUCCESS";
+    });
+    if (alreadyMarked) {
+      return NextResponse.json(
+        { error: `You have already marked ${action === "CHECK_IN" ? "check-in" : "check-out"} today.` },
+        { status: 409 }
+      );
+    }
+
+    const recordId = `${encodeURIComponent(String(staff.staffId))}_${attendanceDate}_${String(action).toLowerCase()}`;
+    const attendanceRef = doc(db, "staffAttendance", recordId);
+    const wasRecorded = await runTransaction(db, async (transaction) => {
+      const existing = await transaction.get(attendanceRef);
+      if (existing.exists()) return false;
+      transaction.set(attendanceRef, record);
+      return true;
+    });
+    if (!wasRecorded) {
+      return NextResponse.json(
+        { error: `You have already marked ${action === "CHECK_IN" ? "check-in" : "check-out"} today.` },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ success: true, action, branchName: branch.name, distanceMeters: Math.round(distance), radiusMeters: radius, lowConfidence: Number.isFinite(accuracy) && accuracy > 100 });
   } catch (error) {
     console.error("Attendance marking failed:", error);
@@ -79,9 +115,11 @@ export async function GET(req: NextRequest) {
   if (!staff) return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
   const role = String(staff.profile.role || staff.role);
   const hasCustomPermission = Array.isArray(staff.profile.customPermissions) && staff.profile.customPermissions.includes("attendance.view");
-  if (!VIEW_ROLES.has(role) && !hasCustomPermission) return NextResponse.json({ error: "You do not have permission to view attendance." }, { status: 403 });
+  const canViewAll = VIEW_ROLES.has(role) || hasCustomPermission;
+  if (!canViewAll && !MARK_ROLES.has(role)) return NextResponse.json({ error: "You do not have permission to view attendance." }, { status: 403 });
   const ownBranch = String(staff.profile.branchId || "");
   const requestedBranch = req.nextUrl.searchParams.get("branchId") || "";
+  const mineOnly = req.nextUrl.searchParams.get("mine") === "true";
   const isGlobal = role === "DEVELOPER" || role === "SUPER_ADMIN";
   const branchId = isGlobal ? requestedBranch : ownBranch;
   if (!isGlobal && ownBranch === "ALL") return NextResponse.json({ error: "Your staff account is missing a branch assignment." }, { status: 403 });
@@ -89,7 +127,7 @@ export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") || getISTDateKey();
   try {
     const result = await getDocs(query(collection(db, "staffAttendance"), where("attendanceDate", "==", date), limit(1000)));
-    const records = result.docs.map((item) => ({ id: item.id, ...item.data() })).filter((row: any) => (!branchId || row.branchId === branchId)).sort((a: any, b: any) => String(b.createdAtISO).localeCompare(String(a.createdAtISO)));
+    const records = result.docs.map((item) => ({ id: item.id, ...item.data() })).filter((row: any) => (mineOnly ? row.staffId === String(staff.staffId) : canViewAll || row.staffId === String(staff.staffId)) && (mineOnly || !branchId || row.branchId === branchId)).sort((a: any, b: any) => String(b.createdAtISO).localeCompare(String(a.createdAtISO)));
     return NextResponse.json({ records, canChooseBranch: isGlobal });
   } catch (error) {
     console.error("Attendance read failed:", error);

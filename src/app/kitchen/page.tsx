@@ -41,6 +41,10 @@ import {
   updateDoc,
   addDoc,
   Timestamp,
+  getDocs,
+  query,
+  where,
+  limit,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { CATEGORIES } from "@/data/menu";
@@ -56,6 +60,7 @@ import DateNavigator from "@/components/DateNavigator";
 import ThemeControl from "@/components/ThemeControl";
 import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
 import { usePendingOrderReminder } from "@/hooks/usePendingOrderReminder";
+import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
 
 /* ============================================================
    TYPES
@@ -1160,6 +1165,24 @@ export default function KitchenSystem() {
       setIsSubmittingOrder(true);
       try {
         const newOrderNum = generateOrderNumber();
+        const normalizedCustomerPhone = normalisePhone(newOrderPhone);
+        let matchedCustomer: { uid: string; name: string } | null = null;
+        if (newOrderSource === "kitchen" && normalizedCustomerPhone.length === 10) {
+          const customerSnapshot = await getDocs(
+            query(
+              collection(db, "customers"),
+              where("phone", "in", phoneSearchVariants(normalizedCustomerPhone)),
+              limit(1)
+            )
+          );
+          const customerDoc = customerSnapshot.docs[0];
+          if (customerDoc) {
+            matchedCustomer = {
+              uid: customerDoc.id,
+              name: String(customerDoc.data().name || "Customer"),
+            };
+          }
+        }
         const subtotal = newOrderItems.reduce(
           (acc, item) => acc + safeNumber(item.price) * item.quantity,
           0
@@ -1171,9 +1194,14 @@ export default function KitchenSystem() {
 
         const orderData = {
           orderNumber: newOrderNum,
-          customerName: newOrderCustomer.trim() || "Walk-in Customer",
-          customerPhone: newOrderPhone.trim() || "Counter",
-          phone: newOrderPhone.trim() || "Counter",
+          customerName:
+            (newOrderCustomer.trim() &&
+            newOrderCustomer.trim() !== "Walk-in Customer"
+              ? newOrderCustomer.trim()
+              : matchedCustomer?.name) || "Walk-in Customer",
+          customerPhone: normalizedCustomerPhone || newOrderPhone.trim() || "Counter",
+          phone: normalizedCustomerPhone || newOrderPhone.trim() || "Counter",
+          ...(matchedCustomer ? { customerId: matchedCustomer.uid } : {}),
           type: newOrderType,
           orderType: newOrderType,
           instructions: newOrderInstructions.trim() || "",

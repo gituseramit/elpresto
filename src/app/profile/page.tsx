@@ -60,6 +60,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import RatingModal from "@/components/RatingModal";
+import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
 
 /* ============================================================= */
 /* Types                                                         */
@@ -187,10 +188,6 @@ const inputCls =
 /* ============================================================= */
 /* Helpers                                                       */
 /* ============================================================= */
-
-function normalisePhone(raw: string): string {
-  return raw.replace(/\D/g, "").slice(-10);
-}
 
 function normalisePincode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 6);
@@ -694,15 +691,16 @@ export default function ProfilePage() {
         userProfile?.phone || user.phoneNumber || ""
       );
       if (historyPhone.length === 10) {
+        const phoneVariants = phoneSearchVariants(historyPhone);
         orderQueries.push(
           query(
             ordersCollection,
-            where("phone", "==", historyPhone),
+            where("phone", "in", phoneVariants),
             limit(MAX_ORDERS_FETCH)
           ),
           query(
             ordersCollection,
-            where("customerPhone", "==", historyPhone),
+            where("customerPhone", "in", phoneVariants),
             limit(MAX_ORDERS_FETCH)
           )
         );
@@ -719,11 +717,14 @@ export default function ProfilePage() {
             [data.phone, data.customerPhone].some(
               (value) => normalisePhone(String(value || "")) === historyPhone
             );
-          const legacyCounterOrder =
-            !data.customerId &&
-            (data.source === "counter" || data.orderSource === "counter") &&
+          const phoneMatchedCounterOrder =
+            (data.source === "counter" ||
+              data.orderSource === "counter" ||
+              String(data.kitchenNotes || "")
+                .toLowerCase()
+                .startsWith("created at pos counter")) &&
             matchesRegisteredPhone;
-          if (data.customerId === user.uid || legacyCounterOrder) {
+          if (data.customerId === user.uid || phoneMatchedCounterOrder) {
             ordersById.set(d.id, {
               id: d.id,
               ...(data as Omit<ProfileOrder, "id">),

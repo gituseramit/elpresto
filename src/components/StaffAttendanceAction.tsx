@@ -8,8 +8,32 @@ export default function StaffAttendanceAction({ token, branchId, compact = false
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [marked, setMarked] = useState(false);
+  const [markedActions, setMarkedActions] = useState<Set<string>>(() => new Set());
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
   const [selectedBranch, setSelectedBranch] = useState("");
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    fetch("/api/staff-attendance?mine=true", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((data) => {
+        if (!active || !Array.isArray(data?.records)) return;
+        setMarkedActions(
+          new Set(
+            data.records
+              .filter((record: { status?: string }) => record.status === "SUCCESS")
+              .map((record: { action?: string }) => record.action || "")
+          )
+        );
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [token]);
   useEffect(() => {
     if (branchId !== "ALL") return;
     getActiveBranches().then((items) => { setBranches(items.map(({ id, name }) => ({ id, name }))); if (items.length) setSelectedBranch(items[0].id); }).catch(() => setMessage("Could not load active branches."));
@@ -27,7 +51,13 @@ export default function StaffAttendanceAction({ token, branchId, compact = false
           body: JSON.stringify({ action, branchId: branchId === "ALL" ? selectedBranch : branchId, latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Attendance could not be recorded.");
+        if (!response.ok) {
+          if (response.status === 409) {
+            setMarkedActions((current) => new Set(current).add(action));
+          }
+          throw new Error(data.error || "Attendance could not be recorded.");
+        }
+        setMarkedActions((current) => new Set(current).add(action));
         setMarked(true);
         setMessage(`Attendance marked — ${action === "CHECK_IN" ? "check-in" : "check-out"} recorded at ${data.branchName}${data.lowConfidence ? ". GPS accuracy is low; ask a manager to review." : "."}`);
       } catch (error) { setMessage(error instanceof Error ? error.message : "Attendance could not be recorded."); }
@@ -42,8 +72,8 @@ export default function StaffAttendanceAction({ token, branchId, compact = false
     <div className="mb-3 flex items-center gap-2 text-sm font-black"><MapPin size={16} className="text-orange-500" /> Staff Attendance</div>
     {branchId === "ALL" && <label className="mb-2 block text-[11px] font-semibold text-slate-500">Marking attendance at<select value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-800 dark:text-white">{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>}
     <div className="grid grid-cols-2 gap-2">
-      <button disabled={busy || (branchId === "ALL" && !selectedBranch)} onClick={() => mark("CHECK_IN")} className="rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-60">{busy ? <Loader2 size={14} className="mx-auto animate-spin" /> : "Check in"}</button>
-      <button disabled={busy || (branchId === "ALL" && !selectedBranch)} onClick={() => mark("CHECK_OUT")} className="rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-60"><span className="inline-flex items-center gap-1"><Clock3 size={13} /> Check out</span></button>
+      <button disabled={busy || markedActions.has("CHECK_IN") || (branchId === "ALL" && !selectedBranch)} onClick={() => mark("CHECK_IN")} className="rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-60">{busy ? <Loader2 size={14} className="mx-auto animate-spin" /> : markedActions.has("CHECK_IN") ? "Checked in today" : "Check in"}</button>
+      <button disabled={busy || markedActions.has("CHECK_OUT") || (branchId === "ALL" && !selectedBranch)} onClick={() => mark("CHECK_OUT")} className="rounded-xl bg-slate-800 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-60"><span className="inline-flex items-center gap-1"><Clock3 size={13} />{markedActions.has("CHECK_OUT") ? "Checked out today" : "Check out"}</span></button>
     </div>
     {message && <p role="status" aria-live="polite" className={`mt-3 flex items-start gap-2 rounded-xl border p-3 text-xs font-semibold leading-relaxed ${marked ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-slate-800/70 dark:text-slate-300"}`}>{marked && <CheckCircle2 size={16} className="mt-0.5 shrink-0" />}{message}</p>}
   </section>;
