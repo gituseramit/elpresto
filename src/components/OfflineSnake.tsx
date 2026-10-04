@@ -141,9 +141,12 @@ export default function OfflineSnake() {
   useEffect(() => {
     if (!isVisible) return;
     const previousOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
     };
   }, [isVisible]);
 
@@ -237,41 +240,38 @@ export default function OfflineSnake() {
     ] as const)
   );
   const foodIndex = food.x + food.y * BOARD_SIZE;
-  const controlButton =
-    "grid h-12 w-12 touch-manipulation place-items-center rounded-2xl border border-white/10 bg-white/10 text-2xl font-black text-white transition active:scale-95 active:bg-orange-500/50 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300";
-
   return (
     <section
       role="dialog"
       aria-modal="true"
       aria-labelledby="offline-snake-title"
-      className="fixed inset-0 z-[10000] overflow-y-auto bg-[#160e0a] text-white"
+      className="offline-snake-overlay fixed inset-0 z-[10000] overflow-hidden bg-[#160e0a] text-white"
     >
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_18%_12%,rgba(249,115,22,0.2),transparent_35%),radial-gradient(ellipse_at_86%_84%,rgba(234,88,12,0.13),transparent_34%)]"
       />
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-5xl flex-col justify-center px-4 py-7 sm:px-6">
-        <header className="mb-5 text-center">
+      <div className="offline-snake-shell relative mx-auto flex min-h-dvh w-full max-w-5xl flex-col justify-center px-4 py-7 sm:px-6">
+        <header className="offline-snake-header mb-5 text-center">
           <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-orange-300/20 bg-orange-400/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-orange-200">
             <span className="motion-safe:animate-pulse h-2 w-2 rounded-full bg-orange-400" />
             You&apos;re offline
           </p>
           <h1
             id="offline-snake-title"
-            className="mt-4 text-3xl font-black tracking-tight sm:text-4xl"
+            className="offline-snake-title mt-4 text-3xl font-black tracking-tight sm:text-4xl"
           >
             No internet. <span className="text-orange-400">No boredom.</span>
           </h1>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-orange-50/65">
+          <p className="offline-snake-description mx-auto mt-2 max-w-xl text-sm leading-relaxed text-orange-50/65">
             Play a quick round while we wait for your connection to come back.
             Your page will return automatically.
           </p>
         </header>
 
-        <div className="mx-auto grid w-full max-w-3xl gap-5 rounded-[2rem] border border-white/10 bg-white/[0.045] p-3 shadow-[0_30px_100px_rgba(0,0,0,0.38)] backdrop-blur sm:p-5 md:grid-cols-[minmax(0,1fr)_230px]">
-          <div className="mx-auto w-full max-w-[440px]">
-            <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-orange-50/65">
+        <div className="offline-snake-panel mx-auto grid w-full max-w-3xl gap-5 rounded-[2rem] border border-white/10 bg-white/[0.045] p-3 shadow-[0_30px_100px_rgba(0,0,0,0.38)] backdrop-blur sm:p-5 md:grid-cols-[minmax(0,1fr)_230px]">
+          <div className="offline-snake-board-wrap mx-auto w-full max-w-[440px]">
+            <div className="offline-snake-scoreline mb-2 flex items-center justify-between px-1 text-xs font-bold text-orange-50/65">
               <span className="offline-snake-keyboard-hint">
                 Use arrow keys or WASD
               </span>
@@ -283,7 +283,7 @@ export default function OfflineSnake() {
             <div
               role="img"
               aria-label={"Snake game board, score " + score}
-              className="grid aspect-square w-full touch-none select-none gap-[3px] rounded-2xl border border-orange-200/10 bg-[#281912] p-2.5 shadow-inner"
+              className="offline-snake-board grid aspect-square w-full touch-none select-none gap-[3px] rounded-2xl border border-orange-200/10 bg-[#281912] p-2.5 shadow-inner"
               style={{
                 gridTemplateColumns: "repeat(" + BOARD_SIZE + ", minmax(0, 1fr))",
               }}
@@ -312,8 +312,8 @@ export default function OfflineSnake() {
             </div>
           </div>
 
-          <aside className="flex flex-col items-center justify-between gap-4 py-1 text-center md:items-stretch md:text-left">
-            <div>
+          <aside className="offline-snake-aside flex flex-col items-center justify-between gap-4 py-1 text-center md:items-stretch md:text-left">
+            <div className="offline-snake-details">
               <div className="flex items-center justify-center gap-2 md:justify-between">
                 <span className="text-xs font-black uppercase tracking-[0.16em] text-orange-200/75">
                   Best bite
@@ -337,49 +337,8 @@ export default function OfflineSnake() {
               )}
             </div>
 
-            <div className="flex flex-col items-center gap-3">
-              <div
-                role="group"
-                aria-label="Directional controls"
-                className="offline-snake-dpad grid grid-cols-3 gap-2"
-              >
-                <span />
-                <button
-                  type="button"
-                  className={controlButton}
-                  aria-label="Move up"
-                  onClick={() => queueDirection({ x: 0, y: -1 })}
-                >
-                  ↑
-                </button>
-                <span />
-                <button
-                  type="button"
-                  className={controlButton}
-                  aria-label="Move left"
-                  onClick={() => queueDirection({ x: -1, y: 0 })}
-                >
-                  ←
-                </button>
-                <button
-                  type="button"
-                  className={controlButton}
-                  aria-label="Move down"
-                  onClick={() => queueDirection({ x: 0, y: 1 })}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className={controlButton}
-                  aria-label="Move right"
-                  onClick={() => queueDirection({ x: 1, y: 0 })}
-                >
-                  →
-                </button>
-              </div>
-
-              <div className="flex w-full gap-2">
+            <div className="offline-snake-actions-wrap flex flex-col items-center gap-3">
+              <div className="offline-snake-actions flex w-full gap-2">
                 <button
                   type="button"
                   onClick={() => setIsPaused((current) => !current)}
@@ -399,13 +358,13 @@ export default function OfflineSnake() {
                 )}
               </div>
             </div>
-            <p className="text-[10px] font-semibold text-white/35">
+            <p className="offline-snake-shortcuts text-[10px] font-semibold text-white/35">
               Space or P pauses · R restarts after a round
             </p>
           </aside>
         </div>
 
-        <p className="mt-5 text-center text-[11px] font-semibold text-white/40">
+        <p className="offline-snake-footer mt-5 text-center text-[11px] font-semibold text-white/40">
           Back online? This screen will close on its own.
         </p>
       </div>

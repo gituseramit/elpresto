@@ -26,12 +26,10 @@
       .aside-title { color: #fed7aa; font-size: 11px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
       .score-pill { margin-top: 9px; color: #ffedd5; font-size: 23px; font-weight: 950; font-variant-numeric: tabular-nums; }
       .instructions { margin: 0; color: rgba(255,248,241,.65); font-size: 13px; line-height: 1.6; }
-      .controls { display: grid; grid-template-columns: repeat(3, 48px); gap: 8px; }
       button { min-height: 44px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 21px; font-weight: 900; cursor: pointer; touch-action: manipulation; }
       button:hover { background: rgba(255,255,255,.17); }
       button:active { transform: scale(.96); }
       button:focus-visible { outline: 2px solid #fdba74; outline-offset: 2px; }
-      .empty { visibility: hidden; }
       .actions { display: flex; width: 100%; gap: 8px; }
       .actions button { flex: 1; padding: 9px 10px; font-size: 12px; }
       #restart { border-color: transparent; background: #f97316; }
@@ -48,8 +46,20 @@
         .aside-title, .score-pill, .instructions { display: none; }
         footer { margin-top: 13px; }
       }
-      @media (pointer: coarse) {
-        .controls, .keyboard-hint { display: none; }
+      @media (max-width: 767px), (hover: none), (pointer: coarse) {
+        body { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; overscroll-behavior: none; }
+        main { width: 100%; height: 100%; min-height: 0; justify-content: flex-start; gap: 8px; padding: max(8px, env(safe-area-inset-top)) 12px max(8px, env(safe-area-inset-bottom)); overflow: hidden; }
+        header { flex: 0 0 auto; margin: 0; }
+        h1 { margin: 6px 0 0; font-size: clamp(20px, 5.2vw, 25px); }
+        header p, footer, .aside-title, .score-pill, .instructions { display: none; }
+        .panel { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; min-height: 0; padding: 8px; border-radius: 22px; overflow: hidden; }
+        .board-wrap { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: none; min-height: 0; margin: 0; }
+        .scoreline { flex: 0 0 auto; margin-bottom: 6px; font-size: 11px; }
+        canvas { width: min(100%, calc(100dvh - 180px)); max-height: calc(100dvh - 180px); flex: 0 1 auto; align-self: center; }
+        aside { flex: 0 0 auto; gap: 0; }
+        .keyboard-hint { display: none !important; }
+        .actions { width: min(100%, 340px); margin: 0 auto; }
+        #message { min-height: 0; }
         .swipe-score-hint { display: inline; }
         .swipe-hint { display: block; }
       }
@@ -75,14 +85,6 @@
           </div>
           <p class="instructions">Eat the golden dots, grow your snake, and keep clear of the walls.</p>
           <p id="message" role="status"></p>
-          <div class="controls" role="group" aria-label="Touch controls">
-            <span class="empty"></span>
-            <button type="button" data-dir="up" aria-label="Move up">↑</button>
-            <span class="empty"></span>
-            <button type="button" data-dir="left" aria-label="Move left">←</button>
-            <button type="button" data-dir="down" aria-label="Move down">↓</button>
-            <button type="button" data-dir="right" aria-label="Move right">→</button>
-          </div>
           <p class="swipe-hint">Swipe anywhere on the board to steer</p>
           <div class="actions">
             <button type="button" id="pause">Pause</button>
@@ -208,9 +210,6 @@
           left: { x: -1, y: 0 },
           right: { x: 1, y: 0 }
         };
-        document.querySelectorAll("[data-dir]").forEach((button) => {
-          button.addEventListener("click", () => setDirection(directions[button.dataset.dir]));
-        });
         canvas.addEventListener("pointerdown", (event) => {
           if (event.pointerType === "mouse") return;
           swipeStart = { x: event.clientX, y: event.clientY };

@@ -1406,13 +1406,105 @@ html.dark .ep-luxe-checkout .ep-checkout-loyalty {
   display: none;
 }
 
-@media (pointer: coarse) {
-  .offline-snake-dpad,
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
   .offline-snake-keyboard-hint {
     display: none !important;
   }
 
   .offline-snake-swipe-hint {
     display: inline !important;
+  }
+}
+
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
+  .offline-snake-overlay {
+    block-size: 100vh;
+    block-size: 100dvh;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+
+  .offline-snake-shell {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    min-height: 0 !important;
+    max-width: none !important;
+    justify-content: flex-start !important;
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) 12px max(8px, env(safe-area-inset-bottom)) !important;
+    overflow: hidden;
+  }
+
+  .offline-snake-header {
+    flex: 0 0 auto;
+    margin: 0 !important;
+  }
+
+  .offline-snake-title {
+    margin-top: 6px !important;
+    font-size: clamp(1.15rem, 5.2vw, 1.55rem) !important;
+    line-height: 1.15;
+  }
+
+  .offline-snake-description,
+  .offline-snake-footer,
+  .offline-snake-details,
+  .offline-snake-shortcuts {
+    display: none !important;
+  }
+
+  .offline-snake-panel {
+    display: flex !important;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 8px !important;
+    width: 100%;
+    max-width: 560px !important;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px !important;
+    border-radius: 22px !important;
+  }
+
+  .offline-snake-board-wrap {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    max-width: none !important;
+    min-height: 0;
+    margin: 0 !important;
+  }
+
+  .offline-snake-scoreline {
+    flex: 0 0 auto;
+    margin-bottom: 6px !important;
+    font-size: 11px !important;
+  }
+
+  .offline-snake-board {
+    width: min(100%, calc(100dvh - 180px)) !important;
+    max-height: calc(100dvh - 180px);
+    flex: 0 1 auto;
+    align-self: center;
+    touch-action: none;
+  }
+
+  .offline-snake-aside {
+    flex: 0 0 auto !important;
+    gap: 0 !important;
+    align-items: center;
+    padding: 0 !important;
+  }
+
+  .offline-snake-actions-wrap {
+    width: 100%;
+  }
+
+  .offline-snake-actions {
+    width: min(100%, 340px);
+    margin: 0 auto;
   }
 }
