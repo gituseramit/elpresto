@@ -1401,3 +1401,18 @@ html.dark .ep-luxe-checkout .ep-checkout-loyalty {
   border-color: rgba(255, 255, 255, 0.09);
   background: #171f2c !important;
 }
+
+.offline-snake-swipe-hint {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .offline-snake-dpad,
+  .offline-snake-keyboard-hint {
+    display: none !important;
+  }
+
+  .offline-snake-swipe-hint {
+    display: inline !important;
+  }
+}

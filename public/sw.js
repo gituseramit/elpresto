@@ -1,4 +1,4 @@
-const OFFLINE_CACHE = "elpestro-offline-v1";
+const OFFLINE_CACHE = "elpestro-offline-v2";
 const OFFLINE_PAGE = "/offline.html";
 const STAFF_PREFIXES = [
   "/admin",

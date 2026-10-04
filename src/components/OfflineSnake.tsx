@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { usePathname } from "next/navigation";
 
 type Point = { x: number; y: number };
@@ -57,6 +63,7 @@ export default function OfflineSnake() {
   const foodRef = useRef(food);
   const directionRef = useRef<Direction>(START_DIRECTION);
   const queuedDirectionRef = useRef<Direction>(START_DIRECTION);
+  const swipeStartRef = useRef<Point | null>(null);
 
   const queueDirection = useCallback((next: Direction) => {
     const current = queuedDirectionRef.current;
@@ -77,6 +84,34 @@ export default function OfflineSnake() {
     setIsPaused(false);
     setIsGameOver(false);
   }, []);
+
+  const handleBoardPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse") return;
+      swipeStartRef.current = { x: event.clientX, y: event.clientY };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    []
+  );
+
+  const handleBoardPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const start = swipeStartRef.current;
+      swipeStartRef.current = null;
+      if (!start) return;
+
+      const deltaX = event.clientX - start.x;
+      const deltaY = event.clientY - start.y;
+      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 20) return;
+
+      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        queueDirection({ x: deltaX > 0 ? 1 : -1, y: 0 });
+      } else {
+        queueDirection({ x: 0, y: deltaY > 0 ? 1 : -1 });
+      }
+    },
+    [queueDirection]
+  );
 
   useEffect(() => {
     const syncConnection = () => setIsOnline(navigator.onLine);
@@ -237,15 +272,25 @@ export default function OfflineSnake() {
         <div className="mx-auto grid w-full max-w-3xl gap-5 rounded-[2rem] border border-white/10 bg-white/[0.045] p-3 shadow-[0_30px_100px_rgba(0,0,0,0.38)] backdrop-blur sm:p-5 md:grid-cols-[minmax(0,1fr)_230px]">
           <div className="mx-auto w-full max-w-[440px]">
             <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-orange-50/65">
-              <span>Use arrow keys or WASD</span>
+              <span className="offline-snake-keyboard-hint">
+                Use arrow keys or WASD
+              </span>
+              <span className="offline-snake-swipe-hint">
+                Swipe the board to steer
+              </span>
               <span aria-live="polite">Score {score}</span>
             </div>
             <div
               role="img"
               aria-label={"Snake game board, score " + score}
-              className="grid aspect-square w-full gap-[3px] rounded-2xl border border-orange-200/10 bg-[#281912] p-2.5 shadow-inner"
+              className="grid aspect-square w-full touch-none select-none gap-[3px] rounded-2xl border border-orange-200/10 bg-[#281912] p-2.5 shadow-inner"
               style={{
                 gridTemplateColumns: "repeat(" + BOARD_SIZE + ", minmax(0, 1fr))",
+              }}
+              onPointerDown={handleBoardPointerDown}
+              onPointerUp={handleBoardPointerUp}
+              onPointerCancel={() => {
+                swipeStartRef.current = null;
               }}
             >
               {Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => {
@@ -265,9 +310,6 @@ export default function OfflineSnake() {
                 return <div key={index} aria-hidden="true" className={cellClass} />;
               })}
             </div>
-            <p className="mt-2 text-center text-[11px] font-semibold text-orange-50/50 md:hidden">
-              Use the arrows to steer
-            </p>
           </div>
 
           <aside className="flex flex-col items-center justify-between gap-4 py-1 text-center md:items-stretch md:text-left">
@@ -298,8 +340,8 @@ export default function OfflineSnake() {
             <div className="flex flex-col items-center gap-3">
               <div
                 role="group"
-                aria-label="Touch controls"
-                className="grid grid-cols-3 gap-2"
+                aria-label="Directional controls"
+                className="offline-snake-dpad grid grid-cols-3 gap-2"
               >
                 <span />
                 <button

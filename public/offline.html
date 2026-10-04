@@ -19,7 +19,9 @@
       .panel { display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: center; gap: 22px; width: 100%; max-width: 780px; margin: 0 auto; padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 28px; background: rgba(255,255,255,.045); box-shadow: 0 30px 100px rgba(0,0,0,.38); }
       .board-wrap { width: 100%; max-width: 500px; margin: auto; }
       .scoreline { display: flex; justify-content: space-between; gap: 10px; margin: 0 2px 8px; color: rgba(255,248,241,.7); font-size: 12px; font-weight: 800; }
-      canvas { display: block; width: 100%; aspect-ratio: 1; border: 1px solid rgba(253,186,116,.14); border-radius: 18px; background: #281912; box-shadow: inset 0 2px 12px rgba(0,0,0,.25); }
+      .swipe-score-hint { display: none; }
+      .swipe-hint { display: none; margin: 0; color: rgba(255,248,241,.55); font-size: 11px; font-weight: 700; }
+      canvas { display: block; width: 100%; aspect-ratio: 1; border: 1px solid rgba(253,186,116,.14); border-radius: 18px; background: #281912; box-shadow: inset 0 2px 12px rgba(0,0,0,.25); touch-action: none; user-select: none; -webkit-user-select: none; }
       aside { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
       .aside-title { color: #fed7aa; font-size: 11px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
       .score-pill { margin-top: 9px; color: #ffedd5; font-size: 23px; font-weight: 950; font-variant-numeric: tabular-nums; }
@@ -44,8 +46,12 @@
         aside { gap: 11px; }
         .scoreline { font-size: 11px; }
         .aside-title, .score-pill, .instructions { display: none; }
-        .controls { grid-template-columns: repeat(3, 46px); }
         footer { margin-top: 13px; }
+      }
+      @media (pointer: coarse) {
+        .controls, .keyboard-hint { display: none; }
+        .swipe-score-hint { display: inline; }
+        .swipe-hint { display: block; }
       }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
     </style>
@@ -59,7 +65,7 @@
       </header>
       <section class="panel" aria-label="Offline Snake game">
         <div class="board-wrap">
-          <div class="scoreline"><span>Arrow keys or WASD</span><span id="score-label" aria-live="polite">Score 0</span></div>
+          <div class="scoreline"><span class="keyboard-hint">Arrow keys or WASD</span><span class="swipe-score-hint">Swipe to steer</span><span id="score-label" aria-live="polite">Score 0</span></div>
           <canvas id="board" width="540" height="540" role="img" aria-label="Snake game board"></canvas>
         </div>
         <aside>
@@ -77,6 +83,7 @@
             <button type="button" data-dir="down" aria-label="Move down">↓</button>
             <button type="button" data-dir="right" aria-label="Move right">→</button>
           </div>
+          <p class="swipe-hint">Swipe anywhere on the board to steer</p>
           <div class="actions">
             <button type="button" id="pause">Pause</button>
             <button type="button" id="restart" hidden>Play again</button>
@@ -104,6 +111,7 @@
         let score = 0;
         let paused = false;
         let gameOver = false;
+        let swipeStart = null;
 
         function makeFood() {
           let point;
@@ -203,6 +211,24 @@
         document.querySelectorAll("[data-dir]").forEach((button) => {
           button.addEventListener("click", () => setDirection(directions[button.dataset.dir]));
         });
+        canvas.addEventListener("pointerdown", (event) => {
+          if (event.pointerType === "mouse") return;
+          swipeStart = { x: event.clientX, y: event.clientY };
+          canvas.setPointerCapture(event.pointerId);
+        });
+        canvas.addEventListener("pointerup", (event) => {
+          if (!swipeStart) return;
+          const deltaX = event.clientX - swipeStart.x;
+          const deltaY = event.clientY - swipeStart.y;
+          swipeStart = null;
+          if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 20) return;
+          if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            setDirection({ x: deltaX > 0 ? 1 : -1, y: 0 });
+          } else {
+            setDirection({ x: 0, y: deltaY > 0 ? 1 : -1 });
+          }
+        });
+        canvas.addEventListener("pointercancel", () => { swipeStart = null; });
         document.addEventListener("keydown", (event) => {
           const key = event.key.toLowerCase();
           const keys = {
