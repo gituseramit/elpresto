@@ -37,6 +37,12 @@ function getISTDateKey(date = new Date()) {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+function isDateKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 export async function POST(req: NextRequest) {
   const staff = await getStaff(req);
   if (!staff) return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
@@ -124,9 +130,21 @@ export async function GET(req: NextRequest) {
   const branchId = isGlobal ? requestedBranch : ownBranch;
   if (!isGlobal && ownBranch === "ALL") return NextResponse.json({ error: "Your staff account is missing a branch assignment." }, { status: 403 });
   if (!isGlobal && requestedBranch && requestedBranch !== ownBranch) return NextResponse.json({ error: "You can only view attendance for your assigned branch." }, { status: 403 });
-  const date = req.nextUrl.searchParams.get("date") || getISTDateKey();
+  const fallbackDate = req.nextUrl.searchParams.get("date") || getISTDateKey();
+  const startDate = req.nextUrl.searchParams.get("startDate") || fallbackDate;
+  const endDate = req.nextUrl.searchParams.get("endDate") || fallbackDate;
+  if (!isDateKey(startDate) || !isDateKey(endDate) || startDate > endDate) {
+    return NextResponse.json({ error: "Choose a valid date range with the start date on or before the end date." }, { status: 400 });
+  }
   try {
-    const result = await getDocs(query(collection(db, "staffAttendance"), where("attendanceDate", "==", date), limit(1000)));
+    const attendanceQuery = startDate === endDate
+      ? query(collection(db, "staffAttendance"), where("attendanceDate", "==", startDate))
+      : query(
+          collection(db, "staffAttendance"),
+          where("attendanceDate", ">=", startDate),
+          where("attendanceDate", "<=", endDate)
+        );
+    const result = await getDocs(attendanceQuery);
     const records = result.docs.map((item) => ({ id: item.id, ...item.data() })).filter((row: any) => (mineOnly ? row.staffId === String(staff.staffId) : canViewAll || row.staffId === String(staff.staffId)) && (mineOnly || !branchId || row.branchId === branchId)).sort((a: any, b: any) => String(b.createdAtISO).localeCompare(String(a.createdAtISO)));
     return NextResponse.json({ records, canChooseBranch: isGlobal });
   } catch (error) {
