@@ -255,8 +255,8 @@ const focusRing =
   "focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-300";
 const lift =
   "transition-transform hover:-translate-y-0.5 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0";
-const btnRed = `inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#8F2119] to-[#651C18] font-bold text-white shadow-md shadow-[#651C18]/20 ep-home-cta ep-home-cta--red ${lift} ${focusRing}`;
-const btnDark = `inline-flex items-center justify-center gap-2 rounded-xl bg-[#241915] font-bold text-white shadow-md hover:bg-[#3A2821] ep-home-cta ep-home-cta--dark ${lift} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gray-400`;
+const btnRed = `inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#8F2119] to-[#651C18] font-bold text-white shadow-md shadow-[#651C18]/20 ep-home-cta ep-home-cta--red ep-uiverse-button ${lift} ${focusRing}`;
+const btnDark = `inline-flex items-center justify-center gap-2 rounded-xl bg-[#241915] font-bold text-white shadow-md hover:bg-[#3A2821] ep-home-cta ep-home-cta--dark ep-uiverse-button ${lift} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gray-400`;
 const arrow =
   "transition-transform group-hover:translate-x-1 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0";
 const footLink =
@@ -371,7 +371,7 @@ export default function Home() {
                 </Link>
                 <Link
                   href="/menu?mode=delivery"
-                  className="group ep-home-cta ep-home-cta--light ep-ride-button flex w-full items-center justify-center gap-2.5 rounded-xl border-2 border-orange-200 bg-white px-6 py-4 text-base font-bold text-gray-900 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 sm:w-auto"
+                  className="group ep-home-cta ep-home-cta--light ep-uiverse-button ep-ride-button flex w-full items-center justify-center gap-2.5 rounded-xl border-2 border-orange-200 bg-white px-6 py-4 text-base font-bold text-gray-900 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 sm:w-auto"
                 >
                   <span className="ep-ride-content">
                     <Truck size={20} aria-hidden="true" className="text-[#D92312]" />

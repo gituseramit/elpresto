@@ -300,6 +300,48 @@ html[data-ep-intro="skip"] .ep-presto-intro {
   box-shadow: 0 12px 26px -15px rgba(158, 64, 33, 0.38);
 }
 
+/* Uiverse-inspired motion for customer-facing homepage actions. Kept scoped
+   to this class so admin and ordering controls retain their own affordances. */
+.ep-uiverse-button {
+  padding: 17px 40px;
+  border: 0;
+  border-radius: 50px;
+  background-color: #fff;
+  background-image: none;
+  color: #241915;
+  box-shadow: rgb(0 0 0 / 5%) 0 0 8px;
+  cursor: pointer;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-size: 15px;
+  transition: all 0.5s ease;
+  transform: none;
+}
+
+.ep-home-cta--red.ep-uiverse-button:hover,
+.ep-home-cta--dark.ep-uiverse-button:hover,
+.ep-home-cta--light.ep-uiverse-button:hover {
+  border-color: transparent;
+  background-color: hsl(261deg 80% 48%);
+  background-image: none;
+  color: hsl(0deg 0% 100%);
+  box-shadow: rgb(93 24 220) 0 7px 29px 0;
+  filter: none;
+  letter-spacing: 3px;
+  transform: none;
+}
+
+.ep-home-cta--red.ep-uiverse-button:active,
+.ep-home-cta--dark.ep-uiverse-button:active,
+.ep-home-cta--light.ep-uiverse-button:active {
+  background-color: hsl(261deg 80% 48%);
+  color: hsl(0deg 0% 100%);
+  box-shadow: rgb(93 24 220) 0 0 0 0;
+  letter-spacing: 3px;
+  transform: translateY(10px);
+  transition: 100ms;
+}
+
 .ep-ride-button {
   isolation: isolate;
   overflow: hidden;
@@ -385,6 +427,7 @@ html[data-ep-intro="skip"] .ep-presto-intro {
 
 @media (prefers-reduced-motion: reduce) {
   .ep-home-cta,
+  .ep-uiverse-button,
   .ep-auth-motion-button,
   .ep-auth-arrow,
   .ep-auth-google-mark {
@@ -393,6 +436,11 @@ html[data-ep-intro="skip"] .ep-presto-intro {
 
   .ep-home-cta,
   .ep-home-cta:hover,
+  .ep-uiverse-button:hover,
+  .ep-uiverse-button:active,
+  .ep-home-cta--red.ep-uiverse-button:active,
+  .ep-home-cta--dark.ep-uiverse-button:active,
+  .ep-home-cta--light.ep-uiverse-button:active,
   .ep-auth-motion-button:hover:not(:disabled),
   .ep-auth-motion-button:active:not(:disabled),
   .ep-auth-motion-button:hover:not(:disabled) .ep-auth-arrow,
