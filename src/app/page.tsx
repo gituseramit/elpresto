@@ -329,13 +329,13 @@ export default function Home() {
             <div className="space-y-6 text-center lg:col-span-7 lg:text-left">
               <p className="ep-home-eyebrow inline-flex items-center gap-2 rounded-full border border-red-200/80 bg-red-50/95 px-4 py-1.5 text-xs font-bold text-[#D92312] shadow-sm md:text-sm">
                 <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#A77A35]" />
-                Freshly baked · ingredient notes
+                Fresh from the oven · made to order
               </p>
 
               <h1 className="ep-home-display text-balance text-4xl font-black leading-[1.05] tracking-tight text-gray-950 sm:text-5xl md:text-6xl lg:text-7xl">
-                Crave the crust.
+                Golden, crisp crust.
                 <span className="relative mt-1 block w-fit text-[#D92312] max-lg:mx-auto">
-                  Choose with confidence.
+                  A proper mozzarella pull.
                   <svg
                     aria-hidden="true"
                     className="absolute -bottom-2 left-0 h-3 w-full text-amber-400"
@@ -354,11 +354,12 @@ export default function Home() {
               </h1>
 
               <p className="mx-auto max-w-xl text-base font-medium leading-relaxed text-gray-700 sm:text-lg lg:mx-0">
-                Pizzas baked on{" "}
-                <strong className="font-bold text-gray-950">100% whole-wheat atta</strong>, topped
-                with{" "}
-                <strong className="font-bold text-gray-950">real stretchy mozzarella</strong> and
-                zero palm oil. Pick up at UCER or get it delivered across Naini.
+                Every pizza starts with a stone-ground crust made from{" "}
+                <strong className="font-bold text-gray-950">100% whole-wheat atta</strong>, then
+                gets{" "}
+                <strong className="font-bold text-gray-950">real mozzarella</strong> and savoury
+                toppings. Baked fresh to order with zero palm oil—big pizza comfort, made with
+                ingredients you can feel good about.
               </p>
 
               <div className="flex flex-col items-center gap-3.5 pt-2 sm:flex-row sm:justify-center lg:justify-start">
@@ -398,7 +399,7 @@ export default function Home() {
             {/* Hero visual */}
             <div className="relative flex justify-center lg:col-span-5">
               <div className="relative w-full max-w-md">
-                <div className="ep-home-photo-frame relative aspect-square rounded-[2.5rem] bg-gradient-to-tr from-[#D92312]/20 via-amber-400/20 to-red-600/30 p-3.5 shadow-[0_20px_50px_rgba(217,35,18,0.25)]">
+                <div className="ep-home-photo-frame relative aspect-square rounded-[2.5rem] bg-gradient-to-tr from-orange-500/30 via-amber-400/25 to-orange-800/30 p-3.5 shadow-[0_20px_50px_rgba(234,88,12,0.28)]">
                   <div className="ep-home-photo group relative h-full w-full overflow-hidden rounded-[2rem]">
                     <Image
                       src={HERO_IMAGE}
@@ -662,10 +663,11 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto mb-12 max-w-2xl text-center">
               <h2 className="text-balance text-3xl font-black tracking-tight text-gray-950 md:text-5xl">
-              From the menu
+              Find your next craving
             </h2>
             <p className="mt-2 text-sm font-medium text-gray-700 md:text-base">
-              Hand-tossed on whole wheat, finished with Italian herbs and real mozzarella.
+              Golden pizzas, bold paneer, crisp garlic bread and cool sips—fresh favourites for
+              every kind of appetite.
             </p>
           </div>
 

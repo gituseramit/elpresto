@@ -304,41 +304,55 @@ html[data-ep-intro="skip"] .ep-presto-intro {
    to this class so admin and ordering controls retain their own affordances. */
 .ep-uiverse-button {
   padding: 17px 40px;
-  border: 0;
   border-radius: 50px;
-  background-color: #fff;
-  background-image: none;
-  color: #241915;
-  box-shadow: rgb(0 0 0 / 5%) 0 0 8px;
   cursor: pointer;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   font-size: 15px;
-  transition: all 0.5s ease;
+  transition: letter-spacing 220ms ease, box-shadow 220ms ease, background-color 220ms ease, color 220ms ease, transform 160ms ease;
   transform: none;
 }
 
+@media (max-width: 640px) {
+  .ep-uiverse-button {
+    padding: 14px 22px;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+}
+
+.ep-home-cta--red.ep-uiverse-button {
+  background-color: #f97316;
+  background-image: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(234, 88, 12, 0.24);
+}
+
 .ep-home-cta--red.ep-uiverse-button:hover,
+.ep-home-cta--red.ep-uiverse-button:focus-visible,
 .ep-home-cta--dark.ep-uiverse-button:hover,
-.ep-home-cta--light.ep-uiverse-button:hover {
+.ep-home-cta--dark.ep-uiverse-button:focus-visible,
+.ep-home-cta--light.ep-uiverse-button:hover,
+.ep-home-cta--light.ep-uiverse-button:focus-visible {
   border-color: transparent;
-  background-color: hsl(261deg 80% 48%);
-  background-image: none;
-  color: hsl(0deg 0% 100%);
-  box-shadow: rgb(93 24 220) 0 7px 29px 0;
+  background-color: #f97316;
+  background-image: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(234, 88, 12, 0.32);
   filter: none;
-  letter-spacing: 3px;
-  transform: none;
+  letter-spacing: 2px;
+  transform: translateY(-2px);
 }
 
 .ep-home-cta--red.ep-uiverse-button:active,
 .ep-home-cta--dark.ep-uiverse-button:active,
 .ep-home-cta--light.ep-uiverse-button:active {
-  background-color: hsl(261deg 80% 48%);
-  color: hsl(0deg 0% 100%);
-  box-shadow: rgb(93 24 220) 0 0 0 0;
-  letter-spacing: 3px;
-  transform: translateY(10px);
+  background-color: #ea580c;
+  background-image: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(194, 65, 12, 0.2);
+  letter-spacing: 2px;
+  transform: translateY(1px) scale(0.99);
   transition: 100ms;
 }
 
@@ -1065,8 +1079,8 @@ html.dark .storefront-theme [class*="bg-[#B8190B]"].text-white {
 
 .ep-luxe-home .ep-home-photo-frame {
   padding: 0.55rem;
-  background: linear-gradient(145deg, #e6d5b5, #b18a4d 70%, #eadfc9);
-  box-shadow: 0 32px 75px -28px rgba(57, 35, 20, 0.42);
+  background: linear-gradient(145deg, #ffd59a, #ee873a 58%, #b9531a);
+  box-shadow: 0 32px 75px -28px rgba(160, 74, 24, 0.44);
 }
 
 .ep-luxe-home .ep-home-photo {
