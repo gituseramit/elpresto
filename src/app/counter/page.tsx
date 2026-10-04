@@ -202,7 +202,38 @@ function normaliseOrderType(raw: unknown): OrderType {
 }
 
 function normalisePhone(raw: string): string {
-  return raw.replace(/\D/g, "").slice(0, 10);
+  return raw.replace(/\D/g, "").slice(-10);
+}
+
+async function findCustomerByPhone(
+  rawPhone: string
+): Promise<LinkedCustomer | null> {
+  const phone = normalisePhone(rawPhone);
+  if (phone.length !== 10) return null;
+
+  const findByStoredPhone = async (storedPhone: string) => {
+    const snap = await getDocs(
+      query(collection(db, "customers"), where("phone", "==", storedPhone))
+    );
+    const customer = snap.docs[0];
+    if (!customer) return null;
+    const data = customer.data();
+    return {
+      uid: customer.id,
+      name: String(data.name || "Customer"),
+      phone,
+    } satisfies LinkedCustomer;
+  };
+
+  const exactMatch = await findByStoredPhone(phone);
+  if (exactMatch) return exactMatch;
+
+  const alternateMatches = await Promise.all(
+    ["+91" + phone, "91" + phone, "0" + phone].map(findByStoredPhone)
+  );
+  return alternateMatches.find(
+    (customer): customer is LinkedCustomer => customer !== null
+  ) || null;
 }
 
 function sanitiseTel(raw: string): string {
@@ -1268,6 +1299,7 @@ export default function CounterPOSPage() {
   }, [cartItems, cartCount, discountMode, discountValue, showToast]);
 
   const clearAllFields = useCallback(() => {
+    linkedCustomerRef.current = null;
     setCartItems([]);
     setDiscountMode("flat");
     setDiscountValue(0);
@@ -1396,22 +1428,13 @@ export default function CounterPOSPage() {
     const phone = normalisePhone(customerPhone);
     if (!phone) return;
     try {
-      const q = query(
-        collection(db, "customers"),
-        where("phone", "==", phone)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const data = snap.docs[0].data();
-        setLinkedCustomer({
-          uid: snap.docs[0].id,
-          name: String(data.name || "Customer"),
-          phone,
-        });
-        if (!customerName) setCustomerName(String(data.name || ""));
-        showToast(`Linked: ${data.name || "Customer"}`, "success");
+      const customer = await findCustomerByPhone(phone);
+      linkedCustomerRef.current = customer;
+      setLinkedCustomer(customer);
+      if (customer) {
+        if (!customerName) setCustomerName(customer.name);
+        showToast("Linked: " + customer.name, "success");
       } else {
-        setLinkedCustomer(null);
         showToast("New customer", "info");
       }
     } catch (err) {
@@ -1493,6 +1516,24 @@ export default function CounterPOSPage() {
 
       setIsSubmitting(true);
       try {
+        const submittedPhone = normalisePhone(customerPhoneRef.current);
+        let orderCustomer =
+          linkedCustomerRef.current?.phone === submittedPhone
+            ? linkedCustomerRef.current
+            : null;
+        if (submittedPhone.length === 10 && !orderCustomer) {
+          orderCustomer = await findCustomerByPhone(submittedPhone);
+          linkedCustomerRef.current = orderCustomer;
+          setLinkedCustomer(orderCustomer);
+          if (!customerNameRef.current.trim() && orderCustomer?.name) {
+            customerNameRef.current = orderCustomer.name;
+            setCustomerName(orderCustomer.name);
+          }
+        } else if (submittedPhone.length !== 10) {
+          linkedCustomerRef.current = null;
+          setLinkedCustomer(null);
+        }
+
         const oType = orderTypeRef.current;
         const sub = items.reduce(
           (sum, ci) => sum + ci.item.price * ci.quantity,
@@ -1530,6 +1571,7 @@ export default function CounterPOSPage() {
           orderNumber,
           customerName:
             customerNameRef.current.trim() ||
+            orderCustomer?.name ||
             (oType === "delivery"
               ? "Delivery Customer"
               : "Walk-in Customer"),
@@ -1559,8 +1601,8 @@ export default function CounterPOSPage() {
           counterName: counter?.name || "Counter",
           updatedAt: Timestamp.now(),
           updatedBy: rider.id,
-          ...(linkedCustomerRef.current
-            ? { customerId: linkedCustomerRef.current.uid }
+          ...(orderCustomer
+            ? { customerId: orderCustomer.uid }
             : {}),
         };
 
@@ -2314,9 +2356,14 @@ export default function CounterPOSPage() {
               inputMode="numeric"
               placeholder="Phone"
               value={customerPhone}
-              onChange={(e) =>
-                setCustomerPhone(normalisePhone(e.target.value))
-              }
+              onChange={(e) => {
+                const phone = normalisePhone(e.target.value);
+                setCustomerPhone(phone);
+                if (linkedCustomerRef.current?.phone !== phone) {
+                  linkedCustomerRef.current = null;
+                  setLinkedCustomer(null);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void handleSearchCustomer();
               }}

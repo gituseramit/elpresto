@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#160e0a" />
+    <title>EL PRESTO · Offline Snake</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #160e0a; color: #fff8f1; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; background: radial-gradient(ellipse at 18% 12%, rgba(249,115,22,.2), transparent 35%), radial-gradient(ellipse at 86% 84%, rgba(234,88,12,.13), transparent 34%), #160e0a; }
+      main { width: min(960px, 100%); min-height: 100vh; margin: 0 auto; padding: 28px 18px; display: flex; flex-direction: column; justify-content: center; }
+      header { text-align: center; margin-bottom: 20px; }
+      .badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(253,186,116,.22); border-radius: 999px; padding: 7px 13px; background: rgba(251,146,60,.1); color: #fed7aa; font-size: 11px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #fb923c; }
+      h1 { margin: 16px 0 7px; font-size: clamp(30px, 6vw, 44px); line-height: 1.08; letter-spacing: -.04em; }
+      h1 span { color: #fb923c; }
+      header p { max-width: 560px; margin: 0 auto; color: rgba(255,248,241,.65); font-size: 14px; line-height: 1.6; }
+      .panel { display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: center; gap: 22px; width: 100%; max-width: 780px; margin: 0 auto; padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 28px; background: rgba(255,255,255,.045); box-shadow: 0 30px 100px rgba(0,0,0,.38); }
+      .board-wrap { width: 100%; max-width: 500px; margin: auto; }
+      .scoreline { display: flex; justify-content: space-between; gap: 10px; margin: 0 2px 8px; color: rgba(255,248,241,.7); font-size: 12px; font-weight: 800; }
+      canvas { display: block; width: 100%; aspect-ratio: 1; border: 1px solid rgba(253,186,116,.14); border-radius: 18px; background: #281912; box-shadow: inset 0 2px 12px rgba(0,0,0,.25); }
+      aside { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+      .aside-title { color: #fed7aa; font-size: 11px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
+      .score-pill { margin-top: 9px; color: #ffedd5; font-size: 23px; font-weight: 950; font-variant-numeric: tabular-nums; }
+      .instructions { margin: 0; color: rgba(255,248,241,.65); font-size: 13px; line-height: 1.6; }
+      .controls { display: grid; grid-template-columns: repeat(3, 48px); gap: 8px; }
+      button { min-height: 44px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255,.1); color: #fff; font: inherit; font-size: 21px; font-weight: 900; cursor: pointer; touch-action: manipulation; }
+      button:hover { background: rgba(255,255,255,.17); }
+      button:active { transform: scale(.96); }
+      button:focus-visible { outline: 2px solid #fdba74; outline-offset: 2px; }
+      .empty { visibility: hidden; }
+      .actions { display: flex; width: 100%; gap: 8px; }
+      .actions button { flex: 1; padding: 9px 10px; font-size: 12px; }
+      #restart { border-color: transparent; background: #f97316; }
+      #restart:hover { background: #fb923c; }
+      #message { min-height: 20px; margin: 0; color: #fdba74; font-size: 13px; font-weight: 850; }
+      footer { margin-top: 18px; color: rgba(255,255,255,.4); text-align: center; font-size: 11px; font-weight: 700; }
+      @media (max-width: 700px) {
+        main { padding: 22px 14px; }
+        header { margin-bottom: 14px; }
+        .panel { grid-template-columns: 1fr; gap: 16px; padding: 12px; border-radius: 24px; }
+        .board-wrap { max-width: min(82vw, 440px); }
+        aside { gap: 11px; }
+        .scoreline { font-size: 11px; }
+        .aside-title, .score-pill, .instructions { display: none; }
+        .controls { grid-template-columns: repeat(3, 46px); }
+        footer { margin-top: 13px; }
+      }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="badge"><span class="dot" aria-hidden="true"></span>You&apos;re offline</div>
+        <h1>No internet. <span>No boredom.</span></h1>
+        <p>Play a quick round while we wait for your connection to come back. Your page will reload automatically when you&apos;re online.</p>
+      </header>
+      <section class="panel" aria-label="Offline Snake game">
+        <div class="board-wrap">
+          <div class="scoreline"><span>Arrow keys or WASD</span><span id="score-label" aria-live="polite">Score 0</span></div>
+          <canvas id="board" width="540" height="540" role="img" aria-label="Snake game board"></canvas>
+        </div>
+        <aside>
+          <div>
+            <div class="aside-title">One more bite</div>
+            <div class="score-pill"><span id="score">0</span> pts</div>
+          </div>
+          <p class="instructions">Eat the golden dots, grow your snake, and keep clear of the walls.</p>
+          <p id="message" role="status"></p>
+          <div class="controls" role="group" aria-label="Touch controls">
+            <span class="empty"></span>
+            <button type="button" data-dir="up" aria-label="Move up">↑</button>
+            <span class="empty"></span>
+            <button type="button" data-dir="left" aria-label="Move left">←</button>
+            <button type="button" data-dir="down" aria-label="Move down">↓</button>
+            <button type="button" data-dir="right" aria-label="Move right">→</button>
+          </div>
+          <div class="actions">
+            <button type="button" id="pause">Pause</button>
+            <button type="button" id="restart" hidden>Play again</button>
+          </div>
+        </aside>
+      </section>
+      <footer>Back online? This screen will close on its own.</footer>
+    </main>
+    <script>
+      (() => {
+        const size = 18;
+        const cellSize = 30;
+        const canvas = document.getElementById("board");
+        const context = canvas.getContext("2d");
+        const scoreText = document.getElementById("score");
+        const scoreLabel = document.getElementById("score-label");
+        const message = document.getElementById("message");
+        const pauseButton = document.getElementById("pause");
+        const restartButton = document.getElementById("restart");
+        const startSnake = [{ x: 7, y: 9 }, { x: 6, y: 9 }, { x: 5, y: 9 }];
+        let snake = startSnake.map((point) => ({ ...point }));
+        let direction = { x: 1, y: 0 };
+        let queuedDirection = { ...direction };
+        let food = makeFood();
+        let score = 0;
+        let paused = false;
+        let gameOver = false;
+
+        function makeFood() {
+          let point;
+          do {
+            point = { x: Math.floor(Math.random() * size), y: Math.floor(Math.random() * size) };
+          } while (snake && snake.some((part) => part.x === point.x && part.y === point.y));
+          return point;
+        }
+
+        function setDirection(next) {
+          if (next.x + queuedDirection.x === 0 && next.y + queuedDirection.y === 0) return;
+          queuedDirection = next;
+        }
+
+        function render() {
+          context.fillStyle = "#281912";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.strokeStyle = "rgba(255,255,255,.035)";
+          context.lineWidth = 1;
+          for (let line = 1; line < size; line += 1) {
+            const offset = line * cellSize;
+            context.beginPath();
+            context.moveTo(offset, 0);
+            context.lineTo(offset, canvas.height);
+            context.moveTo(0, offset);
+            context.lineTo(canvas.width, offset);
+            context.stroke();
+          }
+          context.fillStyle = "#fcd34d";
+          context.beginPath();
+          context.arc(food.x * cellSize + cellSize / 2, food.y * cellSize + cellSize / 2, cellSize * .34, 0, Math.PI * 2);
+          context.fill();
+          snake.forEach((part, index) => {
+            context.fillStyle = index === 0 ? "#fb923c" : "#fdba74";
+            context.fillRect(part.x * cellSize + 3, part.y * cellSize + 3, cellSize - 6, cellSize - 6);
+          });
+        }
+
+        function finishRound(text) {
+          gameOver = true;
+          message.textContent = text + " · final score " + score;
+          pauseButton.disabled = true;
+          restartButton.hidden = false;
+        }
+
+        function tick() {
+          if (paused || gameOver) return;
+          direction = queuedDirection;
+          const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+          const ate = head.x === food.x && head.y === food.y;
+          const body = ate ? snake : snake.slice(0, -1);
+          const hitWall = head.x < 0 || head.y < 0 || head.x >= size || head.y >= size;
+          const hitBody = body.some((part) => part.x === head.x && part.y === head.y);
+          if (hitWall || hitBody) {
+            finishRound("Round over");
+            return;
+          }
+          snake = [head, ...snake];
+          if (!ate) snake.pop();
+          if (ate) {
+            score += 10;
+            scoreText.textContent = String(score);
+            scoreLabel.textContent = "Score " + score;
+            if (snake.length === size * size) {
+              render();
+              finishRound("Board cleared");
+              return;
+            }
+            food = makeFood();
+          }
+          render();
+        }
+
+        function restart() {
+          snake = startSnake.map((point) => ({ ...point }));
+          direction = { x: 1, y: 0 };
+          queuedDirection = { ...direction };
+          food = makeFood();
+          score = 0;
+          paused = false;
+          gameOver = false;
+          scoreText.textContent = "0";
+          scoreLabel.textContent = "Score 0";
+          message.textContent = "";
+          pauseButton.disabled = false;
+          pauseButton.textContent = "Pause";
+          restartButton.hidden = true;
+          render();
+        }
+
+        const directions = {
+          up: { x: 0, y: -1 },
+          down: { x: 0, y: 1 },
+          left: { x: -1, y: 0 },
+          right: { x: 1, y: 0 }
+        };
+        document.querySelectorAll("[data-dir]").forEach((button) => {
+          button.addEventListener("click", () => setDirection(directions[button.dataset.dir]));
+        });
+        document.addEventListener("keydown", (event) => {
+          const key = event.key.toLowerCase();
+          const keys = {
+            arrowup: "up", w: "up", arrowdown: "down", s: "down",
+            arrowleft: "left", a: "left", arrowright: "right", d: "right"
+          };
+          if (keys[key]) {
+            event.preventDefault();
+            setDirection(directions[keys[key]]);
+          } else if ((key === " " || key === "p") && !gameOver) {
+            event.preventDefault();
+            paused = !paused;
+            pauseButton.textContent = paused ? "Resume" : "Pause";
+            message.textContent = paused ? "Game paused" : "";
+          } else if (key === "r" && gameOver) {
+            restart();
+          }
+        });
+        pauseButton.addEventListener("click", () => {
+          if (gameOver) return;
+          paused = !paused;
+          pauseButton.textContent = paused ? "Resume" : "Pause";
+          message.textContent = paused ? "Game paused" : "";
+        });
+        restartButton.addEventListener("click", restart);
+        window.addEventListener("online", () => window.location.reload());
+        render();
+        window.setInterval(tick, 145);
+      })();
+    </script>
+  </body>
+</html>

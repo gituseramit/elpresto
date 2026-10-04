@@ -55,6 +55,7 @@ import {
   query,
   where,
   getDocs,
+  onSnapshot,
   limit,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -91,6 +92,11 @@ interface OrderItemShape {
 
 interface ProfileOrder {
   id: string;
+  customerId?: string;
+  customerPhone?: string;
+  phone?: string;
+  source?: string;
+  orderSource?: string;
   orderNumber?: string;
   status?: string;
   deliveryStatus?: string;
@@ -183,7 +189,7 @@ const inputCls =
 /* ============================================================= */
 
 function normalisePhone(raw: string): string {
-  return raw.replace(/\D/g, "").slice(0, 10);
+  return raw.replace(/\D/g, "").slice(-10);
 }
 
 function normalisePincode(raw: string): string {
@@ -676,18 +682,56 @@ export default function ProfilePage() {
     setOrdersLoading(true);
     setOrdersError("");
     try {
-      const q = query(
-        collection(db, "orders"),
-        where("customerId", "==", user.uid),
-        limit(MAX_ORDERS_FETCH)
+      const ordersCollection = collection(db, "orders");
+      const orderQueries = [
+        query(
+          ordersCollection,
+          where("customerId", "==", user.uid),
+          limit(MAX_ORDERS_FETCH)
+        ),
+      ];
+      const historyPhone = normalisePhone(
+        userProfile?.phone || user.phoneNumber || ""
       );
-      const snap = await getDocs(q);
+      if (historyPhone.length === 10) {
+        orderQueries.push(
+          query(
+            ordersCollection,
+            where("phone", "==", historyPhone),
+            limit(MAX_ORDERS_FETCH)
+          ),
+          query(
+            ordersCollection,
+            where("customerPhone", "==", historyPhone),
+            limit(MAX_ORDERS_FETCH)
+          )
+        );
+      }
+      const snapshots = await Promise.all(orderQueries.map(getDocs));
       if (fetchCancelledRef.current) return;
 
-      const list: ProfileOrder[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<ProfileOrder, "id">),
-      }));
+      const ordersById = new Map<string, ProfileOrder>();
+      for (const snap of snapshots) {
+        for (const d of snap.docs) {
+          const data = d.data();
+          const matchesRegisteredPhone =
+            historyPhone.length === 10 &&
+            [data.phone, data.customerPhone].some(
+              (value) => normalisePhone(String(value || "")) === historyPhone
+            );
+          const legacyCounterOrder =
+            !data.customerId &&
+            (data.source === "counter" || data.orderSource === "counter") &&
+            matchesRegisteredPhone;
+          if (data.customerId === user.uid || legacyCounterOrder) {
+            ordersById.set(d.id, {
+              id: d.id,
+              ...(data as Omit<ProfileOrder, "id">),
+            });
+          }
+        }
+      }
+      const list = Array.from(ordersById.values());
 
       list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
       setOrders(list);
@@ -699,7 +743,7 @@ export default function ProfilePage() {
     } finally {
       if (!fetchCancelledRef.current) setOrdersLoading(false);
     }
-  }, [user]);
+  }, [user, userProfile?.phone]);
 
   useEffect(() => {
     if (!user) return;
@@ -709,6 +753,43 @@ export default function ProfilePage() {
       fetchCancelledRef.current = true;
     };
   }, [user, fetchOrders]);
+
+  /* Keep newly linked counter orders and their status current while history is open. */
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const customerOrdersQuery = query(
+      collection(db, "orders"),
+      where("customerId", "==", user.uid),
+      limit(MAX_ORDERS_FETCH)
+    );
+    const unsubscribe = onSnapshot(
+      customerOrdersQuery,
+      (snapshot) => {
+        if (!active) return;
+        const liveOrders: ProfileOrder[] = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<ProfileOrder, "id">),
+        }));
+        setOrders((current) => {
+          const merged = new Map(
+            current.map((order) => [order.id, order] as const)
+          );
+          for (const order of liveOrders) merged.set(order.id, order);
+          const list = Array.from(merged.values());
+          list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
+          return list;
+        });
+      },
+      (error) => {
+        if (active) console.error("Live order history sync failed:", error);
+      }
+    );
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [user]);
 
   /* ---- Derived ---- */
   const displayName =

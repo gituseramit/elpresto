@@ -7,6 +7,7 @@ import Cart from "@/components/Cart";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import RouteAwareChrome from "@/components/RouteAwareChrome";
+import OfflineSnake from "@/components/OfflineSnake";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -135,6 +136,7 @@ export default function RootLayout({
               <RouteAwareChrome>
                 <Cart />
               </RouteAwareChrome>
+              <OfflineSnake />
             </div>
           </AuthProvider>
         </ThemeProvider>
