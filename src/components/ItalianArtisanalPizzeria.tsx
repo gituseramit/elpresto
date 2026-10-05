@@ -15,6 +15,8 @@ import {
   Phone,
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
+import { DUMMY_MENU, CATEGORIES } from "@/data/menu";
+
 
 /* ============================================================= */
 /* Audio Haptic Helper for adding to box                         */
@@ -49,100 +51,23 @@ function playPizzaChime() {
 }
 
 /* ============================================================= */
-/* Italian Artisanal Popular Pizzas Data                         */
+/* Category Emoji Map                                            */
 /* ============================================================= */
-interface PizzaProduct {
-  id: string;
-  name: string;
-  category: "Classica" | "Bianche" | "Artisanal Specials";
-  description: string;
-  price: number;
-  imageUrl: string;
-  badge?: string;
-  flameRating: number;
-  crustTag: string;
-}
-
-const POPULAR_PIZZAS: PizzaProduct[] = [
-  {
-    id: "pizz-margherita-dop",
-    name: "Margherita Di Bufala DOP",
-    category: "Classica",
-    description:
-      "San Marzano D.O.P. Tomatoes, Fresh Buffalo Mozzarella, Torn Genovese Basil, Extra Virgin Olive Oil.",
-    price: 24.0,
-    imageUrl:
-      "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=800&q=80",
-    badge: "Master DOP",
-    flameRating: 5,
-    crustTag: "72h Sourdough",
-  },
-  {
-    id: "pizz-diavola-calabrian",
-    name: "Diavola Spicy Calabrian Pepperoni",
-    category: "Classica",
-    description:
-      "Spicy Soppressata Salami, Calabrian Chili Honey Drizzle, Smoked Provola, San Marzano Base.",
-    price: 26.0,
-    imageUrl:
-      "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=800&q=80",
-    badge: "Fiery Hot",
-    flameRating: 5,
-    crustTag: "Wood-Fired Embers",
-  },
-  {
-    id: "pizz-tartufo-porcini",
-    name: "Tartufo & Wild Forest Porcini",
-    category: "Bianche",
-    description:
-      "Umbrian Black Truffle Cream, Sautéed Porcini Mushrooms, Fior Di Latte, 24-Month Parmigiano-Reggiano.",
-    price: 28.0,
-    imageUrl:
-      "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=800&q=80",
-    badge: "Truffle Reserve",
-    flameRating: 4,
-    crustTag: "Bianca Crema",
-  },
-  {
-    id: "pizz-quattro-formaggi",
-    name: "Quattro Formaggi Al Forno",
-    category: "Bianche",
-    description:
-      "Gorgonzola Dolce DOP, Smoked Scamorza, Creamy Fior di Latte, Aged Pecorino Romano & Wild Orange Blossom Honey.",
-    price: 25.0,
-    imageUrl:
-      "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800&q=80",
-    badge: "Four Cheeses",
-    flameRating: 4,
-    crustTag: "Molten Crust",
-  },
-  {
-    id: "pizz-vesuvio-burrata",
-    name: "Vesuvio Burrata & Basil Pesto",
-    category: "Artisanal Specials",
-    description:
-      "Whole Pugliese Burrata Heart, Sun-Ripened Yellow Vesuvian Datterini, Basilico Genovese Pesto & Roasted Pine Nuts.",
-    price: 29.0,
-    imageUrl:
-      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&q=80",
-    badge: "Chef's Crown",
-    flameRating: 5,
-    crustTag: "Whole Burrata",
-  },
-  {
-    id: "pizz-capricciosa-legna",
-    name: "Capricciosa Rustica Alla Legna",
-    category: "Artisanal Specials",
-    description:
-      "Cured Prosciutto Cotto, Wood-Roasted Artichoke Hearts, Cremini Mushrooms, Gaeta Olives & Fresh Oregano Specks.",
-    price: 27.0,
-    imageUrl:
-      "https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?w=800&q=80",
-    badge: "Traditional",
-    flameRating: 4,
-    crustTag: "Blistered Leopard Crust",
-  },
-];
+const CATEGORY_EMOJI: Record<string, string> = {
+  "Healthy Mania": "🌾",
+  "Double Healthy Mania": "🧀",
+  "Indian Tadka Pizza": "🌶️",
+  "Medium Pizzas": "🍕",
+  "Large Pizzas": "🍕",
+  Subs: "🥖",
+  Fries: "🍟",
+  Bowls: "🥗",
+  Burgers: "🍔",
+  Sides: "🧄",
+  Desserts: "🍫",
+  Beverages: "☕",
+  "Extra Toppings": "✨",
+};
 
 /* ============================================================= */
 /* Main Italian Artisanal Landing Page Component                 */
@@ -156,20 +81,11 @@ export default function ItalianArtisanalPizzeria() {
 
   const addItem = useCartStore((state) => state.addItem);
 
-  const handleAddToBox = (pizza: PizzaProduct) => {
+  const handleAddToBox = (item: (typeof DUMMY_MENU)[0]) => {
     playPizzaChime();
-    addItem({
-      id: pizza.id,
-      name: pizza.name,
-      description: pizza.description,
-      price: pizza.price,
-      category: pizza.category,
-      imageUrl: pizza.imageUrl,
-      available: true,
-      isVeg: !pizza.name.includes("Diavola") && !pizza.name.includes("Capricciosa"),
-    });
+    addItem(item);
 
-    setAddedItemNotice(pizza.name);
+    setAddedItemNotice(item.name);
     setTimeout(() => {
       setAddedItemNotice(null);
     }, 2400);
@@ -189,10 +105,14 @@ export default function ItalianArtisanalPizzeria() {
     }, 1500);
   };
 
-  const filteredPizzas =
+  const availableCategories = ["All", ...CATEGORIES.filter((c) => c !== "All")];
+
+  const filteredItems =
     selectedFilter === "All"
-      ? POPULAR_PIZZAS
-      : POPULAR_PIZZAS.filter((p) => p.category === selectedFilter);
+      ? DUMMY_MENU.filter((item) => item.available)
+      : DUMMY_MENU.filter(
+          (item) => item.available && item.category === selectedFilter
+        );
 
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-[#FAF7F2] via-[#FDFBF7] to-[#F5EFEB] text-[#1C1917] selection:bg-[#D9381E] selection:text-white">
@@ -513,101 +433,99 @@ export default function ItalianArtisanalPizzeria() {
                 Il Nostro Menu
               </span>
               <h2 className="font-serif-luxury mt-1 text-3xl font-extrabold tracking-tight text-[#181413] sm:text-5xl">
-                Popular Pizzas
+                Our Full Menu
               </h2>
               <p className="font-cormorant-craft mx-auto mt-2 max-w-xl text-lg italic text-stone-600">
-                Fired on seasoned Biscotto di Sorrento stone with volcanic crust blisters.
+                100% whole wheat base · real mozzarella · zero palm oil · made fresh to order.
               </p>
 
-              {/* Filter Tabs */}
+              {/* Filter Tabs — real categories */}
               <div className="mt-8 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-                {["All", "Classica", "Bianche", "Artisanal Specials"].map((tab) => (
+                {availableCategories.map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => setSelectedFilter(tab)}
-                    className={`rounded-full px-5 py-2 text-xs font-bold tracking-wide transition-all duration-200 ${
+                    className={`rounded-full px-4 py-2 text-xs font-bold tracking-wide transition-all duration-200 ${
                       selectedFilter === tab
                         ? "bg-[#D9381E] text-white shadow-md shadow-red-600/30"
                         : "border border-stone-200 bg-white text-stone-700 hover:border-[#D9381E] hover:text-[#D9381E]"
                     }`}
                   >
-                    {tab}
+                    {tab !== "All" && (CATEGORY_EMOJI[tab] ?? "🍴")} {tab}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 3-Column Interactive Product Cards */}
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
-              {filteredPizzas.map((pizza) => (
+
+            {/* Product Cards Grid */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredItems.map((item) => (
                 <div
-                  key={pizza.id}
-                  className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-stone-200/80 bg-white p-5 italian-card-shadow transition-all duration-300 hover:-translate-y-2 hover:border-[#D9381E]/40 hover:italian-card-shadow-hover"
+                  key={item.id}
+                  className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-stone-200/80 bg-white p-5 italian-card-shadow transition-all duration-300 hover:-translate-y-1.5 hover:border-[#D9381E]/40 hover:italian-card-shadow-hover"
                 >
-                  {/* Top Image Render */}
+                  {/* Image */}
                   <div>
                     <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-stone-100">
                       <Image
-                        src={pizza.imageUrl}
-                        alt={pizza.name}
+                        src={item.imageUrl}
+                        alt={item.name}
                         fill
                         className="object-cover transition-transform duration-500 group-hover:scale-105"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-60" />
 
-                      {/* Badge */}
-                      {pizza.badge && (
-                        <span className="absolute left-3 top-3 rounded-full bg-[#181413]/90 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#E5A93B] shadow-md backdrop-blur-md">
-                          {pizza.badge}
-                        </span>
-                      )}
-
-                      {/* Crust Tag */}
-                      <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-2.5 py-0.5 text-[10px] font-bold text-stone-800 shadow">
-                        {pizza.crustTag}
+                      {/* Veg / Non-veg indicator */}
+                      <span
+                        className={`absolute left-3 top-3 flex h-5 w-5 items-center justify-center rounded border-2 bg-white ${
+                          item.isVeg ? "border-emerald-600" : "border-red-600"
+                        }`}
+                        title={item.isVeg ? "Pure Veg" : "Non-Veg"}
+                      >
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            item.isVeg ? "bg-emerald-600" : "bg-red-600"
+                          }`}
+                        />
                       </span>
                     </div>
 
                     {/* Details */}
-                    <div className="mt-5 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#D9381E]">
-                          {pizza.category}
+                    <div className="mt-4 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-600">
+                          {CATEGORY_EMOJI[item.category] ?? "🍴"} {item.category}
                         </span>
-                        <div className="flex items-center text-amber-500">
-                          {Array.from({ length: pizza.flameRating }).map((_, i) => (
-                            <Flame key={i} size={12} className="fill-amber-500 text-amber-500" />
-                          ))}
-                        </div>
                       </div>
 
-                      <h3 className="font-serif-luxury text-xl font-bold text-[#181413] transition-colors group-hover:text-[#D9381E]">
-                        {pizza.name}
+                      <h3 className="font-serif-luxury text-base font-bold leading-snug text-[#181413] transition-colors group-hover:text-[#D9381E] line-clamp-2">
+                        {item.name}
                       </h3>
 
-                      <p className="text-xs leading-relaxed text-stone-600 line-clamp-3">
-                        {pizza.description}
+                      <p className="text-xs leading-relaxed text-stone-500 line-clamp-2">
+                        {item.description}
                       </p>
                     </div>
                   </div>
 
-                  {/* Price & Add to Box Button */}
-                  <div className="mt-6 flex items-center justify-between border-t border-stone-100 pt-4">
+                  {/* Price & Add */}
+                  <div className="mt-5 flex items-center justify-between border-t border-stone-100 pt-4">
                     <div>
                       <span className="text-[10px] uppercase tracking-wider text-stone-400">
                         Price
                       </span>
                       <p className="font-serif-luxury text-2xl font-black text-[#181413]">
-                        ${pizza.price.toFixed(2)}
+                        ₹{item.price.toLocaleString("en-IN")}
                       </p>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => handleAddToBox(pizza)}
-                      aria-label={`Add ${pizza.name} to Pizza Box`}
-                      className="group/btn flex h-12 w-12 items-center justify-center rounded-full bg-[#FAF7F2] border border-stone-200 text-[#D9381E] shadow-sm transition-all duration-200 hover:scale-110 hover:border-[#D9381E] hover:bg-[#D9381E] hover:text-white hover:shadow-lg active:scale-95"
+                      onClick={() => handleAddToBox(item)}
+                      aria-label={`Add ${item.name} to cart`}
+                      className="group/btn flex h-12 w-12 items-center justify-center rounded-full border border-stone-200 bg-[#FAF7F2] text-[#D9381E] shadow-sm transition-all duration-200 hover:scale-110 hover:border-[#D9381E] hover:bg-[#D9381E] hover:text-white hover:shadow-lg active:scale-95"
                     >
                       <Plus size={22} className="stroke-[2.5]" />
                     </button>
@@ -616,13 +534,14 @@ export default function ItalianArtisanalPizzeria() {
               ))}
             </div>
 
+
             {/* Bottom Menu Action */}
             <div className="mt-14 text-center">
               <Link
                 href="/menu"
                 className="inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white px-8 py-3.5 font-bold text-[#181413] shadow-sm transition-all duration-200 hover:border-[#D9381E] hover:bg-[#FAF7F2] hover:text-[#D9381E]"
               >
-                <span>View Full Artisanal Menu (40+ Recipes)</span>
+                <span>View Full Menu ({DUMMY_MENU.length}+ Items)</span>
                 <ArrowRight size={16} />
               </Link>
             </div>
@@ -646,46 +565,33 @@ export default function ItalianArtisanalPizzeria() {
                   </span>
 
                   <h2 className="font-serif-luxury text-3xl font-extrabold tracking-tight text-[#181413] sm:text-5xl">
-                    Burrata Pugliese &amp; Prosciutto di Parma
+                    EL PRESTO SPECIAL Pizza ⭐
                   </h2>
 
                   <p className="font-cormorant-craft text-lg italic text-stone-700 sm:text-xl">
-                    Creamy Center Burrata Bursting Over 24-Month Aged Parma Ham, Wild Arugula, And
-                    Aged Balsamic Pearls.
+                    A secret blend of premium toppings on a 100% whole wheat base — our chef&apos;s
+                    most-loved signature creation. Baked fresh to order.
                   </p>
 
                   <div className="flex items-baseline gap-3">
                     <span className="font-serif-luxury text-4xl font-black text-[#D9381E]">
-                      $29.00
-                    </span>
-                    <span className="text-xs uppercase tracking-wider text-stone-400 line-through">
-                      $34.00
+                      ₹199
                     </span>
                     <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
-                      Limited Batch Today
+                      Best Seller Today
                     </span>
                   </div>
 
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleAddToBox({
-                          id: "burrata-signature-promo",
-                          name: "Burrata Pugliese & Prosciutto di Parma",
-                          category: "Artisanal Specials",
-                          description:
-                            "Creamy Center Burrata Bursting Over 24-Month Aged Parma Ham, Wild Arugula, And Aged Balsamic Pearls.",
-                          price: 29.0,
-                          imageUrl:
-                            "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=800&q=80",
-                          flameRating: 5,
-                          crustTag: "Chef's Selection",
-                        })
-                      }
+                      onClick={() => {
+                        const special = DUMMY_MENU.find((i) => i.id === "itp6");
+                        if (special) handleAddToBox(special);
+                      }}
                       className="group inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-[#D9381E] to-[#E23E1D] px-8 py-4 text-base font-bold text-white shadow-xl shadow-red-600/30 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-red-600/40"
                     >
-                      <span>Claim Today&apos;s Slice</span>
+                      <span>Add to Cart — ₹199</span>
                       <ArrowRight
                         size={18}
                         className="transition-transform group-hover:translate-x-1"
@@ -919,15 +825,15 @@ export default function ItalianArtisanalPizzeria() {
                 <div className="space-y-2 text-xs text-stone-600">
                   <p className="flex items-start gap-2">
                     <MapPin size={16} className="mt-0.5 shrink-0 text-[#D9381E]" />
-                    <span>148 Via Trastevere, Little Italy, New York 10013 / UCER Naini Campus</span>
+                    <span>United College of Engineering &amp; Research (UCER), Naini, Prayagraj, UP – 211010</span>
                   </p>
                   <p className="flex items-center gap-2">
                     <Clock size={16} className="shrink-0 text-[#E5A93B]" />
-                    <span>Wood-Fired Hours: 11:30 AM - 10:30 PM Daily</span>
+                    <span>Open Daily: 10:00 AM – 11:00 PM</span>
                   </p>
                   <p className="flex items-center gap-2">
                     <Phone size={16} className="shrink-0 text-emerald-600" />
-                    <span>+1 (212) 555-PIZZA / +91 63925 12314</span>
+                    <a href="tel:+916392512314" className="hover:text-[#D9381E]">+91 63925 12314</a>
                   </p>
                 </div>
               </div>
@@ -937,19 +843,22 @@ export default function ItalianArtisanalPizzeria() {
             <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-stone-300 pt-6 text-xs text-stone-500 sm:flex-row">
               <p>© {new Date().getFullYear()} ElPresto Artisanal Pizzeria. All rights reserved.</p>
 
-              {/* Trusted payment gateway logos */}
+              {/* Indian payment methods */}
               <div className="flex items-center gap-3 text-stone-400">
                 <span className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                  Stripe
+                  UPI
                 </span>
                 <span className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                  Visa
+                  Razorpay
                 </span>
                 <span className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                  Mastercard
+                  PhonePe
                 </span>
                 <span className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[10px] font-bold text-stone-700">
-                  Apple Pay
+                  Paytm
+                </span>
+                <span className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[10px] font-bold text-stone-700">
+                  Cash
                 </span>
               </div>
             </div>
