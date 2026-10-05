@@ -42,8 +42,13 @@
   --color-border-warm: var(--border-warm);
 
   /* fonts */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-jakarta), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-serif: var(--font-playfair), "Playfair Display", Georgia, serif;
+  --font-cinzel: var(--font-cinzel), "Cinzel", Georgia, serif;
+  --font-cormorant: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
+  --font-script: var(--font-italianno), "Italianno", cursive;
+  --font-jakarta: var(--font-jakarta), "Plus Jakarta Sans", sans-serif;
 
   /* radii */
   --radius-card: 1.5rem;
@@ -141,11 +146,74 @@ body::before {
   .scooter-pin {
     animation: scooterFloat 1.8s ease-in-out infinite;
   }
+
+  .orbit-slow {
+    animation: badgeRotate 25s linear infinite;
+  }
+
+  .basil-float-1 {
+    animation: basilDrift 6s ease-in-out infinite alternate;
+  }
+
+  .basil-float-2 {
+    animation: basilDrift2 8s ease-in-out infinite alternate;
+  }
+
+  .ember-pulse {
+    animation: emberPulse 3.5s ease-in-out infinite alternate;
+  }
+
+  .font-serif-luxury {
+    font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
+  }
+
+  .font-script-italian {
+    font-family: var(--font-italianno), "Italianno", cursive;
+  }
+
+  .font-cinzel-brand {
+    font-family: var(--font-cinzel), "Cinzel", Georgia, serif;
+  }
+
+  .font-cormorant-craft {
+    font-family: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
+  }
+
+  .italian-card-shadow {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05), 0 20px 45px -10px rgba(217, 56, 30, 0.08);
+  }
+
+  .italian-card-shadow-hover {
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.09), 0 25px 60px -12px rgba(217, 56, 30, 0.18);
+  }
 }
 
 /* ============================================================= */
 /* Keyframes                                                     */
 /* ============================================================= */
+
+@keyframes badgeRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes basilDrift {
+  0%   { transform: translateY(0px) rotate(0deg); }
+  50%  { transform: translateY(-10px) rotate(4deg); }
+  100% { transform: translateY(6px) rotate(-3deg); }
+}
+
+@keyframes basilDrift2 {
+  0%   { transform: translateY(0px) rotate(0deg); }
+  50%  { transform: translateY(12px) rotate(-6deg); }
+  100% { transform: translateY(-8px) rotate(3deg); }
+}
+
+@keyframes emberPulse {
+  0%   { opacity: 0.35; transform: scale(0.95); }
+  50%  { opacity: 0.75; transform: scale(1.05); }
+  100% { opacity: 0.45; transform: scale(0.98); }
+}
 
 @keyframes goldShimmer {
   0%   { background-position: -200% 0; }

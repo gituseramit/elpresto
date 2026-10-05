@@ -9,6 +9,8 @@ import {
   ChevronDown,
   Package,
   Menu as MenuIcon,
+  Flame,
+  Search,
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +45,20 @@ export default function Header() {
     () => items.reduce((sum, i) => sum + i.quantity, 0),
     [items]
   );
+  const cartTotal = useMemo(
+    () => items.reduce((sum, i) => sum + (i.price || 0) * i.quantity, 0),
+    [items]
+  );
+
+  const [headerSearch, setHeaderSearch] = useState("");
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (headerSearch.trim()) {
+      router.push(`/menu?q=${encodeURIComponent(headerSearch.trim())}`);
+    } else {
+      router.push("/menu");
+    }
+  };
 
   const { user, userProfile, loading: authLoading, logout } = useAuth();
 
@@ -159,109 +175,115 @@ export default function Header() {
   return (
     <header className="customer-header sticky top-0 z-40 w-full border-b border-orange-100 bg-white shadow-[0_4px_25px_-5px_rgba(217,35,18,0.06)] dark:border-white/10 dark:bg-slate-950">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4">
-        {/* Logo */}
+        {/* Logo (Left): ElPresto with minimalist golden flame / pizza graphic */}
         <Link
           href="/"
-          aria-label="EL PRESTO home"
-          className="flex items-center transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+          aria-label="ElPresto Italian Artisanal Pizzeria"
+          className="group flex items-center gap-2 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
         >
-          <img
-            src="/logo.png"
-            alt="EL PRESTO"
-            width={120}
-            height={44}
-            className="h-9 w-[108px] object-contain sm:h-11 sm:w-auto"
-          />
+          <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D9381E] via-[#E23E1D] to-[#E5A93B] text-white shadow-md shadow-red-600/30 transition-transform group-hover:rotate-6">
+            <Flame size={22} className="fill-amber-200 text-amber-200" />
+            <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#181413] text-[9px] text-[#E5A93B]">
+              🍕
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <span className="font-serif-luxury text-2xl font-black tracking-tight text-[#181413] dark:text-amber-100 sm:text-[26px]">
+              El<span className="text-[#D9381E]">Presto</span>
+            </span>
+            <span className="font-script-italian -mt-1.5 text-xs text-[#2C5E3B] tracking-wider dark:text-emerald-400">
+              Pizzeria Artigianale
+            </span>
+          </div>
         </Link>
 
-        {/* Desktop nav */}
+        {/* Navigation Links (Center): Menu, Oven Specials, Dough Track */}
         <nav
-          aria-label="Primary"
-          className="hidden items-center gap-7 text-sm font-black text-gray-800 md:flex"
+          aria-label="Artisanal Navigation"
+          className="hidden items-center gap-8 text-sm font-semibold tracking-wide text-[#1C1917] dark:text-stone-200 md:flex"
         >
           <Link
-            href="/"
-            aria-current={isActive("/") ? "page" : undefined}
-            className={`transition-colors hover:text-[#D92312] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 ${
-              isActive("/") ? "text-[#D92312]" : ""
-            }`}
+            href="/menu"
+            className="group relative py-1.5 transition-colors hover:text-[#D9381E] dark:hover:text-[#E5A93B]"
           >
-            Home
+            <span>Menu</span>
+            <span className="absolute bottom-0 left-0 h-0.5 w-0 bg-[#D9381E] transition-all duration-300 group-hover:w-full" />
           </Link>
 
           <Link
-            href="/menu"
-            aria-current={isActive("/menu") ? "page" : undefined}
-            className={`flex items-center gap-1 transition-colors hover:text-[#D92312] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 ${
-              isActive("/menu") ? "text-[#D92312]" : "text-gray-900"
-            }`}
+            href="/#popular-pizzas"
+            className="group relative py-1.5 transition-colors hover:text-[#D9381E] dark:hover:text-[#E5A93B]"
           >
-            <span>Menu</span>
-            <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-black tracking-wide text-[#D92312]">
-              HOT 🔥
-            </span>
+            <span>Oven Specials</span>
+            <span className="absolute bottom-0 left-0 h-0.5 w-0 bg-[#D9381E] transition-all duration-300 group-hover:w-full" />
+          </Link>
+
+          <Link
+            href="/track"
+            className="group relative py-1.5 transition-colors hover:text-[#D9381E] dark:hover:text-[#E5A93B]"
+          >
+            <span>Dough Track</span>
+            <span className="absolute bottom-0 left-0 h-0.5 w-0 bg-[#D9381E] transition-all duration-300 group-hover:w-full" />
           </Link>
 
           {hasActiveOrder && (
             <Link
               href="/track"
-              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#D92312] to-[#F59E0B] px-4 py-1.5 text-xs font-black text-white shadow-md shadow-red-500/25 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#D9381E] to-[#E5A93B] px-3.5 py-1 text-xs font-bold text-white shadow-sm transition-transform hover:scale-105"
             >
-              <span aria-hidden="true" className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-75 motion-safe:animate-ping" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-              </span>
-              Live Order
+              <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+              Live Oven
             </Link>
           )}
         </nav>
 
-        {/* Right cluster */}
-        <div className="flex items-center gap-2 md:gap-3">
-          <ThemeControl />
-          <Link
-            href="/menu"
-            aria-current={isActive("/menu") ? "page" : undefined}
-            aria-label="Browse menu"
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 md:hidden ${
-              isActive("/menu") ? "border-red-200 bg-red-50 text-[#D92312]" : "border-orange-100 text-gray-800 hover:bg-orange-50"
-            }`}
+        {/* Search Bar & Action Utilities (Right) */}
+        <div className="flex items-center gap-3">
+          {/* Pill-shaped search input */}
+          <form
+            onSubmit={handleSearchSubmit}
+            className="relative hidden lg:block"
           >
-            <MenuIcon size={17} aria-hidden="true" /> <span className="hidden min-[380px]:inline">Menu</span>
-          </Link>
-          {/* Mobile live-order pill */}
-          {hasActiveOrder && (
-            <Link
-              href="/track"
-              aria-label="Live order status"
-              className="flex items-center justify-center rounded-full bg-gradient-to-r from-[#D92312] to-[#F59E0B] p-2 text-white shadow-md md:hidden"
-            >
-              <Activity size={18} aria-hidden="true" />
-            </Link>
-          )}
+            <input
+              type="text"
+              value={headerSearch}
+              onChange={(e) => setHeaderSearch(e.target.value)}
+              placeholder="Search pizzas, toppings..."
+              className="w-52 rounded-full border border-stone-200 bg-[#FAF7F2] py-2 pl-9 pr-4 text-xs font-medium text-[#1C1917] placeholder-stone-400 transition-all focus:w-64 focus:border-[#D9381E] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#D9381E]/20 dark:border-stone-700 dark:bg-stone-900 dark:text-white dark:placeholder-stone-500"
+            />
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"
+            />
+          </form>
 
-          {/* Cart */}
+          <ThemeControl />
+
+          {/* Shopping Cart / Pizza Box Widget */}
           <button
             type="button"
             onClick={openCart}
-            aria-label={`Open shopping cart${
-              itemCount > 0 ? ` (${itemCount} items)` : ""
-            }`}
-            className="relative rounded-2xl border border-transparent p-2.5 text-gray-800 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-[#D92312] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+            aria-label={`Open Pizza Box with ${itemCount} items`}
+            className="group relative flex items-center gap-2.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-[#1C1917] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D9381E] hover:bg-[#FAF7F2] hover:shadow-md dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
           >
-            <ShoppingCart
-              size={22}
-              className="stroke-[2.2]"
-              aria-hidden="true"
-            />
-            {itemCount > 0 && (
-              <span
-                aria-hidden="true"
-                className="absolute -right-1 -top-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full border-2 border-white bg-[#D92312] px-1 text-xs font-black text-white shadow-md"
-              >
-                {itemCount}
+            <div className="relative">
+              <span className="text-base" role="img" aria-label="Pizza Box">
+                📦
               </span>
-            )}
+              {itemCount > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-[#D9381E] text-[10px] font-black text-white">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-[10px] uppercase tracking-wider text-stone-500 group-hover:text-[#D9381E] dark:text-stone-400">
+                Your Box
+              </span>
+              <span className="font-serif-luxury font-bold text-[#181413] dark:text-white">
+                ₹{cartTotal.toFixed(2)}
+              </span>
+            </div>
           </button>
 
           {/* Auth */}
