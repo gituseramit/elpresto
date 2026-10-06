@@ -11,12 +11,14 @@ import {
   Menu as MenuIcon,
   Flame,
   Search,
+  X,
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import ThemeControl from "@/components/ThemeControl";
+import { ACTIVE_ORDER_CHANGED_EVENT } from "@/lib/activeOrderEvents";
 
 /* ============================================================= */
 /* Helpers                                                       */
@@ -65,7 +67,9 @@ export default function Header() {
   const [hasActiveOrder, setHasActiveOrder] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   /* Hydration guard for localStorage reads */
   useEffect(() => {
@@ -108,6 +112,7 @@ export default function Header() {
     };
 
     window.addEventListener("storage", check);
+    window.addEventListener(ACTIVE_ORDER_CHANGED_EVENT, check);
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -115,15 +120,39 @@ export default function Header() {
 
     return () => {
       window.removeEventListener("storage", check);
+      window.removeEventListener(ACTIVE_ORDER_CHANGED_EVENT, check);
       window.removeEventListener("focus", check);
       document.removeEventListener("visibilitychange", onVisibility);
       stopPolling();
     };
   }, [mounted]);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const onPointer = (event: MouseEvent | TouchEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+        setMobileMenuOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("touchstart", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("touchstart", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [mobileMenuOpen]);
+
   /* Close dropdown on route change */
   useEffect(() => {
     setDropdownOpen(false);
+    setMobileMenuOpen(false);
   }, [pathname]);
 
   /* Close dropdown on outside click / touch and on Escape */
@@ -174,32 +203,32 @@ export default function Header() {
 
   return (
     <header className="customer-header sticky top-0 z-40 w-full border-b border-orange-100 bg-white shadow-[0_4px_25px_-5px_rgba(217,35,18,0.06)] dark:border-white/10 dark:bg-slate-950">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-2.5 sm:px-4">
         {/* Logo (Left): ElPresto with minimalist golden flame / pizza graphic */}
         <Link
           href="/"
           aria-label="ElPresto Italian Artisanal Pizzeria"
-          className="group flex items-center gap-2 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+          className="group flex items-center gap-1.5 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 sm:gap-2"
         >
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D9381E] via-[#E23E1D] to-[#E5A93B] text-white shadow-md shadow-red-600/30 transition-transform group-hover:rotate-6">
+          <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D9381E] via-[#E23E1D] to-[#E5A93B] text-white shadow-md shadow-red-600/30 transition-transform group-hover:rotate-6 sm:h-10 sm:w-10">
             <Flame size={22} className="fill-amber-200 text-amber-200" />
             <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#181413] text-[9px] text-[#E5A93B]">
               🍕
             </span>
           </div>
-          <div className="flex flex-col">
-            <span className="font-serif-luxury text-2xl font-black tracking-tight text-[#181413] dark:text-amber-100 sm:text-[26px]">
+          <div className="flex min-w-0 flex-col">
+            <span className="font-serif-luxury whitespace-nowrap text-[22px] font-black tracking-tight text-[#181413] dark:text-amber-100 sm:text-[26px]">
               El<span className="text-[#D9381E]">Presto</span>
             </span>
-            <span className="font-script-italian -mt-1.5 text-xs text-[#2C5E3B] tracking-wider dark:text-emerald-400">
+            <span className="font-script-italian -mt-1.5 hidden whitespace-nowrap text-xs tracking-wider text-[#2C5E3B] dark:text-emerald-400 min-[400px]:block">
               Pizzeria Artigianale
             </span>
           </div>
         </Link>
 
-        {/* Navigation Links (Center): Menu, Oven Specials, Dough Track */}
+        {/* Desktop navigation */}
         <nav
-          aria-label="Artisanal Navigation"
+          aria-label="Main navigation"
           className="hidden items-center gap-8 text-sm font-semibold tracking-wide text-[#1C1917] dark:text-stone-200 md:flex"
         >
           <Link
@@ -211,34 +240,56 @@ export default function Header() {
           </Link>
 
           <Link
-            href="/#popular-pizzas"
+            href="/#best-sellers"
             className="group relative py-1.5 transition-colors hover:text-[#D9381E] dark:hover:text-[#E5A93B]"
           >
-            <span>Oven Specials</span>
+            <span>Best Sellers</span>
             <span className="absolute bottom-0 left-0 h-0.5 w-0 bg-[#D9381E] transition-all duration-300 group-hover:w-full" />
           </Link>
 
           <Link
             href="/track"
-            className="group relative py-1.5 transition-colors hover:text-[#D9381E] dark:hover:text-[#E5A93B]"
+            aria-label={hasActiveOrder ? "Track your live order" : "Live track order"}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 transition-colors ${hasActiveOrder ? "bg-orange-50 text-[#B8190B] dark:bg-orange-500/10 dark:text-orange-300" : "hover:text-[#D9381E] dark:hover:text-[#E5A93B]"}`}
           >
-            <span>Dough Track</span>
-            <span className="absolute bottom-0 left-0 h-0.5 w-0 bg-[#D9381E] transition-all duration-300 group-hover:w-full" />
+            {hasActiveOrder && <span aria-hidden="true" className="h-2 w-2 animate-pulse rounded-full bg-[#D9381E]" />}
+            <Activity size={15} aria-hidden="true" />
+            <span>{hasActiveOrder ? "Track Live Order" : "Live Track Order"}</span>
           </Link>
-
-          {hasActiveOrder && (
-            <Link
-              href="/track"
-              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#D9381E] to-[#E5A93B] px-3.5 py-1 text-xs font-bold text-white shadow-sm transition-transform hover:scale-105"
-            >
-              <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-              Live Oven
-            </Link>
-          )}
         </nav>
 
         {/* Search Bar & Action Utilities (Right) */}
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+          <div className="relative md:hidden" ref={mobileMenuRef}>
+            <button
+              type="button"
+              aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="customer-mobile-navigation"
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              className="grid h-10 w-10 place-items-center rounded-full border border-stone-200 bg-white text-[#181413] transition hover:border-[#D9381E] hover:text-[#D9381E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E] dark:border-stone-700 dark:bg-stone-900 dark:text-white"
+            >
+              {mobileMenuOpen ? <X size={19} aria-hidden="true" /> : <MenuIcon size={19} aria-hidden="true" />}
+            </button>
+            <nav
+              id="customer-mobile-navigation"
+              aria-label="Mobile navigation"
+              hidden={!mobileMenuOpen}
+              className="absolute right-0 top-full z-50 mt-3 w-[min(19rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl dark:border-stone-700 dark:bg-slate-900"
+            >
+              <Link href="/menu" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Menu</Link>
+              <Link href="/#best-sellers" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Best Sellers</Link>
+              <Link href="/menu#nutrition-guide" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Ingredients &amp; Nutrition</Link>
+              <Link href="/track" className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-bold transition ${hasActiveOrder ? "bg-orange-50 text-[#B8190B] dark:bg-orange-500/10 dark:text-orange-300" : "text-stone-800 hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5"}`}>
+                <span className="inline-flex items-center gap-2"><Activity size={16} aria-hidden="true" />{hasActiveOrder ? "Track your live order" : "Live Track Order"}</span>
+                {hasActiveOrder && <span className="rounded-full bg-[#D9381E] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">Live</span>}
+              </Link>
+              {mounted && !authLoading && !user && (
+                <Link href="/auth" className="block rounded-xl bg-[#D9381E] px-4 py-3 text-sm font-bold text-white min-[380px]:hidden">Sign in / Create account</Link>
+              )}
+            </nav>
+          </div>
+
           {/* Pill-shaped search input */}
           <form
             onSubmit={handleSearchSubmit}
@@ -264,7 +315,7 @@ export default function Header() {
             type="button"
             onClick={openCart}
             aria-label={`Open Pizza Box with ${itemCount} items`}
-            className="group relative flex items-center gap-2.5 rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-bold text-[#1C1917] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D9381E] hover:bg-[#FAF7F2] hover:shadow-md dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+            className="group relative flex h-10 w-10 shrink-0 items-center justify-center gap-2.5 rounded-full border border-stone-200 bg-white px-2 text-xs font-bold text-[#1C1917] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D9381E] hover:bg-[#FAF7F2] hover:shadow-md dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 sm:h-auto sm:w-auto sm:justify-start sm:px-4 sm:py-2"
           >
             <div className="relative">
               <span className="text-base" role="img" aria-label="Pizza Box">
@@ -276,7 +327,7 @@ export default function Header() {
                 </span>
               )}
             </div>
-            <div className="flex flex-col text-left">
+            <div className="hidden flex-col text-left sm:flex">
               <span className="text-[10px] uppercase tracking-wider text-stone-500 group-hover:text-[#D9381E] dark:text-stone-400">
                 Your Box
               </span>
@@ -360,7 +411,7 @@ export default function Header() {
             ) : (
               <Link
                 href="/auth"
-                className="rounded-xl bg-gradient-to-r from-[#D92312] to-[#B8190B] px-3 py-2 text-sm font-black text-white shadow-md shadow-red-500/20 transition-transform hover:-translate-y-0.5 hover:from-[#B8190B] hover:to-[#991409] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 active:scale-95 min-[380px]:px-5"
+                className="hidden rounded-xl bg-gradient-to-r from-[#D92312] to-[#B8190B] px-3 py-2 text-sm font-black text-white shadow-md shadow-red-500/20 transition-transform hover:-translate-y-0.5 hover:from-[#B8190B] hover:to-[#991409] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 active:scale-95 min-[380px]:block min-[380px]:px-5"
               >
                 Login
               </Link>

@@ -283,7 +283,7 @@ export default function MenuPage() {
         </div>
       </section>
 
-      <section id="nutrition-guide" className="px-4 pt-4" aria-labelledby="nutrition-guide-title">
+      <section id="nutrition-guide" className="scroll-mt-20 px-4 pt-4" aria-labelledby="nutrition-guide-title">
         <div className="mx-auto max-w-6xl overflow-hidden rounded-3xl border border-amber-200/80 bg-gradient-to-br from-white via-amber-50/80 to-orange-50/70 p-5 shadow-sm sm:p-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-xl">

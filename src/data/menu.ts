@@ -757,7 +757,7 @@ export const DUMMY_MENU: MenuItem[] = [
     price: 60,
     category: "Beverages",
     imageUrl:
-      "https://i.ibb.co/Y4dqh2cC/FAINAL-MENU-CAMPUS.png",
+      "https://images.unsplash.com/photo-1584286595398-a59f21d313f5?w=600&q=80",
     available: true,
     isVeg: true,
   },

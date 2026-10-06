@@ -9,7 +9,7 @@ import {
   Play,
   Plus,
   Check,
-  Star,
+  Camera,
   MapPin,
   Clock,
   Phone,
@@ -51,120 +51,87 @@ function playPizzaChime() {
 const CATEGORY_CARDS = [
   {
     slug: "Healthy Mania",
-    emoji: "🌾",
     label: "Healthy Mania",
-    tagline: "Seedha khet se, seedha plate pe!",
+    tagline: "Whole-wheat favourites, freshly baked.",
     from: "₹99",
     image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&q=80",
-    color: "from-green-600 to-emerald-700",
   },
   {
     slug: "Double Healthy Mania",
-    emoji: "🧀",
     label: "Double Healthy Mania",
-    tagline: "Double cheese, double mazaa!",
+    tagline: "Extra cheese. More joy.",
     from: "₹129",
     image: "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=600&q=80",
-    color: "from-amber-500 to-yellow-600",
   },
   {
     slug: "Indian Tadka Pizza",
-    emoji: "🌶️",
     label: "Indian Tadka Pizza",
-    tagline: "Desi masala, Italian style!",
+    tagline: "A little spice, a lot of soul.",
     from: "₹149",
-    image: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600&q=80",
-    color: "from-red-600 to-orange-700",
+    image: "https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?w=600&q=80",
   },
   {
     slug: "Medium Pizzas",
-    emoji: "🍕",
     label: "Medium Pizzas (9 inch)",
-    tagline: "Friends & family ke liye ekdum sahi!",
+    tagline: "Made for sharing.",
     from: "₹279",
     image: "https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=600&q=80",
-    color: "from-red-500 to-rose-700",
   },
   {
     slug: "Large Pizzas",
-    emoji: "🎉",
     label: "Large Pizzas (12 inch)",
-    tagline: "Party mode ON karo yaar!",
+    tagline: "Good times, served large.",
     from: "₹399",
     image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&q=80",
-    color: "from-purple-600 to-indigo-700",
   },
   {
     slug: "Subs",
-    emoji: "🥖",
     label: "Healthy Subs",
-    tagline: "Bade wale sub, ek dum fresh!",
+    tagline: "Freshly stacked and toasted.",
     from: "₹79",
     image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?w=600&q=80",
-    color: "from-orange-500 to-amber-600",
   },
   {
     slug: "Fries",
-    emoji: "🍟",
     label: "Crispy Fries",
-    tagline: "Golden, crispy, bilkul mast!",
+    tagline: "Golden, crisp, and ready.",
     from: "₹59",
     image: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=600&q=80",
-    color: "from-yellow-500 to-amber-500",
   },
   {
     slug: "Bowls",
-    emoji: "🥗",
     label: "Protein Bowls",
-    tagline: "Healthy khao, fit raho!",
+    tagline: "Balanced bites, made fresh.",
     from: "₹89",
     image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
-    color: "from-teal-600 to-cyan-700",
   },
   {
     slug: "Burgers",
-    emoji: "🍔",
     label: "Desi & Deluxe Burgers",
-    tagline: "Juicy patties, crunchy lettuce!",
+    tagline: "Satisfying, made with care.",
     from: "₹69",
     image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600&q=80",
-    color: "from-orange-600 to-red-600",
   },
   {
     slug: "Sides",
-    emoji: "🧄",
     label: "Garlic Breads & Sides",
-    tagline: "Cheesy garlic bread aur zingy snacks!",
+    tagline: "The perfect side for your slice.",
     from: "₹39",
     image: "https://images.unsplash.com/photo-1604382355076-af4b0eb60143?w=600&q=80",
-    color: "from-lime-600 to-green-700",
   },
   {
     slug: "Desserts",
-    emoji: "🍫",
     label: "Choco Lava & Desserts",
-    tagline: "Khane ke baad meetha toh banta hai!",
+    tagline: "A sweet ending.",
     from: "₹49",
     image: "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&q=80",
-    color: "from-pink-600 to-rose-700",
   },
   {
     slug: "Beverages",
-    emoji: "☕",
     label: "Cold Coffee & Drinks",
-    tagline: "Refreshing cold coffee aur sattu drink!",
+    tagline: "Cool sips from our kitchen.",
     from: "₹20",
-    image: "https://i.ibb.co/Y4dqh2cC/FAINAL-MENU-CAMPUS.png",
-    color: "from-stone-600 to-stone-800",
-  },
-  {
-    slug: "Extra Toppings",
-    emoji: "✨",
-    label: "Extra Toppings & Cheese",
-    tagline: "Apna pizza khud customize karo!",
-    from: "₹10",
-    image: "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=600&q=80",
-    color: "from-violet-600 to-purple-700",
+    image: "https://images.unsplash.com/photo-1517093602195-b40af9688b46?w=600&q=80",
   },
 ];
 
@@ -183,8 +150,6 @@ const BEST_SELLERS = [
 /* ============================================================= */
 export default function ItalianArtisanalPizzeria() {
   const [addedItemNotice, setAddedItemNotice] = useState<string | null>(null);
-  const [emailInput, setEmailInput] = useState("");
-  const [newsletterSubscribed, setNewsletterSubscribed] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
 
   const addItem = useCartStore((state) => state.addItem);
@@ -197,14 +162,6 @@ export default function ItalianArtisanalPizzeria() {
     if (typeof document !== "undefined") {
       document.dispatchEvent(new Event("open-cart"));
     }
-  };
-
-  const handleSubscribe = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailInput || !emailInput.includes("@")) return;
-    setNewsletterSubscribed(true);
-    playPizzaChime();
-    setTimeout(() => setEmailInput(""), 1500);
   };
 
   const bestSellerItems = BEST_SELLERS.map((id) =>
@@ -227,17 +184,8 @@ export default function ItalianArtisanalPizzeria() {
         </div>
       )}
 
-      {/* Ambient floating garnishes */}
+      {/* Soft ambient warmth behind the food photography */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-        <div className="basil-float-1 absolute -left-10 top-44 opacity-30 blur-[1px]">
-          <span className="text-7xl select-none">🍃</span>
-        </div>
-        <div className="basil-float-2 absolute right-8 top-1/3 opacity-25 blur-[0.5px]">
-          <span className="text-6xl select-none">🌿</span>
-        </div>
-        <div className="basil-float-1 absolute left-1/4 top-3/4 opacity-20">
-          <span className="text-4xl select-none">🌶️</span>
-        </div>
         <div className="ember-pulse absolute right-0 top-20 h-96 w-96 rounded-full bg-radial from-[#E23E1D]/15 via-[#E5A93B]/8 to-transparent blur-3xl" />
         <div className="ember-pulse absolute -left-20 bottom-1/4 h-[500px] w-[500px] rounded-full bg-radial from-[#D9381E]/12 via-[#E5A93B]/5 to-transparent blur-3xl" />
       </div>
@@ -255,15 +203,15 @@ export default function ItalianArtisanalPizzeria() {
               <div className="space-y-6 text-center lg:col-span-7 lg:text-left">
                 <div className="inline-flex items-center gap-2">
                   <span className="font-script-italian text-2xl font-bold text-[#D9381E] sm:text-3xl">
-                    Seedha Oven Se, Ekdum Garam Garam! 🔥
+                    Seedha oven se, garam aur fresh
                   </span>
                   <span className="h-px w-10 bg-[#D9381E]/40" />
                 </div>
 
                 <h1 className="font-serif-luxury text-balance text-4xl font-extrabold leading-[1.08] tracking-tight text-[#181413] sm:text-6xl md:text-7xl">
-                  Taste Pure{" "}
+                  Artisanal Pizza,{" "}
                   <span className="relative inline-block text-[#D9381E]">
-                    Artisanal
+                    Just Baked.
                     <svg
                       aria-hidden="true"
                       className="absolute -bottom-2 left-0 h-3 w-full text-[#E5A93B]"
@@ -278,20 +226,31 @@ export default function ItalianArtisanalPizzeria() {
                         strokeLinecap="round"
                       />
                     </svg>
-                  </span>{" "}
-                  Pizza! 🍕
+                  </span>
                 </h1>
 
                 <p className="font-cormorant-craft mx-auto max-w-xl text-lg italic leading-relaxed text-[#1C1917]/80 sm:text-xl lg:mx-0">
-                  &ldquo;Acha khana, sachhi dosti aur garam pizza — zindagi mein aur kya chahiye boss!&rdquo;
+                  Hot from the oven. Generous with the good stuff.
                 </p>
 
                 <p className="mx-auto max-w-xl text-sm leading-relaxed text-stone-600 sm:text-base lg:mx-0">
-                  Har pizza banta hai{" "}
-                  <strong className="font-bold text-stone-900">100% whole wheat gehun ke atta</strong> se,
-                  bilkul <strong className="font-bold text-stone-900">zero maida aur zero palm oil</strong>.
-                  Upar se asli mozzarella cheese pull aur fresh toppings — sehat bhi aur swaad bhi! 🤌
+                  Whole-wheat crust, real mozzarella and fresh toppings, baked to order in Naini.
+                  No maida. No palm oil. Just the good stuff, served hot.
                 </p>
+
+                <div className="mx-auto grid max-w-xl grid-cols-3 gap-2 text-left lg:mx-0" aria-label="Nutrition ingredient highlights">
+                  {[
+                    { name: "Whole wheat", nutrient: "Carbs + fibre" },
+                    { name: "Paneer & cheese", nutrient: "Protein sources" },
+                    { name: "Fresh veg", nutrient: "Fibre source" },
+                  ].map((item) => (
+                    <div key={item.name} className="rounded-xl border border-amber-200/80 bg-white/80 px-2.5 py-2.5 shadow-sm sm:px-3.5">
+                      <p className="text-[11px] font-black leading-tight text-stone-900 sm:text-xs">{item.name}</p>
+                      <p className="mt-1 text-[10px] leading-tight text-stone-600 sm:text-[11px]">{item.nutrient}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="-mt-4 text-left text-[10px] text-stone-500 lg:text-left">Ingredient-level highlights; exact nutrition varies by recipe.</p>
 
                 {/* CTAs */}
                 <div className="flex flex-col items-center gap-4 pt-4 sm:flex-row sm:justify-center lg:justify-start">
@@ -311,32 +270,12 @@ export default function ItalianArtisanalPizzeria() {
                   </a>
                 </div>
 
-                {/* Rotating Badge */}
-                <div className="pt-4 flex items-center justify-center lg:justify-start">
-                  <div className="relative flex h-28 w-28 items-center justify-center">
-                    <svg className="orbit-slow absolute inset-0 h-full w-full" viewBox="0 0 100 100">
-                      <path
-                        id="badgeCirclePath"
-                        d="M 50, 50 m -37, 0 a 37,37 0 1,1 74,0 a 37,37 0 1,1 -74,0"
-                        fill="none"
-                      />
-                      <text className="text-[7.2px] font-black uppercase tracking-[2.5px] fill-[#D9381E]">
-                        <textPath href="#badgeCirclePath" startOffset="0%">
-                          • 100% WHOLE WHEAT • ZERO PALM OIL • REAL MOZZARELLA •
-                        </textPath>
-                      </text>
-                    </svg>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#D9381E] to-[#E5A93B] text-white shadow-md">
-                      <Flame size={20} className="fill-amber-100 text-amber-100 animate-pulse" />
-                    </div>
-                  </div>
-                  <div className="ml-4 text-left">
-                    <p className="text-xs font-black uppercase tracking-wider text-[#D9381E]">Hamara Vaada</p>
-                    <p className="font-serif-luxury text-sm font-bold text-stone-800">
-                      No Maida • No Palm Oil • 100% Pure Cheese
-                    </p>
-                  </div>
-                </div>
+                <Link
+                  href="/menu#nutrition-guide"
+                  className="inline-flex items-center gap-2 pt-1 text-sm font-bold text-[#9B291B] underline decoration-[#D9381E]/30 underline-offset-4 transition-colors hover:text-[#D9381E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E]"
+                >
+                  Ingredient &amp; nutrition notes <ArrowRight size={15} aria-hidden="true" />
+                </Link>
               </div>
 
               {/* Right Column Visual */}
@@ -350,43 +289,29 @@ export default function ItalianArtisanalPizzeria() {
                         alt="El Presto signature whole wheat pizza"
                         fill
                         priority
+                        sizes="(max-width: 1024px) 100vw, 42vw"
                         className="object-cover object-center transition-transform duration-700 group-hover:scale-105"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                       <div className="absolute left-4 top-4 flex items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-1.5 text-xs font-extrabold text-[#D9381E] shadow-lg backdrop-blur-md">
                         <Flame size={14} className="fill-[#D9381E]" />
-                        <span>Fresh Wood-Fired Style</span>
+                        <span>Made fresh to order</span>
                       </div>
                       <div className="absolute bottom-5 left-5 right-5 text-white">
                         <div className="flex items-center gap-1 text-xs font-bold text-amber-300">
-                          <Star size={13} fill="currentColor" />
-                          <span>Naini Prayagraj ka #1 Pizza Brand</span>
+                          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                          <span>Fresh from our Naini kitchen</span>
                         </div>
                         <h2 className="font-serif-luxury mt-1 text-2xl font-bold text-white">
-                          EL PRESTO SPECIAL
+                          Real ingredients. Big flavour.
                         </h2>
                         <p className="font-script-italian text-lg text-amber-100">
-                          Chef ka secret masala recipe — sirf ₹199!
+                Stone-ground whole wheat, real mozzarella, baked fresh to order.
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="absolute -bottom-4 -left-4 hidden items-center gap-3 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur-md sm:flex">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-xl">🌾</span>
-                    <div>
-                      <p className="text-xs font-black text-[#181413]">Pure Veg</p>
-                      <p className="font-serif-luxury text-xs font-bold text-[#D9381E]">100% Atta Crust</p>
-                    </div>
-                  </div>
-
-                  <div className="absolute -right-4 top-10 hidden items-center gap-3 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur-md sm:flex">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-xl">🧀</span>
-                    <div>
-                      <p className="text-xs font-black text-[#181413]">Asli Mozzarella</p>
-                      <p className="text-xs font-bold text-[#2C5E3B]">Zero Palm Oil</p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -411,12 +336,13 @@ export default function ItalianArtisanalPizzeria() {
                       src="https://images.unsplash.com/photo-1579684947550-22e945225d9a?w=1000&q=80"
                       alt="Whole wheat pizza dough aur fresh ingredients"
                       fill
+                      sizes="(max-width: 1024px) 100vw, 45vw"
                       className="object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                     <div className="absolute bottom-4 left-4 right-4 text-white">
                       <p className="text-xs font-bold uppercase tracking-widest text-[#E5A93B]">
-                        Hamara Asli Andaaz 🤌
+                        Hamara Asli Andaaz
                       </p>
                       <p className="font-serif-luxury text-xl font-bold">
                         Pyaar Se Banaya, Dil Se Khilaya!
@@ -437,27 +363,27 @@ export default function ItalianArtisanalPizzeria() {
                     Hamari Kahani
                   </span>
                   <h2 className="font-serif-luxury mt-2 text-3xl font-extrabold tracking-tight text-[#181413] sm:text-4xl md:text-5xl">
-                    Dil Se Bana Pizza, Sehat Ka Vaada 🍕
+                    Simple Ingredients. A Better Pizza.
                   </h2>
                 </div>
 
                 <p className="font-cormorant-craft text-lg italic text-stone-700 sm:text-xl">
-                  &ldquo;EL PRESTO mein har pizza banta hai ekdum fresh — gehun ka atta, zero palm oil, aur
-                  asli mozzarella cheese. Kyunki hum maante hain ki acha khana hi asli khushi deta hai!&rdquo;
+                  &ldquo;Har pizza fresh bake hota hai—golden crust, stretchy mozzarella aur simple ingredients
+                  jo har bite ko khaas banayein.&rdquo;
                 </p>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {[
-                    { icon: "🌾", title: "100% Gehun ka Atta", sub: "Maida bilkul nahi use karte!" },
-                    { icon: "🧀", title: "Asli Mozzarella Cheese", sub: "Nakli cheese analog se door!" },
-                    { icon: "🚫", title: "Zero Palm Oil", sub: "Clean cold-pressed oils only!" },
-                    { icon: "🔥", title: "Seedha Oven Se Fresh", sub: "Order aane par hi bake hota hai!" },
+                    { title: "Whole-wheat crust", sub: "Stone-ground flour, never maida." },
+                    { title: "Real mozzarella", sub: "No artificial cheese analogues." },
+                    { title: "No palm oil", sub: "Made with quality cooking oils." },
+                    { title: "Baked to order", sub: "Prepared fresh when you order." },
                   ].map((f) => (
                     <div key={f.title} className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-sm">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-lg">{f.icon}</span>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-[#B76C13]"><Check size={17} aria-hidden="true" /></span>
                       <div>
                         <span className="text-xs font-bold text-stone-900">{f.title}</span>
-                        <p className="text-[10px] text-stone-500">{f.sub}</p>
+                        <p className="text-xs text-stone-500">{f.sub}</p>
                       </div>
                     </div>
                   ))}
@@ -473,7 +399,7 @@ export default function ItalianArtisanalPizzeria() {
                       <Play size={18} className="ml-0.5 fill-white text-white" />
                     </span>
                     <span className="font-serif-luxury text-sm font-bold text-[#181413]">
-                      Dekho Kaise Banta Hai Pizza! 🎥
+                      Dekho Kaise Banta Hai Pizza
                     </span>
                   </button>
                 </div>
@@ -492,11 +418,17 @@ export default function ItalianArtisanalPizzeria() {
                 Hamara Menu
               </span>
               <h2 className="font-serif-luxury mt-1 text-3xl font-extrabold tracking-tight text-[#181413] sm:text-5xl">
-                Kya Khaaoge Aaj? 😋
+                Kya Khaaoge Aaj?
               </h2>
               <p className="font-cormorant-craft mx-auto mt-2 max-w-xl text-lg italic text-stone-600">
-                Category choose karo aur seedha menu explore karo — quick, fresh aur mazedaar!
+                Pick a category and find your next favourite.
               </p>
+              <Link
+                href="/menu#nutrition-guide"
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white/80 px-4 py-2 text-xs font-bold text-stone-700 transition hover:border-[#D9381E] hover:text-[#D9381E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E]"
+              >
+                Ingredient &amp; nutrition notes <ArrowRight size={14} aria-hidden="true" />
+              </Link>
             </div>
 
             {/* Category Cards Grid */}
@@ -505,29 +437,28 @@ export default function ItalianArtisanalPizzeria() {
                 <Link
                   key={cat.slug}
                   href={`/menu?category=${encodeURIComponent(cat.slug)}`}
-                  className="group relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-md transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:border-[#D9381E]/40"
+                  className="group relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-md transition-all duration-300 hover:-translate-y-1.5 hover:border-[#D9381E]/40 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E] focus-visible:ring-offset-2"
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
                     <Image
                       src={cat.image}
                       alt={cat.label}
                       fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                       className="object-cover transition-transform duration-500 group-hover:scale-110"
                     />
-                    <div className={`absolute inset-0 bg-gradient-to-t ${cat.color} opacity-60`} />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
 
-                    <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-extrabold text-[#D9381E] shadow">
+                    <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2.5 py-1 text-xs font-extrabold text-[#D9381E] shadow">
                       {cat.from} se
                     </span>
 
-                    <span className="absolute left-2 top-2 text-2xl">{cat.emoji}</span>
 
                     <div className="absolute bottom-0 left-0 right-0 p-3">
                       <p className="font-serif-luxury text-sm font-bold leading-tight text-white line-clamp-1">
                         {cat.label}
                       </p>
-                      <p className="text-[10px] text-amber-200 line-clamp-1 mt-0.5">
+                      <p className="text-xs text-amber-100 line-clamp-1 mt-1">
                         {cat.tagline}
                       </p>
                     </div>
@@ -535,6 +466,20 @@ export default function ItalianArtisanalPizzeria() {
                 </Link>
               ))}
             </div>
+
+            <Link
+              href={`/menu?category=${encodeURIComponent("Extra Toppings")}`}
+              className="group mx-auto mt-6 flex max-w-4xl items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-gradient-to-r from-white to-amber-50 px-5 py-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#D9381E]/50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E] focus-visible:ring-offset-2 sm:px-7"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#181413] text-amber-300"><Plus size={20} aria-hidden="true" /></span>
+                <span className="min-w-0 text-left">
+                  <span className="block text-xs font-black uppercase tracking-wider text-[#D9381E]">Make it yours</span>
+                  <span className="mt-0.5 block truncate font-serif-luxury text-base font-bold text-[#181413] sm:text-lg">Add extra toppings and cheese</span>
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-xs font-bold text-stone-700 sm:text-sm">From ₹10 <ArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-1" /></span>
+            </Link>
 
             <div className="mt-12 text-center">
               <Link
@@ -551,17 +496,17 @@ export default function ItalianArtisanalPizzeria() {
         {/* ======================================================== */}
         {/* BEST SELLERS STRIP                                        */}
         {/* ======================================================== */}
-        <section className="border-t border-stone-200/70 bg-[#181413] px-6 py-16 sm:px-10 lg:px-14">
+        <section id="best-sellers" className="scroll-mt-20 border-t border-stone-200/70 bg-[#181413] px-6 py-16 sm:px-10 lg:px-14">
           <div className="mx-auto max-w-7xl">
             <div className="mb-10 text-center">
               <span className="font-script-italian text-3xl font-bold text-[#E5A93B]">
                 Sabka Favourite
               </span>
               <h2 className="font-serif-luxury mt-1 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-                Best Sellers — Har Baar Hit! 🏆
+                Best Sellers — Har Baar Hit!
               </h2>
               <p className="mt-2 text-sm text-stone-400">
-                UCER Naini ke sabse zyada order hone waale items — direct add karo!
+                Our favourites, ready to add to your order.
               </p>
             </div>
 
@@ -576,6 +521,7 @@ export default function ItalianArtisanalPizzeria() {
                       src={item.imageUrl}
                       alt={item.name}
                       fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 17vw"
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
@@ -608,121 +554,37 @@ export default function ItalianArtisanalPizzeria() {
         </section>
 
         {/* ======================================================== */}
-        {/* PROMO BANNER — EL PRESTO SPECIAL                          */}
+        {/* FOLLOW ALONG SECTION                                     */}
         {/* ======================================================== */}
         <section className="px-6 py-12 sm:px-10 lg:px-14">
           <div className="mx-auto max-w-7xl">
-            <div className="relative overflow-hidden rounded-[2.5rem] border border-amber-300/60 bg-gradient-to-br from-[#FAF7F2] via-white to-[#F5EFEB] p-8 shadow-2xl md:p-12 lg:p-16">
-              <div className="absolute -right-20 -top-20 h-96 w-96 rounded-full bg-radial from-[#D9381E]/20 via-[#E5A93B]/15 to-transparent blur-3xl" />
-
-              <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
-                <div className="space-y-6 lg:col-span-7">
-                  <span className="font-script-italian text-3xl font-bold text-[#D9381E]">
-                    Chef ka Khas Selection ⭐
-                  </span>
-                  <h2 className="font-serif-luxury text-3xl font-extrabold tracking-tight text-[#181413] sm:text-5xl">
-                    EL PRESTO SPECIAL Pizza
-                  </h2>
-                  <p className="font-cormorant-craft text-lg italic text-stone-700 sm:text-xl">
-                    Hamare chef ka sabse pasandida recipe — secret toppings, 100% whole wheat base,
-                    aur ek baar khao toh baar baar order karoge! Swaad ki guarantee. 😄
-                  </p>
-                  <div className="flex items-baseline gap-3">
-                    <span className="font-serif-luxury text-4xl font-black text-[#D9381E]">₹199</span>
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
-                      Sabka Favourite 🏆
-                    </span>
-                  </div>
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const special = DUMMY_MENU.find((i) => i.id === "itp6");
-                        if (special) handleAddToCart(special);
-                      }}
-                      className="group inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-[#D9381E] to-[#E23E1D] px-8 py-4 text-base font-bold text-white shadow-xl shadow-red-600/30 transition-all duration-300 hover:scale-105 hover:shadow-2xl"
-                    >
-                      <span>Cart Mein Daalo — ₹199</span>
-                      <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="relative lg:col-span-5">
-                  <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-stone-200 bg-stone-100 shadow-xl">
-                    <Image
-                      src="https://images.unsplash.com/photo-1541745537411-b8046dc6d66c?w=900&q=80"
-                      alt="El Presto Special Pizza"
-                      fill
-                      className="object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-                    <div className="absolute bottom-4 left-4 right-4 text-white">
-                      <span className="text-xs uppercase tracking-widest text-amber-300">Chef Ki Guarantee</span>
-                      <p className="font-serif-luxury text-sm font-bold">Ek baar khao, baar baar aana padega! 🔥</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ======================================================== */}
-        {/* NEWSLETTER SECTION                                        */}
-        {/* ======================================================== */}
-        <section className="px-6 py-12 sm:px-10 lg:px-14">
-          <div className="mx-auto max-w-7xl">
-            <div className="relative overflow-hidden rounded-[2.5rem] bg-[#181413] px-8 py-14 text-white shadow-2xl md:px-16 md:py-20">
+            <div className="relative overflow-hidden rounded-[2rem] bg-[#181413] px-6 py-9 text-white shadow-2xl sm:px-10 sm:py-12 lg:px-14">
               <div className="absolute -left-10 -top-10 h-72 w-72 rounded-full bg-radial from-[#D9381E]/30 to-transparent blur-3xl" />
               <div className="absolute -right-10 -bottom-10 h-72 w-72 rounded-full bg-radial from-[#E5A93B]/20 to-transparent blur-3xl" />
 
-              <div className="relative z-10 grid grid-cols-1 items-center gap-10 lg:grid-cols-12">
-                <div className="flex items-center justify-center lg:col-span-4">
-                  <div className="relative flex h-36 w-36 items-center justify-center rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur-md">
-                    <span className="text-7xl select-none animate-bounce">🍕</span>
-                    <span className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#D9381E] text-xs">✨</span>
+              <div className="relative z-10 flex flex-col items-start justify-between gap-7 md:flex-row md:items-center">
+                <div className="flex items-start gap-4 sm:items-center">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-amber-200">
+                    <Camera size={22} aria-hidden="true" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#E5A93B]">Follow along</p>
+                    <h2 className="font-serif-luxury mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                      Fresh from our kitchen.
+                    </h2>
+                    <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone-300">
+                      See our latest pizzas, store updates and what’s coming out of the oven.
+                    </p>
                   </div>
                 </div>
-
-                <div className="space-y-4 text-center lg:col-span-8 lg:text-left">
-                  <span className="font-script-italian text-3xl font-bold text-[#E5A93B]">
-                    Offers Miss Mat Karo! 🎯
-                  </span>
-                  <h2 className="font-serif-luxury text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
-                    Subscribe Karo, Special Deals Pao!
-                  </h2>
-                  <p className="max-w-xl text-sm leading-relaxed text-stone-400">
-                    Naye offers, student discounts aur exclusive secret deals seedha tumhare inbox mein!
-                    Late mat karo boss — free vouchers bhi milte hain 😉
-                  </p>
-                  <form onSubmit={handleSubscribe} className="pt-2">
-                    {newsletterSubscribed ? (
-                      <div className="inline-flex items-center gap-3 rounded-full border border-emerald-500/40 bg-emerald-950/60 px-6 py-3.5 text-sm font-bold text-emerald-300">
-                        <Check size={18} />
-                        <span>Shukriya! Aapko jald hi hot offers milenge. 🎉</span>
-                      </div>
-                    ) : (
-                      <div className="flex max-w-md flex-col gap-2 sm:flex-row">
-                        <input
-                          type="email"
-                          required
-                          value={emailInput}
-                          onChange={(e) => setEmailInput(e.target.value)}
-                          placeholder="Apna email daalo..."
-                          className="flex-1 rounded-full border border-white/10 bg-white/10 px-6 py-3.5 text-sm text-white placeholder-stone-400 outline-none transition focus:border-[#D9381E] focus:bg-white/15 focus:ring-2 focus:ring-[#D9381E]/30"
-                        />
-                        <button
-                          type="submit"
-                          className="group inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#D9381E] to-[#E23E1D] px-7 py-3.5 text-sm font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
-                        >
-                          <span>Subscribe Karo</span>
-                          <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
-                        </button>
-                      </div>
-                    )}
-                  </form>
-                </div>
+                <a
+                  href="https://instagram.com/elprestopizza"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group inline-flex shrink-0 items-center gap-2 rounded-full bg-[#D9381E] px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-red-950/30 transition hover:-translate-y-0.5 hover:bg-[#B8190B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#181413]"
+                >
+                  Follow @elprestopizza <ArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-1" />
+                </a>
               </div>
             </div>
           </div>
@@ -746,26 +608,17 @@ export default function ItalianArtisanalPizzeria() {
                       El<span className="text-[#D9381E]">Presto</span>
                     </span>
                     <p className="font-script-italian -mt-1 text-xs text-[#2C5E3B]">
-                      Naini ka Apna Pizza Joint 🍕
+                      Naini ka Apna Pizza Joint
                     </p>
                   </div>
                 </div>
                 <p className="text-xs leading-relaxed text-stone-600">
-                  UCER Naini, Prayagraj ka sabse healthy aur tasty pizza — 100% whole wheat,
-                  zero palm oil, asli mozzarella. Pyaar se banaya, dil se khilaya!
+                  Freshly baked pizzas, burgers and more from our kitchen in Naini, Prayagraj.
                 </p>
                 <div className="flex items-center gap-3 pt-2">
                   <a href="https://instagram.com/elprestopizza" target="_blank" rel="noreferrer" aria-label="Instagram"
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-700 transition hover:border-[#D9381E] hover:bg-[#D9381E] hover:text-white">
-                    📷
-                  </a>
-                  <a href="https://facebook.com" target="_blank" rel="noreferrer" aria-label="Facebook"
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-700 transition hover:border-[#D9381E] hover:bg-[#D9381E] hover:text-white">
-                    📘
-                  </a>
-                  <a href="https://youtube.com" target="_blank" rel="noreferrer" aria-label="YouTube"
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-700 transition hover:border-[#D9381E] hover:bg-[#D9381E] hover:text-white">
-                    ▶️
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-stone-700 transition hover:border-[#D9381E] hover:bg-[#D9381E] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E]">
+                    <Camera size={16} aria-hidden="true" />
                   </a>
                 </div>
               </div>
@@ -774,9 +627,9 @@ export default function ItalianArtisanalPizzeria() {
               <div className="space-y-3">
                 <h3 className="font-serif-luxury text-sm font-bold uppercase tracking-wider text-[#181413]">Hamara Menu</h3>
                 <ul className="space-y-2 text-xs font-medium text-stone-600">
-                  {["Healthy Mania", "Indian Tadka Pizza", "Medium Pizzas", "Large Pizzas", "Burgers & Subs", "Desserts & Beverages"].map((item) => (
+                  {["Healthy Mania", "Double Healthy Mania", "Indian Tadka Pizza", "Medium Pizzas", "Large Pizzas", "Subs", "Fries", "Bowls", "Burgers", "Sides", "Desserts", "Beverages", "Extra Toppings"].map((item) => (
                     <li key={item}>
-                      <Link href="/menu" className="hover:text-[#D9381E] transition-colors">{item}</Link>
+                      <Link href={`/menu?category=${encodeURIComponent(item)}`} className="transition-colors hover:text-[#D9381E]">{item}</Link>
                     </li>
                   ))}
                 </ul>
@@ -787,7 +640,7 @@ export default function ItalianArtisanalPizzeria() {
                 <h3 className="font-serif-luxury text-sm font-bold uppercase tracking-wider text-[#181413]">Quick Links</h3>
                 <ul className="space-y-2 text-xs font-medium text-stone-600">
                   <li><Link href="/menu?mode=delivery" className="hover:text-[#D9381E]">Delivery & Takeaway</Link></li>
-                  <li><Link href="/track" className="hover:text-[#D9381E]">Order Track Karo</Link></li>
+                  <li><Link href="/track" className="hover:text-[#D9381E]">Live Track Order</Link></li>
                   <li><Link href="/checkout" className="hover:text-[#D9381E]">Cart & Checkout</Link></li>
                   <li><Link href="/terms" className="hover:text-[#D9381E]">Terms of Service</Link></li>
                   <li><Link href="/privacy" className="hover:text-[#D9381E]">Privacy Policy</Link></li>

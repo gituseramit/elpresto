@@ -35,6 +35,7 @@ import { DEFAULT_DELIVERY_SETTINGS, DeliverySettings } from "@/lib/delivery";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, onSnapshot, Timestamp } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
+import { announceActiveOrderChanged } from "@/lib/activeOrderEvents";
 
 /* ================================================================ */
 /* Types                                                            */
@@ -578,6 +579,7 @@ export default function TrackOrderPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Order not found.");
       window.localStorage.setItem("activeOrderId", result.orderId);
+      announceActiveOrderChanged();
       setPhoneVerifiedOrderId(result.orderId);
       setOrderData(null);
       setOrderId(result.orderId);
@@ -665,6 +667,7 @@ export default function TrackOrderPage() {
           setLoading(false);
           try {
             window.localStorage.removeItem("activeOrderId");
+            announceActiveOrderChanged();
           } catch {
             /* ignore */
           }
@@ -698,6 +701,7 @@ export default function TrackOrderPage() {
         ) {
           try {
             window.localStorage.removeItem("activeOrderId");
+            announceActiveOrderChanged();
           } catch {
             /* ignore */
           }

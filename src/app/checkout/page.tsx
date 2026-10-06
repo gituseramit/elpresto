@@ -49,6 +49,7 @@ import { validatePromoCode, recordPromoUsage } from "@/lib/promoService";
 import { PromoCode, Order } from "@/lib/types";
 import type { LoyaltyReward } from "@/lib/types";
 import { getPackingCharge } from "@/lib/commerce";
+import { announceActiveOrderChanged } from "@/lib/activeOrderEvents";
 import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
@@ -978,6 +979,7 @@ export default function CheckoutPage() {
 
       try {
         window.localStorage.setItem("activeOrderId", createdOrderId);
+        announceActiveOrderChanged();
       } catch {
         /* ignore */
       }
