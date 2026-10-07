@@ -34,7 +34,6 @@ import {
   Star,
   Briefcase,
   Sparkles,
-  TrendingUp,
   Clock,
   KeyRound,
   Receipt,
@@ -47,6 +46,7 @@ import {
   ExternalLink,
   Info,
   ShoppingBag,
+  ArrowRight,
   Navigation,
 } from "lucide-react";
 import Link from "next/link";
@@ -445,13 +445,12 @@ function MiniStat({
   icon: ReactNode;
   label: string;
   value: string | number;
-  tone: "orange" | "emerald" | "amber" | "violet";
+  tone: "orange" | "emerald" | "violet";
   loading?: boolean;
 }) {
   const tones: Record<string, string> = {
     orange: "from-orange-500 to-amber-500 shadow-orange-500/25",
     emerald: "from-emerald-500 to-teal-500 shadow-emerald-500/25",
-    amber: "from-amber-500 to-yellow-500 shadow-amber-500/25",
     violet: "from-violet-500 to-purple-600 shadow-violet-500/20",
   };
   return (
@@ -819,11 +818,6 @@ export default function ProfilePage() {
       ),
     [orders]
   );
-  const totalSpent = useMemo(
-    () =>
-      completedOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0),
-    [completedOrders]
-  );
   const totalSaved = useMemo(
     () =>
       completedOrders.reduce(
@@ -1175,7 +1169,47 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          <div className="relative mt-5 grid grid-cols-2 gap-2.5 border-t border-[#f0e8df] pt-5 sm:grid-cols-4">
+          <Link
+            href="/menu"
+            className="group relative mt-6 block min-h-44 overflow-hidden rounded-2xl bg-[#32150e] shadow-lg shadow-orange-950/10 outline-none focus-visible:ring-4 focus-visible:ring-orange-300"
+          >
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-[1.04]"
+              style={{
+                backgroundImage:
+                  "url('https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1200&q=85')",
+              }}
+            />
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 bg-gradient-to-r from-[#1b0d09]/95 via-[#32150e]/80 to-[#32150e]/20"
+            />
+            <span className="relative flex min-h-44 items-center justify-between gap-4 p-5 sm:px-7">
+              <span className="max-w-md">
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.2em] text-orange-200">
+                  Made for your next craving
+                </span>
+                <span className="block text-2xl font-black tracking-tight text-white sm:text-3xl">
+                  Hungry for something good?
+                </span>
+                <span className="mt-1.5 block text-sm font-medium text-white/85">
+                  Find your next favourite, fresh from the menu.
+                </span>
+                <span className="mt-4 inline-flex items-center gap-2 rounded-full bg-orange-500 px-4 py-2.5 text-xs font-black text-white shadow-md shadow-black/20 transition group-hover:bg-orange-400">
+                  Explore the menu <ArrowRight size={14} aria-hidden="true" />
+                </span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/10 text-3xl backdrop-blur-sm sm:flex"
+              >
+                🍕
+              </span>
+            </span>
+          </Link>
+
+          <div className="relative mt-5 grid grid-cols-3 gap-2.5 border-t border-[#f0e8df] pt-5">
             <MiniStat
               icon={<Package size={14} />}
               label="Orders"
@@ -1195,13 +1229,6 @@ export default function ProfilePage() {
               label="Reward points"
               value={Math.max(0, Number(userProfile?.loyaltyPoints) || 0).toLocaleString("en-IN")}
               tone="violet"
-            />
-            <MiniStat
-              icon={<TrendingUp size={14} />}
-              label="Total spent"
-              value={`₹${Math.round(totalSpent).toLocaleString("en-IN")}`}
-              tone="amber"
-              loading={ordersLoading}
             />
           </div>
 
@@ -1807,16 +1834,16 @@ export default function ProfilePage() {
                   />
                 </div>
                 <p className="mt-4 text-sm font-black text-gray-700">
-                  No orders yet
+                  Your next favourite is waiting
                 </p>
                 <p className="mt-1 max-w-xs text-xs font-semibold text-gray-500">
-                  Your order history will appear here after your first order
+                  Explore the menu and find something delicious for today.
                 </p>
                 <Link
                   href="/menu"
                   className="mt-4 flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-white shadow-md shadow-orange-500/25 transition hover:scale-[1.03] active:scale-95"
                 >
-                  <ShoppingBag size={13} aria-hidden="true" /> Browse Menu
+                  <ShoppingBag size={13} aria-hidden="true" /> Explore the Menu
                 </Link>
               </div>
             )}
