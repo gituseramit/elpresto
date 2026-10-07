@@ -202,7 +202,7 @@ export default function Header() {
     href === "/" ? pathname === "/" : pathname?.startsWith(href) ?? false;
 
   return (
-    <header className="customer-header sticky top-0 z-40 w-full border-b border-orange-100 bg-white shadow-[0_4px_25px_-5px_rgba(217,35,18,0.06)] dark:border-white/10 dark:bg-slate-950">
+    <header className="customer-header sticky top-0 z-40 w-full border-b border-orange-100 bg-white dark:border-white/10 dark:bg-slate-950">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-2.5 sm:px-4">
         {/* Logo (Left): ElPresto with minimalist golden flame / pizza graphic */}
         <Link
@@ -212,7 +212,7 @@ export default function Header() {
         >
           <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D9381E] via-[#E23E1D] to-[#E5A93B] text-white shadow-md shadow-red-600/30 transition-transform group-hover:rotate-6 sm:h-10 sm:w-10">
             <Flame size={22} className="fill-amber-200 text-amber-200" />
-            <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#181413] text-[9px] text-[#E5A93B]">
+            <span className="absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#181413] text-base leading-none text-[#E5A93B]">
               🍕
             </span>
           </div>
@@ -275,14 +275,14 @@ export default function Header() {
               id="customer-mobile-navigation"
               aria-label="Mobile navigation"
               hidden={!mobileMenuOpen}
-              className="absolute right-0 top-full z-50 mt-3 w-[min(19rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl dark:border-stone-700 dark:bg-slate-900"
+              className="fixed right-3 top-[4.75rem] z-50 w-[min(19rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl dark:border-stone-700 dark:bg-slate-900"
             >
               <Link href="/menu" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Menu</Link>
               <Link href="/#best-sellers" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Best Sellers</Link>
               <Link href="/menu#nutrition-guide" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Ingredients &amp; Nutrition</Link>
               <Link href="/track" className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-bold transition ${hasActiveOrder ? "bg-orange-50 text-[#B8190B] dark:bg-orange-500/10 dark:text-orange-300" : "text-stone-800 hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5"}`}>
                 <span className="inline-flex items-center gap-2"><Activity size={16} aria-hidden="true" />{hasActiveOrder ? "Track your live order" : "Live Track Order"}</span>
-                {hasActiveOrder && <span className="rounded-full bg-[#D9381E] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">Live</span>}
+                {hasActiveOrder && <span className="rounded-full bg-[#D9381E] px-2 py-0.5 text-xs font-black uppercase tracking-wider text-white">Live</span>}
               </Link>
               {mounted && !authLoading && !user && (
                 <Link href="/auth" className="block rounded-xl bg-[#D9381E] px-4 py-3 text-sm font-bold text-white min-[380px]:hidden">Sign in / Create account</Link>
@@ -328,7 +328,7 @@ export default function Header() {
               )}
             </div>
             <div className="hidden flex-col text-left sm:flex">
-              <span className="text-[10px] uppercase tracking-wider text-stone-500 group-hover:text-[#D9381E] dark:text-stone-400">
+              <span className="text-xs uppercase tracking-wider text-stone-600 group-hover:text-[#D9381E] dark:text-stone-400">
                 Your Box
               </span>
               <span className="font-serif-luxury font-bold text-[#181413] dark:text-white">

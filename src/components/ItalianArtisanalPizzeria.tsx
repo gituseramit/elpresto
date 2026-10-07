@@ -184,12 +184,6 @@ export default function ItalianArtisanalPizzeria() {
         </div>
       )}
 
-      {/* Soft ambient warmth behind the food photography */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-        <div className="ember-pulse absolute right-0 top-20 h-96 w-96 rounded-full bg-radial from-[#E23E1D]/15 via-[#E5A93B]/8 to-transparent blur-3xl" />
-        <div className="ember-pulse absolute -left-20 bottom-1/4 h-[500px] w-[500px] rounded-full bg-radial from-[#D9381E]/12 via-[#E5A93B]/5 to-transparent blur-3xl" />
-      </div>
-
       <div className="relative z-10">
 
         {/* ======================================================== */}
@@ -238,19 +232,19 @@ export default function ItalianArtisanalPizzeria() {
                   No maida. No palm oil. Just the good stuff, served hot.
                 </p>
 
-                <div className="mx-auto grid max-w-xl grid-cols-3 gap-2 text-left lg:mx-0" aria-label="Nutrition ingredient highlights">
+                <div className="mx-auto grid max-w-xl grid-cols-3 divide-x divide-amber-200/80 border-y border-amber-200/80 bg-white/60 py-2 text-left lg:mx-0" aria-label="Nutrition ingredient highlights">
                   {[
                     { name: "Whole wheat", nutrient: "Carbs + fibre" },
                     { name: "Paneer & cheese", nutrient: "Protein sources" },
                     { name: "Fresh veg", nutrient: "Fibre source" },
                   ].map((item) => (
-                    <div key={item.name} className="rounded-xl border border-amber-200/80 bg-white/80 px-2.5 py-2.5 shadow-sm sm:px-3.5">
-                      <p className="text-[11px] font-black leading-tight text-stone-900 sm:text-xs">{item.name}</p>
-                      <p className="mt-1 text-[10px] leading-tight text-stone-600 sm:text-[11px]">{item.nutrient}</p>
+                    <div key={item.name} className="min-w-0 px-2.5 sm:px-3.5">
+                      <p className="text-xs font-black leading-tight text-stone-900">{item.name}</p>
+                      <p className="mt-1 text-sm leading-snug text-stone-600">{item.nutrient}</p>
                     </div>
                   ))}
                 </div>
-                <p className="-mt-4 text-left text-[10px] text-stone-500 lg:text-left">Ingredient-level highlights; exact nutrition varies by recipe.</p>
+                <p className="-mt-4 text-left text-sm text-stone-600">Ingredient-level highlights; exact nutrition varies by recipe.</p>
 
                 {/* CTAs */}
                 <div className="flex flex-col items-center gap-4 pt-4 sm:flex-row sm:justify-center lg:justify-start">
@@ -264,7 +258,7 @@ export default function ItalianArtisanalPizzeria() {
 
                   <a
                     href="#hamara-menu"
-                    className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-stone-300 bg-white/80 px-7 py-3.5 text-base font-bold text-[#181413] shadow-sm backdrop-blur-sm transition-all duration-300 hover:border-[#D9381E] hover:text-[#D9381E]"
+                    className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-stone-300 bg-white px-7 py-3.5 text-base font-bold text-[#181413] shadow-sm transition-all duration-300 hover:border-[#D9381E] hover:text-[#D9381E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E] focus-visible:ring-offset-2"
                   >
                     Categories Dekho
                   </a>
@@ -281,8 +275,7 @@ export default function ItalianArtisanalPizzeria() {
               {/* Right Column Visual */}
               <div className="relative flex justify-center lg:col-span-5">
                 <div className="relative w-full max-w-lg">
-                  <div className="absolute inset-0 -m-6 rounded-full bg-gradient-to-tr from-[#D9381E]/20 via-[#E5A93B]/25 to-transparent blur-2xl" />
-                  <div className="group relative overflow-hidden rounded-[2.5rem] border border-amber-200/60 bg-gradient-to-br from-white via-[#FAF7F2] to-amber-50/50 p-4 shadow-[0_25px_60px_rgba(217,56,30,0.18)] transition-all duration-500 hover:shadow-[0_30px_70px_rgba(217,56,30,0.25)]">
+                  <div className="group relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-white via-[#FAF7F2] to-amber-50/50 p-4 shadow-[0_25px_60px_rgba(15,23,42,0.16)] transition-all duration-500 hover:shadow-[0_30px_70px_rgba(15,23,42,0.2)]">
                     <div className="relative aspect-square w-full overflow-hidden rounded-[2rem]">
                       <Image
                         src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1000&q=85"
@@ -330,8 +323,7 @@ export default function ItalianArtisanalPizzeria() {
               {/* Image */}
               <div className="relative lg:col-span-6">
                 <div className="relative mx-auto max-w-md lg:max-w-none">
-                  <div className="absolute -inset-4 rounded-3xl border-2 border-dashed border-[#E5A93B]/40" />
-                  <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-stone-200 bg-stone-100 shadow-2xl">
+                  <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-stone-100 shadow-2xl">
                     <Image
                       src="https://images.unsplash.com/photo-1579684947550-22e945225d9a?w=1000&q=80"
                       alt="Whole wheat pizza dough aur fresh ingredients"
@@ -379,11 +371,11 @@ export default function ItalianArtisanalPizzeria() {
                     { title: "No palm oil", sub: "Made with quality cooking oils." },
                     { title: "Baked to order", sub: "Prepared fresh when you order." },
                   ].map((f) => (
-                    <div key={f.title} className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white p-3.5 shadow-sm">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-[#B76C13]"><Check size={17} aria-hidden="true" /></span>
+                    <div key={f.title} className="flex items-start gap-3 py-2">
+                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[#B76C13]"><Check size={16} aria-hidden="true" /></span>
                       <div>
-                        <span className="text-xs font-bold text-stone-900">{f.title}</span>
-                        <p className="text-xs text-stone-500">{f.sub}</p>
+                        <span className="text-sm font-bold text-stone-900">{f.title}</span>
+                        <p className="text-sm text-stone-600">{f.sub}</p>
                       </div>
                     </div>
                   ))}
@@ -437,9 +429,9 @@ export default function ItalianArtisanalPizzeria() {
                 <Link
                   key={cat.slug}
                   href={`/menu?category=${encodeURIComponent(cat.slug)}`}
-                  className="group relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-md transition-all duration-300 hover:-translate-y-1.5 hover:border-[#D9381E]/40 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E] focus-visible:ring-offset-2"
+                  className="group relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-md transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D9381E] focus-visible:ring-offset-2"
                 >
-                  <div className="relative aspect-[4/3] w-full overflow-hidden">
+                  <div className="relative aspect-square w-full overflow-hidden sm:aspect-[4/3]">
                     <Image
                       src={cat.image}
                       alt={cat.label}
@@ -455,10 +447,10 @@ export default function ItalianArtisanalPizzeria() {
 
 
                     <div className="absolute bottom-0 left-0 right-0 p-3">
-                      <p className="font-serif-luxury text-sm font-bold leading-tight text-white line-clamp-1">
+                      <p className="font-serif-luxury line-clamp-2 text-sm font-bold leading-tight text-white">
                         {cat.label}
                       </p>
-                      <p className="text-xs text-amber-100 line-clamp-1 mt-1">
+                      <p className="mt-1 line-clamp-2 text-sm leading-snug text-amber-100">
                         {cat.tagline}
                       </p>
                     </div>
@@ -514,7 +506,7 @@ export default function ItalianArtisanalPizzeria() {
               {bestSellerItems.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-all duration-300 hover:bg-white/10 hover:border-[#D9381E]/50"
+                  className="group flex flex-col overflow-hidden rounded-2xl transition-colors duration-300"
                 >
                   <div className="relative aspect-square overflow-hidden">
                     <Image
@@ -559,17 +551,13 @@ export default function ItalianArtisanalPizzeria() {
         <section className="px-6 py-12 sm:px-10 lg:px-14">
           <div className="mx-auto max-w-7xl">
             <div className="relative overflow-hidden rounded-[2rem] bg-[#181413] px-6 py-9 text-white shadow-2xl sm:px-10 sm:py-12 lg:px-14">
-              <div className="absolute -left-10 -top-10 h-72 w-72 rounded-full bg-radial from-[#D9381E]/30 to-transparent blur-3xl" />
-              <div className="absolute -right-10 -bottom-10 h-72 w-72 rounded-full bg-radial from-[#E5A93B]/20 to-transparent blur-3xl" />
-
               <div className="relative z-10 flex flex-col items-start justify-between gap-7 md:flex-row md:items-center">
                 <div className="flex items-start gap-4 sm:items-center">
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-amber-200">
                     <Camera size={22} aria-hidden="true" />
                   </span>
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#E5A93B]">Follow along</p>
-                    <h2 className="font-serif-luxury mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                    <h2 className="font-serif-luxury text-2xl font-bold tracking-tight text-white sm:text-3xl">
                       Fresh from our kitchen.
                     </h2>
                     <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone-300">
@@ -581,7 +569,7 @@ export default function ItalianArtisanalPizzeria() {
                   href="https://instagram.com/elprestopizza"
                   target="_blank"
                   rel="noreferrer"
-                  className="group inline-flex shrink-0 items-center gap-2 rounded-full bg-[#D9381E] px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-red-950/30 transition hover:-translate-y-0.5 hover:bg-[#B8190B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#181413]"
+                  className="group inline-flex shrink-0 items-center gap-2 rounded-full bg-[#D9381E] px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-[#B8190B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#181413]"
                 >
                   Follow @elprestopizza <ArrowRight size={16} aria-hidden="true" className="transition-transform group-hover:translate-x-1" />
                 </a>
@@ -657,7 +645,7 @@ export default function ItalianArtisanalPizzeria() {
                     <span>United College of Engineering &amp; Research (UCER), Naini, Prayagraj, UP – 211010</span>
                   </p>
                   <p className="flex items-center gap-2">
-                    <Clock size={16} className="shrink-0 text-[#E5A93B]" />
+                    <Clock size={16} className="shrink-0 text-amber-700" />
                     <span>Roz khula: 10:00 AM – 11:00 PM</span>
                   </p>
                   <p className="flex items-center gap-2">
@@ -669,11 +657,11 @@ export default function ItalianArtisanalPizzeria() {
             </div>
 
             {/* Bottom Bar */}
-            <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-stone-300 pt-6 text-xs text-stone-500 sm:flex-row">
+            <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-stone-300 pt-6 text-xs text-stone-600 sm:flex-row">
               <p>© {new Date().getFullYear()} EL PRESTO. Sab haq surakshit hain. Made with ❤️ in Prayagraj</p>
               <div className="flex items-center gap-3">
                 {["UPI", "Razorpay", "PhonePe", "Paytm", "Cash"].map((pm) => (
-                  <span key={pm} className="rounded border border-stone-300 bg-white px-2 py-0.5 text-[10px] font-bold text-stone-700">{pm}</span>
+                  <span key={pm} className="rounded border border-stone-300 bg-white px-2 py-0.5 text-xs font-bold text-stone-700">{pm}</span>
                 ))}
               </div>
             </div>

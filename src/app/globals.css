@@ -159,10 +159,6 @@ body::before {
     animation: basilDrift2 8s ease-in-out infinite alternate;
   }
 
-  .ember-pulse {
-    animation: emberPulse 3.5s ease-in-out infinite alternate;
-  }
-
   .font-serif-luxury {
     font-family: var(--font-playfair), "Playfair Display", Georgia, serif;
   }
@@ -207,12 +203,6 @@ body::before {
   0%   { transform: translateY(0px) rotate(0deg); }
   50%  { transform: translateY(12px) rotate(-6deg); }
   100% { transform: translateY(-8px) rotate(3deg); }
-}
-
-@keyframes emberPulse {
-  0%   { opacity: 0.35; transform: scale(0.95); }
-  50%  { opacity: 0.75; transform: scale(1.05); }
-  100% { opacity: 0.45; transform: scale(0.98); }
 }
 
 @keyframes goldShimmer {
