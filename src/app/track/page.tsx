@@ -8,7 +8,6 @@ import {
   useState,
   type ComponentType,
   type FormEvent,
-  type ReactNode,
 } from "react";
 import {
   ArrowLeft,
@@ -19,11 +18,7 @@ import {
   MapPin,
   Truck,
   Navigation,
-  Trophy,
-  Sparkles,
   PartyPopper,
-  Star,
-  Zap,
   Phone,
   RefreshCw,
   ShoppingBag,
@@ -94,6 +89,8 @@ interface OrderData {
   subtotal?: number;
   discount?: number;
   deliveryFee?: number;
+  paymentMethod?: string;
+  paymentStatus?: string;
   total?: number;
   status?: string;
   instructions?: string;
@@ -240,6 +237,15 @@ function formatISTTime(value: unknown): string {
   }
 }
 
+function formatArrivalWindow(durationMinutes: number): string {
+  const format = (offset: number) =>
+    new Date(Date.now() + Math.max(0, offset) * 60_000).toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  return `${format(durationMinutes - 3)}–${format(durationMinutes + 3)}`;
+}
+
 function safeNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -332,213 +338,43 @@ function usePrefersReducedMotion(): boolean {
 /* Gamified tracker                                                 */
 /* ================================================================ */
 
-function GamifiedTracker({
+function OrderProgress({
   currentStage,
   isDelivery,
-  reducedMotion,
 }: {
   currentStage: string;
   isDelivery: boolean;
-  reducedMotion: boolean;
 }) {
   const stages = isDelivery ? DELIVERY_STAGES : TAKEAWAY_STAGES;
-  const total = stages.length;
-
-  const currentIndex = Math.max(
-    0,
-    stages.findIndex((s) => s.key === currentStage)
-  );
-
-  const inset = 50 / total;
-  const span = 100 - inset * 2;
-  const fillWidth = total > 1 ? (currentIndex / (total - 1)) * span : 0;
-
-  const earnedXP = stages
-    .slice(0, currentIndex + 1)
-    .reduce((sum, s) => sum + s.points, 0);
-  const maxXP = stages.reduce((sum, s) => sum + s.points, 0);
-  const percent = Math.round((earnedXP / maxXP) * 100);
-  const isFinalStage =
-    currentStage === "delivered" || currentStage === "completed";
+  const currentIndex = Math.max(0, stages.findIndex((stage) => stage.key === currentStage));
+  const inset = 50 / stages.length;
+  const trackWidth = 100 - inset * 2;
+  const progress = stages.length > 1 ? (currentIndex / (stages.length - 1)) * trackWidth : 0;
 
   return (
-    <div className="rounded-3xl border border-white/60 bg-white/55 p-5 shadow-[0_10px_40px_-15px_rgba(217,35,18,0.25)] backdrop-blur-2xl md:p-7">
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div
-            aria-hidden="true"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-yellow-400 to-orange-500 shadow-md shadow-orange-500/30 ring-1 ring-white/60"
-          >
-            <Trophy size={18} className="text-white" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-black tracking-tight text-gray-900">
-              Order Journey
-            </p>
-            <p className="truncate text-[10px] font-black uppercase tracking-wider text-amber-600">
-              {earnedXP} / {maxXP} XP earned
-            </p>
-          </div>
-        </div>
-
-        <div className="shrink-0 text-right">
-          <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">
-            Progress
-          </p>
-          <p className="bg-gradient-to-r from-orange-500 to-emerald-500 bg-clip-text text-xl font-black leading-none text-transparent">
-            {percent}%
-          </p>
-        </div>
-      </div>
-
-      <div
-        role="progressbar"
-        aria-label="Order progress"
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        className="mb-8 h-2.5 overflow-hidden rounded-full bg-gray-200/80 ring-1 ring-white/60"
-      >
-        <div
-          className={`h-full rounded-full bg-gradient-to-r from-orange-400 via-amber-400 to-emerald-500 transition-all duration-1000 ease-out ${
-            reducedMotion ? "" : "shadow-[0_0_12px_rgba(251,146,60,0.55)]"
-          }`}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-
+    <section aria-label="Order progress" className="rounded-2xl bg-white p-4 dark:bg-slate-900 sm:p-5">
       <div className="relative">
-        <div
-          aria-hidden="true"
-          className="absolute top-5 h-1 -translate-y-1/2 rounded-full bg-gray-200 md:top-6"
-          style={{ left: `${inset}%`, right: `${inset}%` }}
-        />
-        <div
-          aria-hidden="true"
-          className="absolute top-5 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-orange-400 to-emerald-500 transition-all duration-1000 ease-out md:top-6"
-          style={{ left: `${inset}%`, width: `${fillWidth}%` }}
-        />
-
-        <div className="relative flex justify-between">
-          {stages.map((stage, i) => {
-            const isActive = i === currentIndex;
-            const isDone = i < currentIndex;
-            const isUnlocked = i <= currentIndex;
-
+        <div aria-hidden="true" className="absolute top-4 h-1 rounded-full bg-stone-100 dark:bg-slate-700" style={{ left: `${inset}%`, right: `${inset}%` }} />
+        <div aria-hidden="true" className="absolute top-4 h-1 rounded-full bg-lime-500 transition-all duration-700 motion-reduce:transition-none" style={{ left: `${inset}%`, width: `${progress}%` }} />
+        <ol className="relative flex justify-between">
+          {stages.map((stage, index) => {
+            const isCurrent = index === currentIndex;
+            const isDone = index < currentIndex;
             return (
-              <div
-                key={stage.key}
-                className="flex min-w-0 flex-1 flex-col items-center"
-              >
-                <div className="relative">
-                  {isActive && !isFinalStage && !reducedMotion && (
-                    <span
-                      aria-hidden="true"
-                      className={`absolute inset-0 animate-ping rounded-full bg-gradient-to-br ${stage.gradient} opacity-40`}
-                    />
-                  )}
-                  <div
-                    className={`relative grid h-10 w-10 place-items-center rounded-full border-4 border-white text-lg shadow-lg transition-all duration-500 md:h-12 md:w-12 md:text-xl ${
-                      isDone
-                        ? `bg-gradient-to-br ${stage.gradient}`
-                        : isActive
-                        ? `scale-110 bg-gradient-to-br ${stage.gradient} ring-4 ${stage.ring}`
-                        : "bg-gray-200 opacity-60 grayscale"
-                    }`}
-                  >
-                    <span aria-hidden="true">{stage.emoji}</span>
-                    {isDone && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-white text-emerald-600 shadow-sm md:h-5 md:w-5"
-                      >
-                        <Check size={10} strokeWidth={4} />
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <span
-                  className={`mt-2 truncate text-center text-[10px] font-black leading-tight md:text-xs ${
-                    isUnlocked ? "text-gray-800" : "text-gray-400"
-                  }`}
-                >
-                  <span className="hidden sm:inline">{stage.label}</span>
-                  <span className="sm:hidden">{stage.shortLabel}</span>
+              <li key={stage.key} aria-current={isCurrent ? "step" : undefined} className="flex min-w-0 flex-1 flex-col items-center text-center">
+                <span className={`grid h-8 w-8 place-items-center rounded-full text-sm ring-4 ring-white dark:ring-slate-900 ${isCurrent || isDone ? "bg-lime-400 text-stone-950" : "bg-stone-100 text-stone-400 dark:bg-slate-700 dark:text-slate-400"}`}>
+                  {isDone ? <Check size={15} strokeWidth={3} aria-hidden="true" /> : <span aria-hidden="true">{stage.emoji}</span>}
                 </span>
-
-                {(isDone || isActive) && (
-                  <span
-                    className={`mt-0.5 flex items-center gap-0.5 text-[9px] font-black ${
-                      isDone ? "text-emerald-600" : "text-orange-500"
-                    }`}
-                  >
-                    <Zap size={9} fill="currentColor" aria-hidden="true" />
-                    +{stage.points}
-                  </span>
-                )}
-              </div>
+                <span className={`mt-2 text-[9px] font-extrabold leading-tight sm:text-xs ${isCurrent ? "text-stone-900 dark:text-white" : isDone ? "text-stone-600 dark:text-slate-300" : "text-stone-400 dark:text-slate-500"}`}>
+                  <span className="sm:hidden">{stage.shortLabel}</span>
+                  <span className="hidden sm:inline">{stage.label}</span>
+                </span>
+              </li>
             );
           })}
-        </div>
+        </ol>
       </div>
-
-      {currentIndex < total - 1 && (
-        <div className="mt-6 flex items-center gap-2 rounded-2xl border border-amber-200/70 bg-gradient-to-r from-amber-50/80 to-orange-50/60 px-4 py-2.5">
-          <Sparkles
-            size={15}
-            className="shrink-0 text-amber-500"
-            aria-hidden="true"
-          />
-          <p className="text-xs font-bold text-amber-800">
-            Next milestone:{" "}
-            <span className="text-orange-600">
-              {stages[currentIndex + 1].label}
-            </span>{" "}
-            · +{stages[currentIndex + 1].points} XP
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ================================================================ */
-/* Stat card                                                        */
-/* ================================================================ */
-
-function StatCard({
-  label,
-  value,
-  icon,
-  tone = "blue",
-}: {
-  label: string;
-  value: string;
-  icon: ReactNode;
-  tone?: "blue" | "orange" | "emerald" | "purple";
-}) {
-  const tones: Record<string, string> = {
-    blue: "from-blue-500 to-cyan-500 shadow-blue-500/25",
-    orange: "from-orange-500 to-amber-500 shadow-orange-500/25",
-    emerald: "from-emerald-500 to-green-500 shadow-emerald-500/25",
-    purple: "from-purple-500 to-pink-500 shadow-purple-500/25",
-  };
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/55 p-3.5 backdrop-blur-md">
-      <div
-        aria-hidden="true"
-        className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-md ring-1 ring-white/50 ${tones[tone]}`}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">
-          {label}
-        </p>
-        <p className="truncate text-base font-black text-gray-900">{value}</p>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -575,9 +411,9 @@ function OrderStatusHistory({
   return (
     <section
       aria-label="Order status timeline"
-      className="rounded-3xl border border-white/60 bg-white/55 p-5 shadow-md backdrop-blur-xl sm:p-6"
+      className="rounded-3xl border border-white/60 bg-white/80 p-5 shadow-md backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800 sm:p-6"
     >
-      <h3 className="text-sm font-black text-gray-900">Live status timeline</h3>
+      <h3 className="text-sm font-black text-gray-900 dark:text-white">Live status timeline</h3>
       {events.length ? (
         <ol className="mt-4 space-y-3">
           {events.map((event, index) => {
@@ -590,11 +426,11 @@ function OrderStatusHistory({
                   className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${index === 0 ? "bg-orange-500 ring-4 ring-orange-100" : "bg-emerald-500"}`}
                 />
                 <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-                  <span className="text-xs font-bold text-gray-800">
+                  <span className="text-xs font-bold text-gray-800 dark:text-slate-100">
                     {ORDER_STATUS_LABELS[status] || status.replace(/_/g, " ")}
-                    {event.byName ? <span className="font-medium text-gray-500"> · {event.byName}</span> : null}
+                    {event.byName ? <span className="font-medium text-gray-500 dark:text-slate-400"> · {event.byName}</span> : null}
                   </span>
-                  <time className="shrink-0 text-[10px] font-semibold text-gray-500">
+                  <time className="shrink-0 text-[10px] font-semibold text-gray-500 dark:text-slate-400">
                     {at ? `${at.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${formatISTTime(at)}` : "Time unavailable"}
                   </time>
                 </div>
@@ -603,7 +439,7 @@ function OrderStatusHistory({
           })}
         </ol>
       ) : (
-        <p className="mt-2 text-xs font-medium text-gray-500">
+        <p className="mt-2 text-xs font-medium text-gray-500 dark:text-slate-400">
           Status updates will appear here as your order progresses.
         </p>
       )}
@@ -1059,25 +895,14 @@ export default function TrackOrderPage() {
   /* Shared header                                                    */
   /* ================================================================ */
 
-  const BackLink = (
-    <Link
-      href="/menu"
-      className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-4 py-2 text-sm font-bold text-gray-700 shadow-sm backdrop-blur-md transition-colors hover:text-orange-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
-    >
-      <ArrowLeft size={16} aria-hidden="true" /> Back to Menu
-    </Link>
-  );
-
   const orderNumberLabel = orderData.orderNumber || orderData.id.slice(0, 8);
   const delivery = isDeliveryOrder(orderData);
   const stageKey = derivedStage;
   const isCancelled = stageKey === "cancelled" || stageKey === "rejected";
-  const isDeliveredOrCompleted =
-    stageKey === "delivered" || stageKey === "completed";
 
   const orderSwitcher = activeOrders.length > 1 ? (
-    <label className="mb-5 block rounded-2xl border border-white/60 bg-white/65 p-3 shadow-sm backdrop-blur-md">
-      <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-gray-500">
+    <label className="mb-5 block rounded-2xl border border-white/60 bg-white/90 p-3 shadow-sm backdrop-blur-md dark:border-slate-700 dark:bg-slate-900">
+      <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-gray-500 dark:text-slate-400">
         You have {activeOrders.length} live orders
       </span>
       <select
@@ -1097,7 +922,7 @@ export default function TrackOrderPage() {
             /* account query remains the cross-device source of truth */
           }
         }}
-        className="w-full rounded-xl border border-orange-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:border-orange-500"
+        className="w-full rounded-xl border border-orange-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:border-orange-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
       >
         {activeOrders.map((order) => (
           <option key={order.id} value={order.id}>
@@ -1138,7 +963,7 @@ export default function TrackOrderPage() {
     const heroTitle = isDelivered
       ? "Order Delivered!"
       : isOutForDelivery
-      ? "Rider is on the way"
+      ? "Your order is on the way!"
       : isReady
       ? "Fresh out of the oven"
       : isPreparing
@@ -1166,9 +991,9 @@ export default function TrackOrderPage() {
       : "bg-blue-100 text-blue-700 ring-blue-200";
 
     const etaText = isDelivered
-      ? "Done"
+      ? "Delivered"
       : liveRoadStats?.durationMinutes
-      ? `~${liveRoadStats.durationMinutes} min`
+      ? formatArrivalWindow(liveRoadStats.durationMinutes)
       : "Calculating…";
 
     const distanceKm =
@@ -1187,29 +1012,59 @@ export default function TrackOrderPage() {
       typeof customerLat === "number" && typeof customerLng === "number";
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
-        <div className="container mx-auto max-w-4xl">
-          {BackLink}
+      <div className="min-h-screen bg-[#f4f7f3] px-3 py-4 dark:bg-slate-950 sm:px-4 sm:py-6">
+      <div className="container mx-auto max-w-5xl px-0 sm:px-4">
           {orderSwitcher}
 
           <div className="space-y-5 sm:space-y-6">
+            {/* Map-first layout keeps live delivery information immediately visible. */}
+            <section className="relative overflow-hidden rounded-[28px] border border-white bg-white shadow-[0_18px_50px_-24px_rgba(35,49,39,0.35)] dark:border-slate-800 dark:bg-slate-900">
+              <div className="relative h-[min(46svh,420px)] min-h-[280px] w-full bg-[#e9eee8]">
+                {mapReady ? (
+                  <LiveMap
+                    riderLat={riderLat}
+                    riderLng={riderLng}
+                    customerLat={customerLat}
+                    customerLng={customerLng}
+                    cafeLat={settings.cafeLat}
+                    cafeLng={settings.cafeLng}
+                    customerName={orderData.customerName}
+                    onRouteCalculated={setLiveRoadStats}
+                    className="absolute inset-0 h-full w-full"
+                    showHud={false}
+                  />
+                ) : (
+                  <div className="absolute inset-0 grid place-items-center bg-[linear-gradient(145deg,#e6eee6,#f7f6ef)] p-6 text-center">
+                    <div className="max-w-xs rounded-2xl bg-white/85 p-5 shadow-sm">
+                      <MapPin className="mx-auto mb-2 text-orange-600" size={26} aria-hidden="true" />
+                      <p className="text-sm font-extrabold text-stone-900">Delivery map is getting ready</p>
+                      <p className="mt-1 text-xs text-stone-600">Your address map will appear when the location is available.</p>
+                    </div>
+                  </div>
+                )}
+                <Link href="/menu" aria-label="Back to menu" className="absolute left-3 top-3 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/95 text-stone-800 shadow-md ring-1 ring-black/5 backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">
+                  <ArrowLeft size={18} aria-hidden="true" />
+                </Link>
+                <span className="absolute right-3 top-3 z-20 rounded-full bg-white/95 px-3 py-2 text-[11px] font-black text-stone-800 shadow-md ring-1 ring-black/5">
+                  #{orderNumberLabel}
+                </span>
+                {isOutForDelivery && (
+                  <span className="absolute bottom-3 left-3 z-20 inline-flex items-center gap-2 rounded-full bg-stone-950/85 px-3 py-2 text-xs font-bold text-white shadow-lg backdrop-blur">
+                    <span className={`h-2 w-2 rounded-full bg-lime-400 ${reducedMotion ? "" : "animate-pulse"}`} />
+                    Live rider location
+                  </span>
+                )}
+              </div>
+            </section>
+
             {/* HERO */}
             <div
-              className={`relative overflow-hidden rounded-3xl border border-white/60 bg-white/55 p-5 shadow-[0_15px_50px_-15px_rgba(217,35,18,0.3)] backdrop-blur-2xl transition sm:p-7 ${
+              className={`relative overflow-hidden rounded-[28px] border border-stone-100 bg-white p-5 shadow-[0_14px_40px_-24px_rgba(35,49,39,0.3)] transition dark:border-slate-800 dark:bg-slate-900 sm:p-7 ${
                 statusChangePulse && !reducedMotion
                   ? "ring-4 ring-orange-300/60"
                   : ""
               }`}
             >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-orange-400/20 blur-3xl"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -bottom-16 -right-16 h-40 w-40 rounded-full bg-emerald-400/15 blur-3xl"
-              />
-
               <div className="relative flex flex-col gap-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
@@ -1220,14 +1075,25 @@ export default function TrackOrderPage() {
                       {heroEmoji}
                     </div>
                     <div className="min-w-0">
-                      <h1 className="truncate text-xl font-black leading-tight text-gray-900 sm:text-2xl">
+                      <h1 className="text-xl font-black leading-tight text-stone-950 dark:text-white sm:text-2xl">
                         {heroTitle}
                       </h1>
-                      <p className="truncate text-xs font-bold text-gray-500">
+                      <p className="mt-1 truncate text-xs font-semibold text-stone-600 dark:text-stone-300">
                         Order{" "}
-                        <span className="font-mono text-gray-800">
+                        <span className="font-mono text-stone-900 dark:text-white">
                           #{orderNumberLabel}
                         </span>
+                      </p>
+                      <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-stone-700 dark:text-slate-200">
+                        <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-lime-300">
+                          <Navigation size={14} aria-hidden="true" />
+                          {isDelivered
+                            ? "Delivered"
+                            : liveRoadStats?.durationMinutes
+                            ? `Arrives ${etaText}`
+                            : "Calculating arrival time"}
+                        </span>
+                        {distanceKm !== null && <span className="text-stone-500 dark:text-slate-400">· {distanceText} away</span>}
                       </p>
                     </div>
                   </div>
@@ -1256,26 +1122,6 @@ export default function TrackOrderPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <StatCard
-                    label="ETA"
-                    value={etaText}
-                    icon={<Navigation size={16} />}
-                    tone="blue"
-                  />
-                  <StatCard
-                    label="Distance"
-                    value={distanceText}
-                    icon={<MapPin size={16} />}
-                    tone="orange"
-                  />
-                  <StatCard
-                    label="Order Total"
-                    value={totalText}
-                    icon={<Star size={16} />}
-                    tone="emerald"
-                  />
-                </div>
               </div>
             </div>
 
@@ -1286,43 +1132,22 @@ export default function TrackOrderPage() {
                 <p className="mt-1 text-sm">If you have a question about this order or its payment, contact <a className="font-bold underline" href="mailto:support@elpresto.co.in">support@elpresto.co.in</a>.</p>
               </div>
             ) : (
-              <GamifiedTracker currentStage={stageKey} isDelivery reducedMotion={reducedMotion} />
+              <OrderProgress currentStage={stageKey} isDelivery />
             )}
-            <OrderStatusHistory
-              history={orderData.statusHistory}
-              currentStatus={getOrderStatus(orderData)}
-              createdAt={orderData.createdAt}
-              updatedAt={orderData.updatedAt}
-            />
-
-            {/* MAP */}
-            {mapReady ? (
-              <div className="overflow-hidden rounded-3xl border border-white/60 bg-white/40 shadow-[0_15px_50px_-20px_rgba(0,0,0,0.25)] backdrop-blur-xl">
-                <LiveMap
-                  riderLat={riderLat}
-                  riderLng={riderLng}
-                  customerLat={customerLat}
-                  customerLng={customerLng}
-                  cafeLat={settings.cafeLat}
-                  cafeLng={settings.cafeLng}
-                  customerName={orderData.customerName}
-                  onRouteCalculated={setLiveRoadStats}
-                  className="h-[300px] w-full sm:h-[380px] md:h-[420px]"
+            <details className="group rounded-2xl border border-stone-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-extrabold text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 dark:text-white">
+                Recent status updates
+                <span aria-hidden="true" className="text-stone-500 transition-transform group-open:rotate-180">⌄</span>
+              </summary>
+              <div className="mt-3">
+                <OrderStatusHistory
+                  history={orderData.statusHistory}
+                  currentStatus={getOrderStatus(orderData)}
+                  createdAt={orderData.createdAt}
+                  updatedAt={orderData.updatedAt}
                 />
               </div>
-            ) : (
-              <div className="flex items-center gap-3 rounded-3xl border border-amber-200 bg-amber-50/70 p-4 backdrop-blur-md">
-                <AlertCircle
-                  size={18}
-                  className="shrink-0 text-amber-600"
-                  aria-hidden="true"
-                />
-                <p className="text-xs font-bold text-amber-800">
-                  Delivery location is not available for this order. Live map
-                  will appear once the rider shares their position.
-                </p>
-              </div>
-            )}
+            </details>
 
             {/* OTP */}
             {orderData.deliveryOtp && !isDelivered && (
@@ -1358,50 +1183,41 @@ export default function TrackOrderPage() {
               </div>
             )}
 
-            {/* RIDER + ADDRESS */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="flex items-center gap-3 rounded-3xl border border-white/60 bg-white/55 p-4 shadow-md backdrop-blur-xl">
-                <div
-                  aria-hidden="true"
-                  className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-100 to-amber-100 text-2xl ring-1 ring-white/60"
-                >
-                  🛵
+            {/* RIDER AND DESTINATION */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <section className="flex min-w-0 items-center gap-3 rounded-[24px] border border-stone-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-lime-100 text-xl">
+                  {orderData.deliveryPersonName ? orderData.deliveryPersonName.trim().slice(0, 1).toUpperCase() : "🛵"}
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-gray-900">
-                    {orderData.deliveryPersonName || "Delivery Partner"}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-stone-950 dark:text-white">
+                    {orderData.deliveryPersonName || "Finding your delivery partner"}
                   </p>
-                  <p className="flex items-center gap-1 truncate text-[11px] font-semibold text-gray-500">
-                    <Truck size={12} aria-hidden="true" />
-                    {orderData.deliveryPersonName
-                      ? "Assigned Rider"
-                      : "Awaiting assignment"}
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-stone-600 dark:text-slate-300">
+                    <Truck size={13} aria-hidden="true" />
+                    {orderData.deliveryPersonName ? "Your delivery partner" : "We’ll show their details here"}
                   </p>
                   {Boolean(orderData.deliveryLocationUpdatedAt) && (
-                    <p className="mt-0.5 text-[10px] font-bold text-gray-400">
-                      GPS updated:{" "}
-                      {formatISTTime(orderData.deliveryLocationUpdatedAt)}
+                    <p className="mt-1 text-[10px] font-semibold text-stone-500 dark:text-slate-400">
+                      Location updated {formatISTTime(orderData.deliveryLocationUpdatedAt)}
                     </p>
                   )}
                 </div>
-              </div>
+                <a href="tel:+916392512314" aria-label="Call El Presto support" className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-stone-50 px-3 text-xs font-extrabold text-stone-800 ring-1 ring-stone-200 transition hover:bg-lime-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 dark:bg-slate-800 dark:text-white dark:ring-slate-700">
+                  <Phone size={17} aria-hidden="true" />
+                  <span>Support</span>
+                </a>
+              </section>
 
-              <div className="flex items-start gap-3 rounded-3xl border border-white/60 bg-white/55 p-4 shadow-md backdrop-blur-xl">
-                <div
-                  aria-hidden="true"
-                  className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-rose-100 to-orange-100 ring-1 ring-white/60"
-                >
-                  <MapPin size={20} className="text-orange-500" />
+              <section className="flex min-w-0 items-start gap-3 rounded-[24px] border border-stone-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-50 text-orange-700">
+                  <MapPin size={18} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-black text-gray-900">
-                    Delivery Address
-                  </p>
-                  <p className="mt-0.5 text-xs font-semibold leading-snug text-gray-600">
-                    {fullAddress}
-                  </p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-stone-500 dark:text-slate-400">Delivering to</p>
+                  <p className="mt-1 text-sm font-bold leading-snug text-stone-900 dark:text-white">{fullAddress}</p>
                 </div>
-              </div>
+              </section>
             </div>
 
             {/* CUSTOMER INSTRUCTIONS */}
@@ -1470,8 +1286,8 @@ export default function TrackOrderPage() {
             )}
 
             {/* ORDER ITEMS */}
-            <details className="group rounded-3xl border border-white/60 bg-white/45 p-5 shadow-md backdrop-blur-xl">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-black text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40">
+            <details className="group rounded-3xl border border-stone-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-black text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 dark:text-white">
                 <span className="flex items-center gap-2">
                   <span aria-hidden="true">📋</span> View Order Items
                   <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-600">
@@ -1489,7 +1305,7 @@ export default function TrackOrderPage() {
                 {(orderData.items || []).map((item, idx) => (
                   <div
                     key={`${item.id || item.name}-${idx}`}
-                    className="flex items-center justify-between rounded-xl bg-white/50 px-3 py-2 text-xs"
+                    className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-xs dark:bg-slate-800"
                   >
                     <span className="truncate pr-2 font-semibold text-gray-700">
                       <span className="mr-1.5 font-black text-orange-600">
@@ -1520,7 +1336,7 @@ export default function TrackOrderPage() {
             <div className="flex items-center justify-center gap-2 pt-1 text-[11px] font-bold text-gray-500">
               <span>Need help?</span>
               <a
-                href="tel:+919999999999"
+                href="tel:+916392512314"
                 className="flex items-center gap-1 text-orange-600 hover:underline"
               >
                 <Phone size={11} aria-hidden="true" /> Contact Support
@@ -1580,28 +1396,39 @@ export default function TrackOrderPage() {
   const pickupLng = getCustomerLng(orderData) ?? settings.cafeLng;
 
   return (
-    <div className="storefront-theme min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
+    <div className="storefront-theme min-h-screen bg-[#f4f7f3] px-3 py-4 dark:bg-slate-950 sm:px-4 sm:py-6">
       <div className="container mx-auto max-w-2xl">
-        {BackLink}
         {orderSwitcher}
 
         <div className="space-y-5 sm:space-y-6">
+            <section className="relative overflow-hidden rounded-[28px] border border-white bg-white shadow-[0_18px_50px_-24px_rgba(35,49,39,0.35)] dark:border-slate-800 dark:bg-slate-900">
+            <div className="relative h-[min(48svh,380px)] min-h-[260px] w-full bg-[#e9eee8]">
+              <LiveMap
+                riderLat={pickupLat}
+                riderLng={pickupLng}
+                customerLat={pickupLat}
+                customerLng={pickupLng}
+                cafeLat={pickupLat}
+                cafeLng={pickupLng}
+                customerName={orderData.orderLocation?.kind === "pickup" ? "Pickup outlet" : orderData.customerName}
+                className="absolute inset-0 h-full w-full"
+                showHud={false}
+              />
+              <Link href="/menu" aria-label="Back to menu" className="absolute left-3 top-3 z-20 grid h-10 w-10 place-items-center rounded-full bg-white/95 text-stone-800 shadow-md ring-1 ring-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500">
+                <ArrowLeft size={18} aria-hidden="true" />
+              </Link>
+              <span className="absolute right-3 top-3 z-20 rounded-full bg-white/95 px-3 py-2 text-[11px] font-black text-stone-800 shadow-md ring-1 ring-black/5">#{orderNumberLabel}</span>
+            </div>
+          </section>
+
           {/* HERO */}
           <div
-            className={`relative overflow-hidden rounded-3xl border border-white/60 bg-white/55 p-5 text-center shadow-[0_15px_50px_-15px_rgba(217,35,18,0.3)] backdrop-blur-2xl transition sm:p-7 ${
+            className={`relative overflow-hidden rounded-3xl border border-stone-100 bg-white p-5 text-center shadow-[0_14px_40px_-24px_rgba(35,49,39,0.3)] transition dark:border-slate-800 dark:bg-slate-900 sm:p-7 ${
               statusChangePulse && !reducedMotion
                 ? "ring-4 ring-orange-300/60"
                 : ""
             }`}
           >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute -left-16 -top-16 h-40 w-40 rounded-full bg-orange-400/20 blur-3xl"
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute -bottom-16 -right-16 h-40 w-40 rounded-full bg-amber-400/15 blur-3xl"
-            />
             <div className="relative flex flex-col items-center gap-3">
               <div
                 aria-hidden="true"
@@ -1609,10 +1436,10 @@ export default function TrackOrderPage() {
               >
                 {takeawayEmoji}
               </div>
-              <h1 className="text-2xl font-black leading-tight text-gray-900 sm:text-3xl">
+              <h1 className="text-2xl font-black leading-tight text-gray-900 dark:text-white sm:text-3xl">
                 {takeawayTitle}
               </h1>
-              <p className="text-xs font-bold text-gray-500">
+              <p className="text-xs font-bold text-gray-500 dark:text-slate-400">
                 Pickup at Counter • UCER Campus
               </p>
 
@@ -1637,7 +1464,7 @@ export default function TrackOrderPage() {
               <p className="mt-1 text-sm">If you have a question about this order or its payment, contact <a className="font-bold underline" href="mailto:support@elpresto.co.in">support@elpresto.co.in</a>.</p>
             </div>
           ) : (
-            <GamifiedTracker currentStage={stageKey} isDelivery={false} reducedMotion={reducedMotion} />
+            <OrderProgress currentStage={stageKey} isDelivery={false} />
           )}
           <OrderStatusHistory
             history={orderData.statusHistory}
@@ -1645,8 +1472,6 @@ export default function TrackOrderPage() {
             createdAt={orderData.createdAt}
             updatedAt={orderData.updatedAt}
           />
-
-          {typeof pickupLat === "number" && typeof pickupLng === "number" && <section className="overflow-hidden rounded-3xl border border-white/60 bg-white/50 shadow-lg backdrop-blur-xl"><div className="border-b border-white/60 px-4 py-3"><p className="text-xs font-black text-gray-800">{orderData.orderLocation?.kind === "pickup" ? "Pickup outlet location" : "Order location"}</p><p className="mt-0.5 text-[10px] font-semibold text-gray-500">{orderData.orderLocation?.address || getFullAddress(orderData)}</p></div><LiveMap riderLat={pickupLat} riderLng={pickupLng} customerLat={pickupLat} customerLng={pickupLng} cafeLat={pickupLat} cafeLng={pickupLng} customerName={orderData.orderLocation?.kind === "pickup" ? "Pickup outlet" : orderData.customerName} className="h-[260px] w-full" showHud={false} /></section>}
 
           {/* STATUS MESSAGES */}
           {isReady && (
@@ -1722,7 +1547,7 @@ export default function TrackOrderPage() {
           )}
 
           {/* ORDER SUMMARY */}
-          <div className="rounded-3xl border border-white/60 bg-white/50 p-5 shadow-md backdrop-blur-xl sm:p-6">
+            <div className="rounded-3xl border border-stone-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 text-sm font-black text-gray-900">
                 <span aria-hidden="true">🧾</span> Order Summary
