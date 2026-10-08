@@ -7,12 +7,10 @@ import {
   useRef,
   useState,
   type ComponentType,
-  type FormEvent,
 } from "react";
 import {
   ArrowLeft,
   Check,
-  Search,
   AlertCircle,
   CheckCircle2,
   MapPin,
@@ -33,6 +31,7 @@ import { collection, doc, getDoc, limit, onSnapshot, orderBy, query, where } fro
 import { useAuth } from "@/contexts/AuthContext";
 import { announceActiveOrderChanged } from "@/lib/activeOrderEvents";
 import { getOrderStatus, isActiveOrder, type OrderStatusEvent } from "@/lib/orderStatus";
+import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
 
 /* ================================================================ */
 /* Types                                                            */
@@ -93,9 +92,24 @@ interface OrderData {
   paymentStatus?: string;
   total?: number;
   status?: string;
+  source?: string;
+  orderSource?: string;
+  kitchenNotes?: string;
   instructions?: string;
   createdAt?: unknown;
   deliveryOtp?: string;
+}
+
+function isCounterOrderForPhone(order: OrderData, registeredPhone: string): boolean {
+  if (!registeredPhone) return false;
+  const isCounterOrder =
+    order.source === "counter" ||
+    order.orderSource === "counter" ||
+    String(order.kitchenNotes || "").toLowerCase().startsWith("created at pos counter");
+  const matchesRegisteredPhone = [order.phone, order.customerPhone].some(
+    (value) => normalisePhone(String(value || "")) === registeredPhone
+  );
+  return isCounterOrder && matchesRegisteredPhone;
 }
 
 interface Stage {
@@ -453,13 +467,14 @@ function OrderStatusHistory({
 
 export default function TrackOrderPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, userProfile, loading: authLoading } = useAuth();
   const [orderData, setOrderData] = useState<OrderData | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [activeOrders, setActiveOrders] = useState<OrderData[]>([]);
   const [activeOrdersLoading, setActiveOrdersLoading] = useState(true);
   const [activeOrdersError, setActiveOrdersError] = useState("");
   const [activeOrdersRetryKey, setActiveOrdersRetryKey] = useState(0);
+  const [trackingRetryKey, setTrackingRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveRoadStats, setLiveRoadStats] = useState<RoadStats | null>(null);
@@ -468,11 +483,6 @@ export default function TrackOrderPage() {
   );
   const [lastStatusKey, setLastStatusKey] = useState<string>("");
   const [statusChangePulse, setStatusChangePulse] = useState(false);
-  const [lookupOrderNumber, setLookupOrderNumber] = useState("");
-  const [lookupPhone, setLookupPhone] = useState("");
-  const [lookupBusy, setLookupBusy] = useState(false);
-  const [lookupError, setLookupError] = useState("");
-  const [phoneVerifiedOrderId, setPhoneVerifiedOrderId] = useState<string | null>(null);
 
   const reducedMotion = usePrefersReducedMotion();
   const statusAnnounceRef = useRef<HTMLParagraphElement>(null);
@@ -485,32 +495,7 @@ export default function TrackOrderPage() {
     orderIdRef.current = orderId;
   }, [orderId]);
 
-  const lookupOrder = useCallback(async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setLookupBusy(true);
-    setLookupError("");
-    try {
-      const response = await fetch("/api/order-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNumber: lookupOrderNumber, phone: lookupPhone }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Order not found.");
-      window.localStorage.setItem("activeOrderId", result.orderId);
-      announceActiveOrderChanged();
-      setPhoneVerifiedOrderId(result.orderId);
-      setOrderData(null);
-      setOrderId(result.orderId);
-      setLoading(true);
-    } catch (err) {
-      setLookupError(err instanceof Error ? err.message : "Order lookup failed.");
-    } finally {
-      setLookupBusy(false);
-    }
-  }, [lookupOrderNumber, lookupPhone]);
-
-  /* Resolve direct links first, then restore guest tracking from this device. */
+  /* Resolve an optional order deep link; normal tracking comes from the account. */
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -518,12 +503,9 @@ export default function TrackOrderPage() {
       requestedOrderIdRef.current = requestedOrderId;
       if (requestedOrderId) {
         setOrderId(requestedOrderId);
-        return;
       }
-      const saved = window.localStorage.getItem("activeOrderId");
-      setOrderId(saved || null);
     } catch (err) {
-      console.warn("Could not read activeOrderId:", err);
+      console.warn("Could not read tracking order link:", err);
       setOrderId(null);
     }
   }, []);
@@ -534,70 +516,114 @@ export default function TrackOrderPage() {
     if (!user) {
       setActiveOrders([]);
       setActiveOrdersLoading(false);
+      setLoading(false);
+      try {
+        window.localStorage.removeItem("activeOrderId");
+        announceActiveOrderChanged();
+      } catch {
+        /* Tracking now follows the signed-in account only. */
+      }
       return;
     }
 
     setActiveOrdersLoading(true);
     setActiveOrdersError("");
+    const registeredPhone = normalisePhone(userProfile?.phone || user.phoneNumber || "");
+    const phoneVariants = phoneSearchVariants(registeredPhone);
+    const snapshots = new Map<string, OrderData[]>();
+    const pending = new Set(["account", ...(phoneVariants.length ? ["phone", "customerPhone"] : [])]);
+
+    const publishOrders = () => {
+      if (pending.size > 0) return;
+      const uniqueOrders = new Map<string, OrderData>();
+      for (const docs of snapshots.values()) {
+        for (const order of docs) uniqueOrders.set(order.id, order);
+      }
+      const allOrders = [...uniqueOrders.values()]
+        .filter((order) => {
+          if (order.customerId === user.uid) return true;
+          return isCounterOrderForPhone(order, registeredPhone);
+        })
+        .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0));
+      const liveOrders = allOrders.filter(isActiveOrder);
+      setActiveOrders(liveOrders);
+      setActiveOrdersLoading(false);
+
+      if (requestedOrderIdRef.current) return;
+      const currentlySelectedOrder = allOrders.find((order) => order.id === orderIdRef.current);
+      if (currentlySelectedOrder && !isActiveOrder(currentlySelectedOrder)) {
+        setOrderData(currentlySelectedOrder);
+        setLoading(false);
+        return;
+      }
+      if (liveOrders.length === 0) {
+        setOrderId(null);
+        setOrderData(null);
+        setLoading(false);
+        try {
+          window.localStorage.removeItem("activeOrderId");
+          announceActiveOrderChanged();
+        } catch {
+          /* ignore unavailable storage */
+        }
+        return;
+      }
+
+      if (!manualOrderSelectionRef.current) {
+        setOrderId(liveOrders[0].id);
+        setLoading(true);
+        try {
+          window.localStorage.setItem("activeOrderId", liveOrders[0].id);
+        } catch {
+          /* Firestore remains the cross-device source of truth. */
+        }
+      }
+    };
+
+    const listen = (key: string, orderQuery: ReturnType<typeof query>) =>
+      onSnapshot(
+        orderQuery,
+        (snapshot) => {
+          snapshots.set(key, snapshot.docs.map((order) => ({
+            id: order.id,
+            ...(order.data() as Omit<OrderData, "id">),
+          })));
+          pending.delete(key);
+          publishOrders();
+        },
+        (subscriptionError) => {
+          console.error("Active order subscription failed:", subscriptionError);
+          setActiveOrdersError("Unable to load your live orders. Check your connection and retry.");
+          pending.delete(key);
+          setActiveOrdersLoading(false);
+          publishOrders();
+        }
+      );
+
     const accountOrdersQuery = query(
       collection(db, "orders"),
       where("customerId", "==", user.uid),
       orderBy("createdAt", "desc"),
       limit(50)
     );
-    return onSnapshot(
-      accountOrdersQuery,
-      (snapshot) => {
-        const allOrders: OrderData[] = snapshot.docs.map((order) => ({
-          id: order.id,
-          ...(order.data() as Omit<OrderData, "id">),
-        }));
-        const liveOrders = allOrders.filter(isActiveOrder);
-        setActiveOrders(liveOrders);
-        setActiveOrdersLoading(false);
-
-        if (requestedOrderIdRef.current || phoneVerifiedOrderId) return;
-        const currentlySelectedOrder = allOrders.find(
-          (order) => order.id === orderIdRef.current
-        );
-        if (currentlySelectedOrder && !isActiveOrder(currentlySelectedOrder)) {
-          setOrderData(currentlySelectedOrder);
-          return;
-        }
-        if (liveOrders.length === 0) {
-          setOrderId(null);
-          setOrderData(null);
-          try {
-            window.localStorage.removeItem("activeOrderId");
-            announceActiveOrderChanged();
-          } catch {
-            /* ignore unavailable storage */
-          }
-          return;
-        }
-
-        if (!manualOrderSelectionRef.current) {
-          setOrderId(liveOrders[0].id);
-          try {
-            window.localStorage.setItem("activeOrderId", liveOrders[0].id);
-          } catch {
-            /* Firebase remains the source of truth when storage is unavailable. */
-          }
-        }
-      },
-      (subscriptionError) => {
-        console.error("Active order subscription failed:", subscriptionError);
-        setActiveOrdersError("Unable to load your live orders. Check your connection and retry.");
-        setActiveOrdersLoading(false);
+    const unsubscribers = [listen("account", accountOrdersQuery)];
+    if (phoneVariants.length) {
+      for (const field of ["phone", "customerPhone"] as const) {
+        unsubscribers.push(listen(field, query(
+          collection(db, "orders"),
+          where(field, "in", phoneVariants),
+          limit(50)
+        )));
       }
-    );
-  }, [user?.uid, authLoading, phoneVerifiedOrderId, activeOrdersRetryKey]);
+    }
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [user?.uid, userProfile?.phone, user?.phoneNumber, authLoading, activeOrdersRetryKey]);
 
   useEffect(() => {
-    if (authLoading || user || phoneVerifiedOrderId || !requestedOrderIdRef.current) return;
+    if (authLoading || user || !requestedOrderIdRef.current) return;
     const returnToTrack = `/track?orderId=${encodeURIComponent(requestedOrderIdRef.current)}`;
     router.replace(`/auth?redirect=${encodeURIComponent(returnToTrack)}`);
-  }, [router, user, authLoading, phoneVerifiedOrderId]);
+  }, [router, user, authLoading]);
 
   /* Settings */
   useEffect(() => {
@@ -650,6 +676,10 @@ export default function TrackOrderPage() {
       return;
     }
     if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -673,13 +703,12 @@ export default function TrackOrderPage() {
         const raw = snap.data() as Omit<OrderData, "id">;
         const data: OrderData = { id: snap.id, ...raw };
 
-        // Direct links are account-scoped; legacy guest orders require a
-        // successful phone verification before the document can be shown.
-        const belongsToSignedInCustomer = Boolean(
-          user?.uid && data.customerId === user.uid
-        );
-        const verifiedGuestOrder = data.id === phoneVerifiedOrderId;
-        if (!belongsToSignedInCustomer && !verifiedGuestOrder) {
+        // Account orders are automatic; legacy counter orders also match the
+        // signed-in customer's saved phone number across devices.
+        const registeredPhone = normalisePhone(userProfile?.phone || user.phoneNumber || "");
+        const belongsToSignedInCustomer =
+          data.customerId === user.uid || isCounterOrderForPhone(data, registeredPhone);
+        if (!belongsToSignedInCustomer) {
           setOrderData(null);
           setError(
             "This order does not belong to your account. Please sign in with the correct account."
@@ -709,7 +738,7 @@ export default function TrackOrderPage() {
     );
 
     return () => unsub();
-  }, [orderId, user?.uid, authLoading, phoneVerifiedOrderId]);
+  }, [orderId, user?.uid, user?.phoneNumber, userProfile?.phone, authLoading, trackingRetryKey]);
 
   /* Derived stage */
   const derivedStage = useMemo(() => deriveStageKey(orderData), [orderData]);
@@ -744,13 +773,7 @@ export default function TrackOrderPage() {
     if (!orderId) return;
     setError(null);
     setLoading(true);
-    // Re-read by re-setting orderId via storage
-    try {
-      const saved = window.localStorage.getItem("activeOrderId");
-      setOrderId(saved || null);
-    } catch {
-      /* ignore */
-    }
+    setTrackingRetryKey((key) => key + 1);
   }, [orderId]);
 
   /* ================================================================ */
@@ -828,7 +851,7 @@ export default function TrackOrderPage() {
           <div className="rounded-3xl border border-white/50 bg-white/55 p-8 text-center shadow-2xl backdrop-blur-2xl">
             <div className="mb-6 flex justify-center">
               <div className="grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-orange-100 to-amber-100 shadow-inner">
-                <Search
+                <Navigation
                   size={40}
                   className="text-orange-400"
                   aria-hidden="true"
@@ -836,12 +859,12 @@ export default function TrackOrderPage() {
               </div>
             </div>
             <h2 className="mb-2 text-2xl font-black text-gray-900">
-              No active orders right now
+              {user ? "No active orders right now" : "Sign in to track your order"}
             </h2>
             <p className="mb-6 text-sm text-gray-600">
               {user
-                ? "Your new orders will appear here automatically, with live updates from the kitchen and delivery team."
-                : "Look up a guest order with its order number and checkout phone."}
+                ? "When you place an order, its live kitchen and delivery updates will appear here automatically."
+                : "Sign in to see your live order here automatically. No order number or phone entry needed."}
             </p>
             {activeOrdersError && (
               <div role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-left text-xs font-semibold text-red-700">
@@ -855,34 +878,35 @@ export default function TrackOrderPage() {
                 </button>
               </div>
             )}
-            {!user && (
-              <form onSubmit={lookupOrder} className="mb-5 space-y-3 text-left">
-                <label className="block text-xs font-bold text-gray-700">Order number<input autoComplete="off" required value={lookupOrderNumber} onChange={(event) => setLookupOrderNumber(event.target.value)} placeholder="e.g. #ELP-AB12CD" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
-                <label className="block text-xs font-bold text-gray-700">Phone used at checkout<input autoComplete="tel" inputMode="tel" required value={lookupPhone} onChange={(event) => setLookupPhone(event.target.value)} placeholder="10 digit phone number" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
-                {lookupError && <p role="alert" className="text-xs font-semibold text-red-600">{lookupError}</p>}
-                <button disabled={lookupBusy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:opacity-60">{lookupBusy ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />} Track order</button>
-              </form>
-            )}
             <div className="flex flex-col gap-3">
-              <Link
-                href="/menu"
-                className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] hover:shadow-orange-500/50 active:scale-95"
-              >
-                <ShoppingBag size={15} aria-hidden="true" /> Order now
-              </Link>
-              {user && (
+              {!user ? (
+                <Link
+                  href="/auth?redirect=%2Ftrack"
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  Sign in to track your order
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href="/menu"
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] active:scale-95"
+                  >
+                    <ShoppingBag size={15} aria-hidden="true" /> Order now
+                  </Link>
                 <Link
                   href="/profile#orders"
                   className="flex items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/70 py-3.5 text-sm font-black text-gray-700 shadow-sm backdrop-blur-md transition hover:bg-white active:scale-95"
                 >
                   View order history
                 </Link>
+                </>
               )}
               <a
                 href="tel:+916392512314"
                 className="text-center text-xs font-semibold text-gray-500 underline decoration-gray-300 underline-offset-4 transition hover:text-[#D92312]"
               >
-                Need help finding an order? Call +91 63925 12314
+                Need help? Call +91 63925 12314
               </a>
             </div>
           </div>
