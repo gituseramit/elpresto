@@ -61,6 +61,7 @@ import ThemeControl from "@/components/ThemeControl";
 import { useTheme, type ThemePreference } from "@/contexts/ThemeContext";
 import { usePendingOrderReminder } from "@/hooks/usePendingOrderReminder";
 import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
+import { createInitialOrderStatusFields, updateOrderStatus } from "@/lib/orderStatus";
 
 /* ============================================================
    TYPES
@@ -872,15 +873,20 @@ export default function KitchenSystem() {
   const handleUpdateStatus = useCallback(
     async (orderId: string, newStatus: string, extraData: any = {}) => {
       try {
-        await updateDoc(doc(db, "orders", orderId), {
-          status: newStatus,
-          updatedAt: Timestamp.now(),
-          updatedBy: staffSession?.email || "kitchen",
-          ...extraData,
-        });
+        const actor = {
+          id: String(staffSession?.staffId || staffSession?.email || "kitchen"),
+          name: String(staffSession?.name || staffSession?.email || "Kitchen"),
+          role: String(staffSession?.role || "KITCHEN_STAFF"),
+        };
+        const savedStatus = await updateOrderStatus(
+          orderId,
+          newStatus as import("@/lib/orderStatus").OrderStatus,
+          actor,
+          extraData
+        );
         setOrders((prev) =>
           prev.map((o) =>
-            o.id === orderId ? { ...o, status: newStatus, ...extraData } : o
+            o.id === orderId ? { ...o, status: savedStatus, ...extraData } : o
           )
         );
       } catch (err: any) {
@@ -1221,11 +1227,14 @@ export default function KitchenSystem() {
           total: finalTotal,
           paymentMethod: newOrderPaymentMethod,
           paymentStatus: newOrderPaymentMethod === "online" ? "paid" : "pending",
-          status: "pending",
+          ...createInitialOrderStatusFields({
+            id: String(staffSession?.staffId || staffSession?.email || "kitchen"),
+            name: String(staffSession?.name || staffSession?.email || "Kitchen"),
+            role: String(staffSession?.role || "KITCHEN_STAFF"),
+          }),
           source: newOrderSource,
           branchId: activeBranchId,
           createdBy: staffSession?.email || "kitchen",
-          updatedBy: staffSession?.email || "kitchen",
           createdAt: Timestamp.now(),
           location: isDelivery
             ? "Direct Dine-in / Order"

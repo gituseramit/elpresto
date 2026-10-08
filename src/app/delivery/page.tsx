@@ -52,6 +52,7 @@ import {
 } from "@/lib/orderQueries";
 import DateNavigator from "@/components/DateNavigator";
 import ThemeControl from "@/components/ThemeControl";
+import { updateOrderStatus } from "@/lib/orderStatus";
 
 /* ============================================================= */
 /* Types                                                         */
@@ -848,15 +849,12 @@ export default function DeliveryPortal() {
             lastGpsWriteRef.current = now;
             try {
               await updateDoc(doc(db, "orders", orderId), {
-                deliveryStatus: "out_for_delivery",
                 deliveryPersonLatitude: latitude,
                 deliveryPersonLongitude: longitude,
                 deliveryPersonLocation: { lat: latitude, lng: longitude, updatedAt: Timestamp.now() },
                 deliveryPersonName: rider.name,
                 deliveryPersonId: rider.id,
                 deliveryLocationUpdatedAt: Timestamp.now(),
-                updatedAt: Timestamp.now(),
-                updatedBy: rider.id,
               });
             } catch (err) {
               console.error("GPS update error:", err);
@@ -901,13 +899,13 @@ export default function DeliveryPortal() {
       setBusyOrderId(order.id);
       const rider = getRiderIdentity(staffSessionRef.current);
       try {
-        await updateDoc(doc(db, "orders", order.id), {
-          status: "out_for_delivery",
-          deliveryStatus: "out_for_delivery",
+        await updateOrderStatus(order.id, "out_for_delivery", {
+          id: rider.id,
+          name: rider.name,
+          role: String(staffSessionRef.current?.role || "DELIVERY_PARTNER"),
+        }, {
           deliveryPersonName: rider.name,
           deliveryPersonId: rider.id,
-          updatedAt: Timestamp.now(),
-          updatedBy: rider.id,
         });
         // Start GPS only after the write succeeded.
         startGpsTracking(order.id);
@@ -960,15 +958,15 @@ export default function DeliveryPortal() {
       setIsVerifyingOtp(true);
       const rider = getRiderIdentity(staffSessionRef.current);
       try {
-        await updateDoc(doc(db, "orders", otpModalOrder.id), {
-          status: "completed",
-          deliveryStatus: "delivered",
+        await updateOrderStatus(otpModalOrder.id, "delivered", {
+          id: rider.id,
+          name: rider.name,
+          role: String(staffSessionRef.current?.role || "DELIVERY_PARTNER"),
+        }, {
           deliveredAt: Timestamp.now(),
           otpVerified: true,
           deliveredBy: rider.id,
           deliveredByName: rider.name,
-          updatedAt: Timestamp.now(),
-          updatedBy: rider.id,
         });
 
         // If this order was the one being tracked, stop GPS.

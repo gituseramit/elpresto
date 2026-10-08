@@ -61,6 +61,7 @@ import {
 import { db } from "@/lib/firebase";
 import RatingModal from "@/components/RatingModal";
 import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
+import { getOrderStatus, type OrderStatusEvent } from "@/lib/orderStatus";
 
 /* ============================================================= */
 /* Types                                                         */
@@ -111,6 +112,7 @@ interface ProfileOrder {
   paymentStatus?: string;
   deliveryOtp?: string;
   cancelReason?: string;
+  statusHistory?: OrderStatusEvent[];
   items?: OrderItemShape[];
   createdAt?: unknown;
 }
@@ -132,6 +134,7 @@ const MAX_ORDERS_FETCH = 100;
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-500/15 text-amber-700 ring-amber-500/30",
+  confirmed: "bg-cyan-500/15 text-cyan-700 ring-cyan-500/30",
   preparing: "bg-blue-500/15 text-blue-700 ring-blue-500/30",
   ready: "bg-purple-500/15 text-purple-700 ring-purple-500/30",
   assigned: "bg-indigo-500/15 text-indigo-700 ring-indigo-500/30",
@@ -139,10 +142,12 @@ const STATUS_COLORS: Record<string, string> = {
   completed: "bg-emerald-500/15 text-emerald-700 ring-emerald-500/30",
   delivered: "bg-emerald-500/15 text-emerald-700 ring-emerald-500/30",
   cancelled: "bg-red-500/15 text-red-700 ring-red-500/30",
+  rejected: "bg-red-500/15 text-red-700 ring-red-500/30",
 };
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Order Placed",
+  confirmed: "Confirmed",
   preparing: "Preparing",
   ready: "Food Ready",
   assigned: "Driver Assigned",
@@ -150,6 +155,7 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "Completed",
   delivered: "Delivered",
   cancelled: "Cancelled",
+  rejected: "Rejected",
 };
 
 type StatusIcon = ComponentType<{ size?: number; className?: string }>;
@@ -163,6 +169,7 @@ const STATUS_ICONS: Record<string, StatusIcon> = {
   completed: BadgeCheck,
   delivered: BadgeCheck,
   cancelled: X,
+  rejected: X,
 };
 
 const ORDER_STEPS: { key: string; label: string; icon: StatusIcon }[] = [
@@ -221,24 +228,12 @@ function generateAddressId(): string {
 }
 
 function getStatusKey(order: ProfileOrder): string {
-  if (order.status === "cancelled") return "cancelled";
-  if (order.deliveryStatus === "delivered") return "delivered";
-  if (
-    order.deliveryStatus === "out_for_delivery" ||
-    order.status === "out_for_delivery"
-  ) {
-    return "out_for_delivery";
-  }
-  if (order.deliveryStatus === "assigned") return "assigned";
-  if (order.status === "ready") return "ready";
-  if (order.status === "preparing") return "preparing";
-  if (order.status === "completed") return "completed";
-  return order.status || "pending";
+  return getOrderStatus(order);
 }
 
 function isActiveOrder(order: ProfileOrder): boolean {
   const s = getStatusKey(order);
-  return s !== "completed" && s !== "delivered" && s !== "cancelled";
+  return !["completed", "delivered", "cancelled", "rejected"].includes(s);
 }
 
 function getStepIndex(statusKey: string): number {
@@ -602,6 +597,7 @@ export default function ProfilePage() {
   const [orderSearch, setOrderSearch] = useState("");
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+  const [orderListenerRetryKey, setOrderListenerRetryKey] = useState(0);
 
   /* ---- Feedback ---- */
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -754,23 +750,38 @@ export default function ProfilePage() {
     };
   }, [user, fetchOrders]);
 
-  /* Keep newly linked counter orders and their status current while history is open. */
+  /* Keep account and legacy counter-by-phone orders live while history is open. */
   useEffect(() => {
     if (!user) return;
     let active = true;
-    const customerOrdersQuery = query(
-      collection(db, "orders"),
-      where("customerId", "==", user.uid),
-      limit(MAX_ORDERS_FETCH)
-    );
-    const unsubscribe = onSnapshot(
-      customerOrdersQuery,
-      (snapshot) => {
+    const mergeSnapshot = (snapshot: import("firebase/firestore").QuerySnapshot) => {
         if (!active) return;
-        const liveOrders: ProfileOrder[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<ProfileOrder, "id">),
-        }));
+        const liveOrders: ProfileOrder[] = [];
+        for (const d of snapshot.docs) {
+          const data = d.data();
+          if (data.customerId !== user.uid) {
+            const registeredPhone = normalisePhone(
+              userProfile?.phone || user.phoneNumber || ""
+            );
+            const matchesRegisteredPhone = [data.phone, data.customerPhone].some(
+              (value) =>
+                normalisePhone(String(value || "")) === registeredPhone
+            );
+            const counterOrder =
+              data.source === "counter" ||
+              data.orderSource === "counter" ||
+              String(data.kitchenNotes || "")
+                .toLowerCase()
+                .startsWith("created at pos counter");
+            if (!registeredPhone || !matchesRegisteredPhone || !counterOrder) {
+              continue;
+            }
+          }
+          liveOrders.push({
+            id: d.id,
+            ...(data as Omit<ProfileOrder, "id">),
+          });
+        }
         setOrders((current) => {
           const merged = new Map(
             current.map((order) => [order.id, order] as const)
@@ -780,16 +791,49 @@ export default function ProfilePage() {
           list.sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt));
           return list;
         });
-      },
-      (error) => {
-        if (active) console.error("Live order history sync failed:", error);
+        setOrdersError("");
+        setOrdersLoading(false);
+    };
+    const handleError = (error: Error) => {
+      if (active) {
+        console.error("Live order history sync failed:", error);
+        setOrdersError("Live order updates are unavailable. Retry to reconnect.");
       }
-    );
+    };
+
+    const unsubscribers = [
+      onSnapshot(
+        query(
+          collection(db, "orders"),
+          where("customerId", "==", user.uid),
+          limit(MAX_ORDERS_FETCH)
+        ),
+        mergeSnapshot,
+        handleError
+      ),
+    ];
+    const historyPhone = normalisePhone(userProfile?.phone || user.phoneNumber || "");
+    if (historyPhone.length === 10) {
+      const variants = phoneSearchVariants(historyPhone);
+      for (const field of ["phone", "customerPhone"] as const) {
+        unsubscribers.push(
+          onSnapshot(
+            query(
+              collection(db, "orders"),
+              where(field, "in", variants),
+              limit(MAX_ORDERS_FETCH)
+            ),
+            mergeSnapshot,
+            handleError
+          )
+        );
+      }
+    }
     return () => {
       active = false;
-      unsubscribe();
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
-  }, [user]);
+  }, [user, userProfile?.phone, orderListenerRetryKey]);
 
   /* ---- Derived ---- */
   const displayName =
@@ -1816,7 +1860,10 @@ export default function ProfilePage() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => void fetchOrders()}
+                  onClick={() => {
+                    setOrderListenerRetryKey((key) => key + 1);
+                    void fetchOrders();
+                  }}
                   className="rounded-xl bg-red-500 px-4 py-2 text-xs font-black uppercase tracking-wider text-white shadow-sm transition hover:bg-red-600"
                 >
                   Retry
@@ -1969,6 +2016,43 @@ export default function ProfilePage() {
                       <div className="border-t border-white/60 bg-orange-50/30 px-4 pb-4 pt-4">
                         <OrderTimeline statusKey={statusKey} />
 
+                        {order.statusHistory && order.statusHistory.length > 0 && (
+                          <section
+                            aria-label="Live status updates"
+                            className="mt-3 rounded-2xl border border-orange-100 bg-white/75 p-3"
+                          >
+                            <h3 className="text-[10px] font-black uppercase tracking-wider text-gray-500">
+                              Status updates
+                            </h3>
+                            <ol className="mt-2 space-y-2">
+                              {order.statusHistory.slice(-5).reverse().map((event, index) => {
+                                const eventStatus = getOrderStatus({ status: event.status });
+                                const eventDate = toDate(event.at);
+                                return (
+                                  <li
+                                    key={`${event.status}-${eventDate?.getTime() || index}-${index}`}
+                                    className="flex items-center justify-between gap-3 text-xs"
+                                  >
+                                    <span className="font-bold text-gray-800">
+                                      {STATUS_LABELS[eventStatus] || eventStatus}
+                                    </span>
+                                    <time className="shrink-0 text-[10px] font-medium text-gray-500">
+                                      {eventDate
+                                        ? eventDate.toLocaleString("en-IN", {
+                                            day: "numeric",
+                                            month: "short",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })
+                                        : "Just updated"}
+                                    </time>
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                          </section>
+                        )}
+
                         {statusKey === "cancelled" && order.cancelReason && (
                           <div className="mt-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50/70 p-3 text-xs font-semibold text-red-700">
                             <AlertCircle
@@ -2094,7 +2178,7 @@ export default function ProfilePage() {
 
                             {active && (
                               <Link
-                                href="/track"
+                                href={`/track/${order.id}`}
                                 className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-700 shadow-sm transition hover:bg-blue-100"
                               >
                                 <Navigation

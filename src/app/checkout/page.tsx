@@ -50,6 +50,7 @@ import { PromoCode, Order } from "@/lib/types";
 import type { LoyaltyReward } from "@/lib/types";
 import { getPackingCharge } from "@/lib/commerce";
 import { announceActiveOrderChanged } from "@/lib/activeOrderEvents";
+import { createInitialOrderStatusFields } from "@/lib/orderStatus";
 import {
   DEFAULT_MAIN_BRANCH_ID,
   getActiveBranches,
@@ -863,8 +864,14 @@ export default function CheckoutPage() {
         : "Pickup / Takeaway";
 
       const otp = isDelivery ? generateDeliveryOtp() : undefined;
+      const initialStatusFields = createInitialOrderStatusFields({
+        id: user.uid,
+        name: formData.name.trim() || user.displayName || "Customer",
+        role: "customer",
+      });
 
       const orderPayload: Record<string, unknown> = {
+        ...initialStatusFields,
         orderNumber: newOrderNum,
         customerName: formData.name.trim(),
         customerPhone: formData.phone.trim(),
@@ -891,7 +898,6 @@ export default function CheckoutPage() {
         total: finalTotal,
         paymentMethod: "online",
         paymentStatus: "paid",
-        status: "pending",
         source: "website",
         orderSource: "website",
         branchId: resolvedBranch.id,
@@ -899,7 +905,6 @@ export default function CheckoutPage() {
         branchCode: resolvedBranch.code || "BR-01",
         orderLocation: isDelivery ? { lat: deliveryCoords.lat, lng: deliveryCoords.lng, address: fullAddressString, branchId: resolvedBranch.id, kind: "delivery" } : { lat: resolvedBranch.lat, lng: resolvedBranch.lng, address: resolvedBranch.address, branchId: resolvedBranch.id, kind: "pickup" },
         createdBy: user.uid,
-        updatedBy: user.uid,
         createdAt: Timestamp.now(),
         customerId: user.uid,
         customerEmail: user.email || "",

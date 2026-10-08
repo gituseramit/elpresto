@@ -81,6 +81,7 @@ import ThemeControl from "@/components/ThemeControl";
 import LoyaltyRewardsManager from "@/components/Admin/LoyaltyRewardsManager";
 import type { Category, Subcategory, PromoCode } from "@/lib/types";
 import { executeTransactionalReset } from "@/lib/dbResetService";
+import { getOrderStatus, updateOrderStatus as transitionOrderStatus } from "@/lib/orderStatus";
 
 import { db } from "@/lib/firebase";
 import {
@@ -1943,12 +1944,22 @@ export default function AdminPage() {
   const updateOrderStatus = useCallback(
     async (id: string, newStatus: string) => {
       try {
-        await writeWithAudit(doc(db, "orders", id), { status: newStatus });
+        await transitionOrderStatus(
+          id,
+          newStatus as import("@/lib/orderStatus").OrderStatus,
+          {
+            ...currentActor(),
+            role: String(staffSessionRef.current?.role || "ADMIN"),
+          }
+        );
       } catch (err) {
-        pushToast("error", "Failed to update order.");
+        pushToast(
+          "error",
+          err instanceof Error ? err.message : "Failed to update order."
+        );
       }
     },
-    [writeWithAudit, pushToast]
+    [currentActor, pushToast]
   );
 
   const cancelOrder = useCallback(
@@ -1960,8 +1971,10 @@ export default function AdminPage() {
         destructive: true,
         onConfirm: async () => {
           try {
-            await writeWithAudit(doc(db, "orders", id), {
-              status: "cancelled",
+            await transitionOrderStatus(id, "cancelled", {
+              ...currentActor(),
+              role: String(staffSessionRef.current?.role || "ADMIN"),
+            }, {
               cancelReason: "Cancelled by admin",
             });
             pushToast("success", "Order cancelled.");
@@ -1971,13 +1984,16 @@ export default function AdminPage() {
         },
       });
     },
-    [writeWithAudit, pushToast]
+    [currentActor, pushToast]
   );
 
   const assignDeliveryPartner = useCallback(
     async (id: string, partnerName: string) => {
       try {
-        await writeWithAudit(doc(db, "orders", id), {
+        await transitionOrderStatus(id, "assigned", {
+          ...currentActor(),
+          role: String(staffSessionRef.current?.role || "ADMIN"),
+        }, {
           deliveryPersonName: partnerName || "El Presto Delivery Partner",
           deliveryStatus: "assigned",
         });
@@ -1986,23 +2002,32 @@ export default function AdminPage() {
         pushToast("error", "Failed to assign partner.");
       }
     },
-    [writeWithAudit, pushToast]
+    [currentActor, pushToast]
   );
 
   const updateDeliveryStatus = useCallback(
     async (id: string, deliveryStatus: string) => {
-      const patch: Record<string, unknown> = { deliveryStatus };
-      // Do NOT regress status if the order is further along.
-      if (deliveryStatus === "delivered") {
-        patch.status = "completed";
-      }
       try {
-        await writeWithAudit(doc(db, "orders", id), patch);
+        const order = orders.find((candidate) => candidate.id === id);
+        const targetStatus =
+          deliveryStatus === "pending"
+            ? getOrderStatus(order)
+            : (deliveryStatus as import("@/lib/orderStatus").OrderStatus);
+        if (deliveryStatus === "pending" && targetStatus !== "pending" && targetStatus !== "ready") {
+          throw new Error("Delivery progress cannot be moved backwards.");
+        }
+        await transitionOrderStatus(id, targetStatus, {
+          ...currentActor(),
+          role: String(staffSessionRef.current?.role || "ADMIN"),
+        }, { deliveryStatus });
       } catch (err) {
-        pushToast("error", "Failed to update delivery status.");
+        pushToast(
+          "error",
+          err instanceof Error ? err.message : "Failed to update delivery status."
+        );
       }
     },
-    [writeWithAudit, pushToast]
+    [orders, currentActor, pushToast]
   );
 
   /* ============================================================= */

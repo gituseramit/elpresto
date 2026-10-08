@@ -73,6 +73,7 @@ import type { Branch, Counter } from "@/lib/types";
 import { getPackingCharge } from "@/lib/commerce";
 import { usePendingOrderReminder } from "@/hooks/usePendingOrderReminder";
 import { normalisePhone, phoneSearchVariants } from "@/lib/phone";
+import { createInitialOrderStatusFields, updateOrderStatus } from "@/lib/orderStatus";
 
 /* ============================================================ */
 /* Types                                                        */
@@ -1609,7 +1610,14 @@ export default function CounterPOSPage() {
           showToast(`Order ${orderNumber} updated`, "success");
           if (printAfter) void handlePrintReceipt(updated);
         } else {
-          payload.status = "pending";
+          Object.assign(
+            payload,
+            createInitialOrderStatusFields({
+              id: rider.id,
+              name: rider.name || rider.id,
+              role: String(staffSessionRef.current?.role || "COUNTER_STAFF"),
+            })
+          );
           payload.createdAt = Timestamp.now();
           payload.createdBy = rider.id;
           if (oType === "delivery") payload.deliveryStatus = "pending";
@@ -1641,11 +1649,7 @@ export default function CounterPOSPage() {
   const handleUpdateOrderStatus = useCallback(
     async (order: Order, newStatus: string) => {
       const rider = getStaffIdentity(staffSessionRef.current);
-      const patch: Record<string, unknown> = {
-        status: newStatus,
-        updatedAt: Timestamp.now(),
-        updatedBy: rider.id,
-      };
+      const patch: Record<string, unknown> = {};
 
       if (newStatus === "completed") {
         patch.completedAt = Timestamp.now();
@@ -1659,7 +1663,16 @@ export default function CounterPOSPage() {
       }
 
       try {
-        await updateDoc(doc(db, "orders", order.id), patch);
+        await updateOrderStatus(
+          order.id,
+          newStatus as import("@/lib/orderStatus").OrderStatus,
+          {
+            id: rider.id,
+            name: rider.name || rider.id,
+            role: String(staffSessionRef.current?.role || "COUNTER_STAFF"),
+          },
+          patch
+        );
         showToast(`Order marked ${newStatus}`, "success");
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Unknown error";

@@ -30,12 +30,14 @@ import {
   Info,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import LiveMap from "@/components/Map/LiveMap";
 import { DEFAULT_DELIVERY_SETTINGS, DeliverySettings } from "@/lib/delivery";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, onSnapshot, Timestamp } from "firebase/firestore";
+import { collection, doc, getDoc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { announceActiveOrderChanged } from "@/lib/activeOrderEvents";
+import { getOrderStatus, isActiveOrder, type OrderStatusEvent } from "@/lib/orderStatus";
 
 /* ================================================================ */
 /* Types                                                            */
@@ -84,6 +86,8 @@ interface OrderData {
   deliveryPersonLocation?: { lat?: number; lng?: number };
   deliveryPersonName?: string;
   deliveryStatus?: string;
+  statusHistory?: OrderStatusEvent[];
+  updatedAt?: unknown;
   deliveryLocationUpdatedAt?: unknown;
   deliveryDistance?: number;
   items?: OrderItem[];
@@ -289,21 +293,19 @@ function getFullAddress(order: OrderData | null): string {
 function deriveStageKey(order: OrderData | null): string {
   if (!order) return "received";
   const delivery = isDeliveryOrder(order);
-  const deliveryStatus = String(order.deliveryStatus || "").toLowerCase();
-  const status = String(order.status || "").toLowerCase();
+  const status = getOrderStatus(order);
+
+  if (status === "cancelled" || status === "rejected") return status;
 
   if (delivery) {
-    if (deliveryStatus === "delivered") return "delivered";
-    if (deliveryStatus === "out_for_delivery" || status === "out_for_delivery") {
-      return "out_for_delivery";
-    }
-    if (deliveryStatus === "assigned") return "ready";
-    if (status === "ready" || deliveryStatus === "ready") return "ready";
+    if (status === "delivered" || status === "completed") return "delivered";
+    if (status === "out_for_delivery") return "out_for_delivery";
+    if (status === "assigned" || status === "ready") return "ready";
     if (status === "preparing") return "preparing";
     return "received";
   }
 
-  if (status === "completed") return "completed";
+  if (status === "completed" || status === "delivered") return "completed";
   if (status === "ready") return "ready";
   if (status === "preparing") return "preparing";
   return "received";
@@ -540,14 +542,88 @@ function StatCard({
   );
 }
 
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  pending: "Order placed",
+  confirmed: "Confirmed",
+  preparing: "Preparing in the kitchen",
+  ready: "Ready",
+  assigned: "Rider assigned",
+  out_for_delivery: "Out for delivery",
+  completed: "Picked up",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+  rejected: "Rejected",
+};
+
+function OrderStatusHistory({
+  history,
+  currentStatus,
+  createdAt,
+  updatedAt,
+}: {
+  history?: OrderStatusEvent[];
+  currentStatus: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}) {
+  const events = history?.length
+    ? history.slice(-8).reverse()
+    : currentStatus
+    ? [{ status: currentStatus as OrderStatusEvent["status"], at: updatedAt || createdAt, by: "" }]
+    : [];
+
+  return (
+    <section
+      aria-label="Order status timeline"
+      className="rounded-3xl border border-white/60 bg-white/55 p-5 shadow-md backdrop-blur-xl sm:p-6"
+    >
+      <h3 className="text-sm font-black text-gray-900">Live status timeline</h3>
+      {events.length ? (
+        <ol className="mt-4 space-y-3">
+          {events.map((event, index) => {
+            const at = toDate(event.at);
+            const status = String(event.status || "pending").toLowerCase();
+            return (
+              <li key={`${status}-${at?.getTime() || index}-${index}`} className="flex items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${index === 0 ? "bg-orange-500 ring-4 ring-orange-100" : "bg-emerald-500"}`}
+                />
+                <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                  <span className="text-xs font-bold text-gray-800">
+                    {ORDER_STATUS_LABELS[status] || status.replace(/_/g, " ")}
+                    {event.byName ? <span className="font-medium text-gray-500"> · {event.byName}</span> : null}
+                  </span>
+                  <time className="shrink-0 text-[10px] font-semibold text-gray-500">
+                    {at ? `${at.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${formatISTTime(at)}` : "Time unavailable"}
+                  </time>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="mt-2 text-xs font-medium text-gray-500">
+          Status updates will appear here as your order progresses.
+        </p>
+      )}
+    </section>
+  );
+}
+
 /* ================================================================ */
 /* Page                                                            */
 /* ================================================================ */
 
 export default function TrackOrderPage() {
+  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [orderData, setOrderData] = useState<OrderData | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [activeOrders, setActiveOrders] = useState<OrderData[]>([]);
+  const [activeOrdersLoading, setActiveOrdersLoading] = useState(true);
+  const [activeOrdersError, setActiveOrdersError] = useState("");
+  const [activeOrdersRetryKey, setActiveOrdersRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveRoadStats, setLiveRoadStats] = useState<RoadStats | null>(null);
@@ -565,6 +641,13 @@ export default function TrackOrderPage() {
   const reducedMotion = usePrefersReducedMotion();
   const statusAnnounceRef = useRef<HTMLParagraphElement>(null);
   const statusPulseTimerRef = useRef<number | null>(null);
+  const requestedOrderIdRef = useRef<string | null>(null);
+  const manualOrderSelectionRef = useRef(false);
+  const orderIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    orderIdRef.current = orderId;
+  }, [orderId]);
 
   const lookupOrder = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -591,10 +674,16 @@ export default function TrackOrderPage() {
     }
   }, [lookupOrderNumber, lookupPhone]);
 
-  /* Load order id from storage */
+  /* Resolve direct links first, then restore guest tracking from this device. */
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const requestedOrderId = new URLSearchParams(window.location.search).get("orderId");
+      requestedOrderIdRef.current = requestedOrderId;
+      if (requestedOrderId) {
+        setOrderId(requestedOrderId);
+        return;
+      }
       const saved = window.localStorage.getItem("activeOrderId");
       setOrderId(saved || null);
     } catch (err) {
@@ -602,6 +691,77 @@ export default function TrackOrderPage() {
       setOrderId(null);
     }
   }, []);
+
+  /* The account's active order list works on every signed-in device. */
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setActiveOrders([]);
+      setActiveOrdersLoading(false);
+      return;
+    }
+
+    setActiveOrdersLoading(true);
+    setActiveOrdersError("");
+    const accountOrdersQuery = query(
+      collection(db, "orders"),
+      where("customerId", "==", user.uid),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    );
+    return onSnapshot(
+      accountOrdersQuery,
+      (snapshot) => {
+        const allOrders: OrderData[] = snapshot.docs.map((order) => ({
+          id: order.id,
+          ...(order.data() as Omit<OrderData, "id">),
+        }));
+        const liveOrders = allOrders.filter(isActiveOrder);
+        setActiveOrders(liveOrders);
+        setActiveOrdersLoading(false);
+
+        if (requestedOrderIdRef.current || phoneVerifiedOrderId) return;
+        const currentlySelectedOrder = allOrders.find(
+          (order) => order.id === orderIdRef.current
+        );
+        if (currentlySelectedOrder && !isActiveOrder(currentlySelectedOrder)) {
+          setOrderData(currentlySelectedOrder);
+          return;
+        }
+        if (liveOrders.length === 0) {
+          setOrderId(null);
+          setOrderData(null);
+          try {
+            window.localStorage.removeItem("activeOrderId");
+            announceActiveOrderChanged();
+          } catch {
+            /* ignore unavailable storage */
+          }
+          return;
+        }
+
+        if (!manualOrderSelectionRef.current) {
+          setOrderId(liveOrders[0].id);
+          try {
+            window.localStorage.setItem("activeOrderId", liveOrders[0].id);
+          } catch {
+            /* Firebase remains the source of truth when storage is unavailable. */
+          }
+        }
+      },
+      (subscriptionError) => {
+        console.error("Active order subscription failed:", subscriptionError);
+        setActiveOrdersError("Unable to load your live orders. Check your connection and retry.");
+        setActiveOrdersLoading(false);
+      }
+    );
+  }, [user?.uid, authLoading, phoneVerifiedOrderId, activeOrdersRetryKey]);
+
+  useEffect(() => {
+    if (authLoading || user || phoneVerifiedOrderId || !requestedOrderIdRef.current) return;
+    const returnToTrack = `/track?orderId=${encodeURIComponent(requestedOrderIdRef.current)}`;
+    router.replace(`/auth?redirect=${encodeURIComponent(returnToTrack)}`);
+  }, [router, user, authLoading, phoneVerifiedOrderId]);
 
   /* Settings */
   useEffect(() => {
@@ -677,12 +837,13 @@ export default function TrackOrderPage() {
         const raw = snap.data() as Omit<OrderData, "id">;
         const data: OrderData = { id: snap.id, ...raw };
 
-        // Ownership check — orders with customerId must match the current user.
-        if (
-          data.customerId &&
-          user?.uid &&
-          data.customerId !== user.uid && data.id !== phoneVerifiedOrderId
-        ) {
+        // Direct links are account-scoped; legacy guest orders require a
+        // successful phone verification before the document can be shown.
+        const belongsToSignedInCustomer = Boolean(
+          user?.uid && data.customerId === user.uid
+        );
+        const verifiedGuestOrder = data.id === phoneVerifiedOrderId;
+        if (!belongsToSignedInCustomer && !verifiedGuestOrder) {
           setOrderData(null);
           setError(
             "This order does not belong to your account. Please sign in with the correct account."
@@ -695,10 +856,7 @@ export default function TrackOrderPage() {
         setLoading(false);
 
         // Clear activeOrderId if the order is finished.
-        if (
-          data.deliveryStatus === "delivered" ||
-          data.status === "completed"
-        ) {
+        if (!isActiveOrder(data)) {
           try {
             window.localStorage.removeItem("activeOrderId");
             announceActiveOrderChanged();
@@ -763,7 +921,7 @@ export default function TrackOrderPage() {
   /* Loading                                                          */
   /* ================================================================ */
 
-  if (authLoading || loading) {
+  if (authLoading || loading || (user && activeOrdersLoading) || (user && activeOrders.length > 0 && !orderId)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-amber-50/60 to-orange-50/40">
         <div
@@ -842,30 +1000,48 @@ export default function TrackOrderPage() {
               </div>
             </div>
             <h2 className="mb-2 text-2xl font-black text-gray-900">
-              No Active Orders
+              No active orders right now
             </h2>
-            <p className="mb-8 text-sm text-gray-600">
-              Look up an order from any device using its number and checkout phone.
+            <p className="mb-6 text-sm text-gray-600">
+              {user
+                ? "Your new orders will appear here automatically, with live updates from the kitchen and delivery team."
+                : "Look up a guest order with its order number and checkout phone."}
             </p>
-            <form onSubmit={lookupOrder} className="mb-5 space-y-3 text-left">
-              <label className="block text-xs font-bold text-gray-700">Order number<input autoComplete="off" required value={lookupOrderNumber} onChange={(event) => setLookupOrderNumber(event.target.value)} placeholder="e.g. #ELP-AB12CD" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
-              <label className="block text-xs font-bold text-gray-700">Phone used at checkout<input autoComplete="tel" inputMode="tel" required value={lookupPhone} onChange={(event) => setLookupPhone(event.target.value)} placeholder="10 digit phone number" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
-              {lookupError && <p role="alert" className="text-xs font-semibold text-red-600">{lookupError}</p>}
-              <button disabled={lookupBusy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:opacity-60">{lookupBusy ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />} Track order</button>
-            </form>
+            {activeOrdersError && (
+              <div role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-left text-xs font-semibold text-red-700">
+                <p>{activeOrdersError}</p>
+                <button
+                  type="button"
+                  onClick={() => setActiveOrdersRetryKey((key) => key + 1)}
+                  className="mt-2 font-black underline underline-offset-2"
+                >
+                  Retry live orders
+                </button>
+              </div>
+            )}
+            {!user && (
+              <form onSubmit={lookupOrder} className="mb-5 space-y-3 text-left">
+                <label className="block text-xs font-bold text-gray-700">Order number<input autoComplete="off" required value={lookupOrderNumber} onChange={(event) => setLookupOrderNumber(event.target.value)} placeholder="e.g. #ELP-AB12CD" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
+                <label className="block text-xs font-bold text-gray-700">Phone used at checkout<input autoComplete="tel" inputMode="tel" required value={lookupPhone} onChange={(event) => setLookupPhone(event.target.value)} placeholder="10 digit phone number" className="mt-1 w-full rounded-xl border border-gray-200 bg-white/80 px-3 py-3 text-sm text-gray-900 outline-none focus:border-orange-400" /></label>
+                {lookupError && <p role="alert" className="text-xs font-semibold text-red-600">{lookupError}</p>}
+                <button disabled={lookupBusy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:opacity-60">{lookupBusy ? <RefreshCw size={15} className="animate-spin" /> : <Search size={15} />} Track order</button>
+              </form>
+            )}
             <div className="flex flex-col gap-3">
               <Link
                 href="/menu"
                 className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/30 transition-all hover:scale-[1.02] hover:shadow-orange-500/50 active:scale-95"
               >
-                <ShoppingBag size={15} aria-hidden="true" /> Explore Menu
+                <ShoppingBag size={15} aria-hidden="true" /> Order now
               </Link>
-              <Link
-                href="/profile#orders"
-                className="flex items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/70 py-3.5 text-sm font-black text-gray-700 shadow-sm backdrop-blur-md transition hover:bg-white active:scale-95"
-              >
-                View Past Orders
-              </Link>
+              {user && (
+                <Link
+                  href="/profile#orders"
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-white/60 bg-white/70 py-3.5 text-sm font-black text-gray-700 shadow-sm backdrop-blur-md transition hover:bg-white active:scale-95"
+                >
+                  View order history
+                </Link>
+              )}
               <a
                 href="tel:+916392512314"
                 className="text-center text-xs font-semibold text-gray-500 underline decoration-gray-300 underline-offset-4 transition hover:text-[#D92312]"
@@ -895,8 +1071,42 @@ export default function TrackOrderPage() {
   const orderNumberLabel = orderData.orderNumber || orderData.id.slice(0, 8);
   const delivery = isDeliveryOrder(orderData);
   const stageKey = derivedStage;
+  const isCancelled = stageKey === "cancelled" || stageKey === "rejected";
   const isDeliveredOrCompleted =
     stageKey === "delivered" || stageKey === "completed";
+
+  const orderSwitcher = activeOrders.length > 1 ? (
+    <label className="mb-5 block rounded-2xl border border-white/60 bg-white/65 p-3 shadow-sm backdrop-blur-md">
+      <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-gray-500">
+        You have {activeOrders.length} live orders
+      </span>
+      <select
+        aria-label="Choose an active order to track"
+        value={orderId || ""}
+        onChange={(event) => {
+          const nextId = event.target.value;
+          manualOrderSelectionRef.current = true;
+          setError(null);
+          setOrderData(null);
+          setOrderId(nextId);
+          setLoading(true);
+          try {
+            window.localStorage.setItem("activeOrderId", nextId);
+            announceActiveOrderChanged();
+          } catch {
+            /* account query remains the cross-device source of truth */
+          }
+        }}
+        className="w-full rounded-xl border border-orange-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:border-orange-500"
+      >
+        {activeOrders.map((order) => (
+          <option key={order.id} value={order.id}>
+            {order.orderNumber || order.id.slice(0, 8)} · {getOrderStatus(order).replaceAll("_", " ")}
+          </option>
+        ))}
+      </select>
+    </label>
+  ) : null;
 
   /* ================================================================ */
   /* DELIVERY VIEW                                                    */
@@ -980,6 +1190,7 @@ export default function TrackOrderPage() {
       <div className="min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
         <div className="container mx-auto max-w-4xl">
           {BackLink}
+          {orderSwitcher}
 
           <div className="space-y-5 sm:space-y-6">
             {/* HERO */}
@@ -1069,10 +1280,19 @@ export default function TrackOrderPage() {
             </div>
 
             {/* GAMIFIED TRACKER */}
-            <GamifiedTracker
-              currentStage={stageKey}
-              isDelivery
-              reducedMotion={reducedMotion}
+            {isCancelled ? (
+              <div role="status" className="rounded-3xl border border-red-200 bg-red-50 p-5 text-red-950">
+                <h2 className="text-lg font-black">This order was {stageKey}.</h2>
+                <p className="mt-1 text-sm">If you have a question about this order or its payment, contact <a className="font-bold underline" href="mailto:support@elpresto.co.in">support@elpresto.co.in</a>.</p>
+              </div>
+            ) : (
+              <GamifiedTracker currentStage={stageKey} isDelivery reducedMotion={reducedMotion} />
+            )}
+            <OrderStatusHistory
+              history={orderData.statusHistory}
+              currentStatus={getOrderStatus(orderData)}
+              createdAt={orderData.createdAt}
+              updatedAt={orderData.updatedAt}
             />
 
             {/* MAP */}
@@ -1363,6 +1583,7 @@ export default function TrackOrderPage() {
     <div className="storefront-theme min-h-screen bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-rose-50/50 px-3 py-6 sm:px-4 sm:py-8">
       <div className="container mx-auto max-w-2xl">
         {BackLink}
+        {orderSwitcher}
 
         <div className="space-y-5 sm:space-y-6">
           {/* HERO */}
@@ -1410,10 +1631,19 @@ export default function TrackOrderPage() {
           </div>
 
           {/* TRACKER */}
-          <GamifiedTracker
-            currentStage={stageKey}
-            isDelivery={false}
-            reducedMotion={reducedMotion}
+          {isCancelled ? (
+            <div role="status" className="rounded-3xl border border-red-200 bg-red-50 p-5 text-red-950">
+              <h2 className="text-lg font-black">This order was {stageKey}.</h2>
+              <p className="mt-1 text-sm">If you have a question about this order or its payment, contact <a className="font-bold underline" href="mailto:support@elpresto.co.in">support@elpresto.co.in</a>.</p>
+            </div>
+          ) : (
+            <GamifiedTracker currentStage={stageKey} isDelivery={false} reducedMotion={reducedMotion} />
+          )}
+          <OrderStatusHistory
+            history={orderData.statusHistory}
+            currentStatus={getOrderStatus(orderData)}
+            createdAt={orderData.createdAt}
+            updatedAt={orderData.updatedAt}
           />
 
           {typeof pickupLat === "number" && typeof pickupLng === "number" && <section className="overflow-hidden rounded-3xl border border-white/60 bg-white/50 shadow-lg backdrop-blur-xl"><div className="border-b border-white/60 px-4 py-3"><p className="text-xs font-black text-gray-800">{orderData.orderLocation?.kind === "pickup" ? "Pickup outlet location" : "Order location"}</p><p className="mt-0.5 text-[10px] font-semibold text-gray-500">{orderData.orderLocation?.address || getFullAddress(orderData)}</p></div><LiveMap riderLat={pickupLat} riderLng={pickupLng} customerLat={pickupLat} customerLng={pickupLng} cafeLat={pickupLat} cafeLng={pickupLng} customerName={orderData.orderLocation?.kind === "pickup" ? "Pickup outlet" : orderData.customerName} className="h-[260px] w-full" showHud={false} /></section>}

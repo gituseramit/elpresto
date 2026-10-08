@@ -19,6 +19,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import ThemeControl from "@/components/ThemeControl";
 import { ACTIVE_ORDER_CHANGED_EVENT } from "@/lib/activeOrderEvents";
+import { db } from "@/lib/firebase";
+import { isActiveOrder } from "@/lib/orderStatus";
+import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 
 /* ============================================================= */
 /* Helpers                                                       */
@@ -76,56 +79,45 @@ export default function Header() {
     setMounted(true);
   }, []);
 
-  /* Detect an active order via storage / focus events + a low-frequency
-   * poll that only runs while the tab is visible. */
+  /* The signed-in Live Order indicator follows Firestore in real time. */
   useEffect(() => {
     if (!mounted) return;
-
-    const check = () => {
+    const syncGuestOrder = () => {
       try {
-        setHasActiveOrder(!!window.localStorage.getItem("activeOrderId"));
+        setHasActiveOrder(Boolean(window.localStorage.getItem("activeOrderId")));
       } catch {
         setHasActiveOrder(false);
       }
     };
-    check();
 
-    let interval: number | null = null;
-    const startPolling = () => {
-      if (interval != null) return;
-      interval = window.setInterval(check, 5000);
-    };
-    const stopPolling = () => {
-      if (interval != null) {
-        window.clearInterval(interval);
-        interval = null;
-      }
-    };
+    if (authLoading) return;
+    if (user) {
+      const activeOrdersQuery = query(
+        collection(db, "orders"),
+        where("customerId", "==", user.uid),
+        orderBy("createdAt", "desc"),
+        limit(50)
+      );
+      return onSnapshot(
+        activeOrdersQuery,
+        (snapshot) => {
+          setHasActiveOrder(snapshot.docs.some((order) => isActiveOrder(order.data())));
+        },
+        (error) => {
+          console.error("Live order badge subscription failed:", error);
+          setHasActiveOrder(false);
+        }
+      );
+    }
 
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") {
-        check();
-        startPolling();
-      } else {
-        stopPolling();
-      }
-    };
-
-    window.addEventListener("storage", check);
-    window.addEventListener(ACTIVE_ORDER_CHANGED_EVENT, check);
-    window.addEventListener("focus", check);
-    document.addEventListener("visibilitychange", onVisibility);
-
-    if (document.visibilityState === "visible") startPolling();
-
+    syncGuestOrder();
+    window.addEventListener("storage", syncGuestOrder);
+    window.addEventListener(ACTIVE_ORDER_CHANGED_EVENT, syncGuestOrder);
     return () => {
-      window.removeEventListener("storage", check);
-      window.removeEventListener(ACTIVE_ORDER_CHANGED_EVENT, check);
-      window.removeEventListener("focus", check);
-      document.removeEventListener("visibilitychange", onVisibility);
-      stopPolling();
+      window.removeEventListener("storage", syncGuestOrder);
+      window.removeEventListener(ACTIVE_ORDER_CHANGED_EVENT, syncGuestOrder);
     };
-  }, [mounted]);
+  }, [mounted, user, authLoading]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -197,6 +189,7 @@ export default function Header() {
     user?.email?.split("@")[0] ||
     "Account";
   const initials = getInitials(displayName);
+  const trackHref = user ? "/track" : "/auth?redirect=%2Ftrack";
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname?.startsWith(href) ?? false;
@@ -248,7 +241,7 @@ export default function Header() {
           </Link>
 
           <Link
-            href="/track"
+            href={trackHref}
             aria-label={hasActiveOrder ? "Track your live order" : "Live track order"}
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 transition-colors ${hasActiveOrder ? "bg-orange-50 text-[#B8190B] dark:bg-orange-500/10 dark:text-orange-300" : "hover:text-[#D9381E] dark:hover:text-[#E5A93B]"}`}
           >
@@ -280,7 +273,7 @@ export default function Header() {
               <Link href="/menu" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Menu</Link>
               <Link href="/#best-sellers" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Best Sellers</Link>
               <Link href="/menu#nutrition-guide" className="block rounded-xl px-4 py-3 text-sm font-bold text-stone-800 transition hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5">Ingredients &amp; Nutrition</Link>
-              <Link href="/track" className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-bold transition ${hasActiveOrder ? "bg-orange-50 text-[#B8190B] dark:bg-orange-500/10 dark:text-orange-300" : "text-stone-800 hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5"}`}>
+              <Link href={trackHref} className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-bold transition ${hasActiveOrder ? "bg-orange-50 text-[#B8190B] dark:bg-orange-500/10 dark:text-orange-300" : "text-stone-800 hover:bg-orange-50 hover:text-[#D9381E] dark:text-stone-100 dark:hover:bg-white/5"}`}>
                 <span className="inline-flex items-center gap-2"><Activity size={16} aria-hidden="true" />{hasActiveOrder ? "Track your live order" : "Live Track Order"}</span>
                 {hasActiveOrder && <span className="rounded-full bg-[#D9381E] px-2 py-0.5 text-xs font-black uppercase tracking-wider text-white">Live</span>}
               </Link>

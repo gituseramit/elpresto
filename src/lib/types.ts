@@ -77,12 +77,15 @@ export type OrderType = "takeaway" | "counter" | "delivery" | "dine_in";
 
 export type OrderStatus =
   | "pending"
+  | "confirmed"
   | "preparing"
   | "ready"
   | "assigned"
   | "out_for_delivery"
   | "completed"
-  | "cancelled";
+  | "delivered"
+  | "cancelled"
+  | "rejected";
 
 export type DeliveryStatus =
   | "pending"
@@ -99,6 +102,13 @@ export interface Order {
   type: OrderType;
   orderType?: OrderType;
   status: OrderStatus;
+  statusHistory?: Array<{
+    status: OrderStatus;
+    at: any;
+    by: string;
+    byName?: string;
+    byRole?: string;
+  }>;
   deliveryStatus?: DeliveryStatus;
   items: OrderItem[];
   subtotal: number;
